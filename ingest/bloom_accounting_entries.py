@@ -36,37 +36,46 @@ def validate_entry(e):
 
 
 def create_entries_table(db):
-    db.execute("""CREATE TABLE IF NOT EXISTS acct_entries (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        kind TEXT NOT NULL,
-        date TEXT NOT NULL,
-        amount_cents INTEGER NOT NULL,
-        category TEXT NOT NULL,
-        machine_id TEXT,
-        note TEXT,
-        created_at INTEGER NOT NULL,
-        voided_at INTEGER
-    )""")
+    db.execute("CREATE TABLE IF NOT EXISTS acct_entries (id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL,"
+               " date TEXT NOT NULL, amount_cents INTEGER NOT NULL, category TEXT NOT NULL, machine_id TEXT, note TEXT,"
+               " created_at INTEGER NOT NULL, voided_at INTEGER)")
     db.commit()
 
 
 def add_entry(db, entry, created_at):
+    """Insert a validated entry and return its new integer id; ValueError(error string) when invalid."""
     err = validate_entry(entry)
-    if err is not None:
+    if err:
         raise ValueError(err)
     create_entries_table(db)
-    cur = db.execute(
-        "INSERT INTO acct_entries (kind, date, amount_cents, category, machine_id, note, created_at, voided_at) "
-        "VALUES (:kind, :date, :amount_cents, :category, :machine_id, :note, :created_at, NULL)",
-        {
-            "kind": entry["kind"],
-            "date": entry["date"],
-            "amount_cents": entry["amount_cents"],
-            "category": entry["category"],
-            "machine_id": entry.get("machine_id"),
-            "note": entry.get("note"),
-            "created_at": created_at,
-        },
-    )
+    cur = db.execute("INSERT INTO acct_entries (kind, date, amount_cents, category, machine_id, note, created_at)"
+                     " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                     (entry["kind"], entry["date"], entry["amount_cents"], entry["category"],
+                      entry.get("machine_id"), entry.get("note"), created_at))
     db.commit()
     return cur.lastrowid
+
+
+def void_entry(db, entry_id, voided_at):
+    create_entries_table(db)
+    cur = db.execute(
+        "UPDATE acct_entries SET voided_at = ? WHERE id = ? AND voided_at IS NULL",
+        (voided_at, entry_id))
+    db.commit()
+    return cur.rowcount == 1
+
+
+def current_entries(db, start=None, end=None):
+    create_entries_table(db)
+    sql = "SELECT id, kind, date, amount_cents, category, machine_id, note FROM acct_entries WHERE voided_at IS NULL"
+    params = []
+    if start is not None:
+        sql += " AND date >= ?"
+        params.append(start)
+    if end is not None:
+        sql += " AND date <= ?"
+        params.append(end)
+    sql += " ORDER BY date, id"
+    cols = ("id", "kind", "date", "amount_cents", "category", "machine_id", "note")
+    rows = db.execute(sql, params).fetchall()
+    return [dict(zip(cols, r)) for r in rows]
