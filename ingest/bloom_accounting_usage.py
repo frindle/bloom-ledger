@@ -4,18 +4,22 @@ ASSUMPTION (flagged): a minute counts as paid Darkbloom work when power was meas
 
 
 def is_paid_minute(row):
-    if not row["power_ok"]:
-        return False
-    if (row["tokens_delta"] or 0) <= 0:
-        return False
-    if row.get("other_work") is not None and row["other_work"]:
-        return False
-    return True
+    """True when the minute row shows paid inference: power_ok truthy, tokens_delta > 0 and no other_work."""
+    return bool(row["power_ok"]) and (row["tokens_delta"] or 0) > 0 and not row["other_work"]
 
 
 def m4_business_bp(rows):
+    """Owned-Mac business share in basis points: paid minutes * 10000 // minutes with measured power; 0 when none."""
     total = sum(1 for r in rows if r["power_ok"])
     paid = sum(1 for r in rows if is_paid_minute(r))
-    if total == 0:
-        return 0
-    return paid * 10000 // total
+    return paid * 10000 // total if total else 0
+
+
+def personal_minutes(windows, timestamps):
+    count = 0
+    for t in timestamps:
+        for s, e in windows:
+            if s <= t < e:
+                count += 1
+                break
+    return count
