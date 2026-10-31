@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Settings - Bloom ledger</title>
+<style>
+  :root {
+    --paper: #e9efec; --card: #f6f9f7; --ink: #12211d; --muted: #4d625b; --rule: #a9bbb4;
+    --sealed: #0e6b5b; --waiting: #b7791f; --missing: #9b2c2c; --open: #12211d;
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Charter, Georgia, serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 16px/1.5 var(--serif); }
+  main { max-width: 64rem; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; }
+  h1 { font-size: 2.1rem; line-height: 1.15; margin: 0 0 .35rem; font-weight: 600; letter-spacing: -.01em; }
+  h2 { font-size: 1.25rem; margin: 0; font-weight: 600; }
+  p { margin: 0; }
+  a { color: var(--sealed); }
+  a:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
+  button:focus-visible, input:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
+  button:disabled, input:disabled { opacity: .5; cursor: not-allowed; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: .5rem .75rem; border-bottom: 1px solid var(--rule); }
+  caption { font-size: 1.1rem; font-weight: 600; margin-bottom: .5rem; }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: .15rem 1rem; }
+  dt { color: var(--muted); }
+  dd { margin: 0; overflow-wrap: anywhere; }
+  @media (prefers-reduced-motion: no-preference) {}
+</style>
+</head>
+<body>
+<main>
+<a href="/">Back to the ledger</a>
+<h1>Settings</h1>
+<p class="note" id="admin-note" aria-live="polite"></p>
+
+<section>
+<h2>Machines</h2>
+<table id="machines">
+<caption>Machines overview</caption>
+<thead>
+<tr>
+<th scope="col">Machine</th>
+<th scope="col">Last seen</th>
+<th scope="col">Objects</th>
+<th scope="col">Days sealed</th>
+<th scope="col">Status</th>
+<th scope="col">Actions</th>
+</tr>
+</thead>
+<tbody id="machine-rows">
+</tbody>
+</table>
+</section>
+</main>
+</body>
+</html>
