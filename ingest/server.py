@@ -30,6 +30,7 @@ import bloom_ingest_ledger as IL  # noqa: E402
 import bloom_ledger as L  # noqa: E402
 import bloom_settings as BS  # noqa: E402
 import bloom_summary as SM  # noqa: E402
+import bloom_accounting_index as AX  # noqa: E402
 
 ROOT = Path(os.environ.get("BLOOM_DATA", "/data"))
 TOKENS_PATH = os.environ.get("BLOOM_TOKENS", "/run/secrets/bloom_tokens")
@@ -164,6 +165,10 @@ def scheduler(db, stop):
                     log(f"manifest {day} {json.dumps(res, sort_keys=True)}")
                     if "conflict" in res.values():
                         break
+                AX.create_schema(db)
+                n = AX.index_new(db, ROOT)
+                if n:
+                    log(f"accounting indexed {n} objects")
                 alerts = AL.evaluate_alerts(db, now)
             keys = sorted(AL.alert_key(a) for a in alerts)
             if keys != last_alerts:

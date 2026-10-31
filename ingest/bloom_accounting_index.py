@@ -189,37 +189,29 @@ def store_power(db, machine_id, sha, path, offset, payload, since_ts=INGEST_FROM
 
 
 def index_new(db, root):
-    """Index new log objects from disk into accounting tables. Returns count of newly indexed."""
-    rows = db.execute(
-        "SELECT machine_id, sha256 FROM objects WHERE kind = ? ORDER BY received_at, rowid", ("log",))
-    count = 0
-    for (machine_id, sha) in rows:
+    """Parse every not-yet-parsed `log` object into the derived tables; returns the number of objects handled."""
+    n = 0
+    rows = db.execute("SELECT machine_id, sha256 FROM objects WHERE kind = 'log' ORDER BY received_at, rowid").fetchall()
+    for machine_id, sha in rows:
         if is_parsed(db, machine_id, sha):
             continue
-        obj_path = Path(root) / "objects" / machine_id / "log" / f"{sha}.obj"
         try:
-            body = obj_path.read_bytes()
-        except (OSError, IOError):
+            raw = (Path(root) / "objects" / machine_id / "log" / (sha + ".obj")).read_bytes()
+            head, _, body = raw.partition(b"\n")
+            meta = json.loads(head)
+            path = meta["path"]
+            offset = int(meta.get("offset") or 0)
+        except (OSError, ValueError, KeyError, TypeError):
             mark_parsed(db, machine_id, sha)
             continue
-        try:
-            first_line, _, rest = body.partition(b"\n")
-            meta = json.loads(first_line)
-            if "path" not in meta:
-                mark_parsed(db, machine_id, sha)
-                continue
-        except (json.JSONDecodeError, Exception):
-            mark_parsed(db, machine_id, sha)
-            continue
-        text = rest.decode("utf-8", errors="replace")
-        kind = route(meta["path"])
+        text = body.decode("utf-8", "replace")
+        kind = route(path)
         if kind == "earnings":
             store_earnings(db, machine_id, sha, text)
         elif kind == "totals":
             store_totals(db, text)
         elif kind == "power":
-            offset = int(meta.get("offset") or 0)
-            store_power(db, machine_id, sha, meta["path"], offset, text)
+            store_power(db, machine_id, sha, path, offset, text)
         mark_parsed(db, machine_id, sha)
-        count += 1
-    return count
+        n += 1
+    return n
