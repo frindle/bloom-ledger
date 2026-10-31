@@ -29,6 +29,7 @@ import bloom_alerts as AL  # noqa: E402
 import bloom_ingest as I  # noqa: E402
 import bloom_ingest_ledger as IL  # noqa: E402
 import bloom_ledger as L  # noqa: E402
+import bloom_settings as BS  # noqa: E402
 import bloom_summary as SM  # noqa: E402
 
 ROOT = Path(os.environ.get("BLOOM_DATA", "/data"))
@@ -40,6 +41,7 @@ WEBHOOK = os.environ.get("ALERT_WEBHOOK_URL", "")
 DASHBOARD = Path(__file__).resolve().parent / "dashboard.html"
 MACHINES_PATH = os.environ.get("BLOOM_MACHINES", str(ROOT / "machines.json"))
 SETTINGS = Path(__file__).resolve().parent / "settings.html"
+ADMIN_PATH = os.environ.get("BLOOM_ADMIN", "/run/secrets/bloom_admin")
 DB_LOCK = threading.Lock()
 
 
@@ -85,6 +87,16 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
             self.wfile.write(data)
+        elif self.path == "/v1/settings":
+            with DB_LOCK:
+                now = time.time()
+                ids = sorted(set(I.load_tokens(TOKENS_PATH, MACHINES_PATH).values()))
+                data = {
+                    "admin_enabled": BS.admin_check({}, ADMIN_PATH)[0] != 403,
+                    "machines": BS.machine_rows(self.server.db, ROOT, now, ids),
+                    "health": BS.ledger_health(self.server.db, ROOT, now, self.server_version),
+                }
+                self.reply(200, data)
         else:
             self.reply(404, {"error": "not found"})
 
