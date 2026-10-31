@@ -58,37 +58,51 @@ def mark_parsed(db, machine_id, sha):
 
 
 def parse_earnings_line(line):
+    """One archived earnings JSONL line -> dict(ledger_id, ts, micro_usd, kind, model, job_id, completion_tokens), or None."""
     try:
-        obj = json.loads(line)
-        if not isinstance(obj, dict):
-            return None
-    except (json.JSONDecodeError, TypeError):
+        e = json.loads(line)
+        ts = int(dt.datetime.fromisoformat(str(e.get("created_at")).replace("Z", "+00:00")).timestamp())
+    except (ValueError, TypeError, AttributeError):
         return None
-    # ledger_id: _id first, else id (must be non-empty str)
-    lid = obj.get("_id")
-    if not isinstance(lid, str) or not lid:
-        lid = obj.get("id")
-        if not isinstance(lid, str) or not lid:
-            return None
-    # created_at → ts (integer epoch seconds)
-    raw_ts = obj.get("created_at")
-    if raw_ts is None or not isinstance(raw_ts, str):
+    lid = e.get("_id") or e.get("id")
+    amt = e.get("amount_micro_usd")
+    if not isinstance(lid, str) or not lid or isinstance(amt, bool) or not isinstance(amt, int) or amt < 0:
         return None
-    try:
-        ts = int(dt.datetime.fromisoformat(raw_ts.replace("Z", "+00:00")).timestamp())
-    except (ValueError, TypeError):
-        return None
-    # micro_usd: amount_micro_usd, must be non-negative int (not bool, not float)
-    mu = obj.get("amount_micro_usd")
-    if isinstance(mu, bool) or not isinstance(mu, int) or mu < 0:
-        return None
-    # model and job_id passed through (None when absent)
-    model = obj.get("model")
-    job_id = obj.get("job_id")
-    # kind: 'base' when model == 'base_reward' or job_id starts with 'floor:', else 'job'
-    kind = "base" if (model == "base_reward" or (isinstance(job_id, str) and job_id.startswith("floor:"))) else "job"
-    # completion_tokens: if int (not bool), use it, else 0
-    ct = obj.get("completion_tokens")
-    if isinstance(ct, bool) or not isinstance(ct, int):
-        ct = 0
-    return {"ledger_id": lid, "ts": ts, "micro_usd": mu, "kind": kind, "model": model, "job_id": job_id, "completion_tokens": ct}
+    jid = e.get("job_id")
+    kind = "base" if e.get("model") == "base_reward" or str(jid).startswith("floor:") else "job"
+    ctok = e.get("completion_tokens")
+    return {"ledger_id": lid, "ts": ts, "micro_usd": amt, "kind": kind, "model": e.get("model"), "job_id": jid,
+            "completion_tokens": ctok if isinstance(ctok, int) and not isinstance(ctok, bool) else 0}
+
+
+INGEST_FROM_TS = int(dt.datetime(2026, 10, 13, tzinfo=dt.timezone.utc).timestamp())  # default ingest start, 2026-10-13 UTC
+
+
+def store_earnings(db, machine_id, sha, payload, since_ts=INGEST_FROM_TS):
+    stored = 0
+    bad = 0
+    for line in payload.split("\n"):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        parsed = parse_earnings_line(stripped)
+        if parsed is None:
+            bad += 1
+            continue
+        ts = parsed["ts"]
+        if ts < since_ts:
+            continue
+        cur = db.execute(
+            "INSERT OR IGNORE INTO earnings "
+            "(ledger_id, ts, micro_usd, kind, model, job_id, completion_tokens, source_machine) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (parsed["ledger_id"], ts, parsed["micro_usd"], parsed["kind"], parsed["model"],
+             parsed["job_id"], parsed["completion_tokens"], machine_id))
+        if cur.rowcount == 1:
+            stored += 1
+    if bad > 0:
+        db.execute(
+            "INSERT OR REPLACE INTO acct_parse_errors (machine_id, sha256, n) VALUES (?, ?, ?)",
+            (machine_id, sha, bad))
+    db.commit()
+    return (stored, bad)
