@@ -9,6 +9,7 @@ import bloom_accounting_periods as PR
 import bloom_accounting_report as RP
 
 GRID_NOTE = "grid rates, solar credit not applied"
+RATE_KEYS = ("rate_schedule", "rate_adder_usd_per_kwh", "universal_charge_usd_per_kwh", "county_fee_pct")
 
 
 def build(db, today, period, machine=None):
@@ -19,8 +20,7 @@ def build(db, today, period, machine=None):
     t = RP.totals(rows)
     entries = [e for e in AE.all_entries(db, start, end) if machine is None or e["machine_id"] in (None, machine)]
     not_set = []
-    if t["cost_micro"] is None:
-        not_set.append("rate_schedule")
+    not_set.extend(k for k in RATE_KEYS if settings.get(k) is None)
     leased = machine is None or machine == settings.get("m5_machine_id")
     lease = FX.lease_cents(settings, start, end) if leased else 0
     owned = machine is None or machine != settings.get("m5_machine_id")
@@ -28,9 +28,9 @@ def build(db, today, period, machine=None):
     bp = t["business_bp"]
     depr_biz = depr if not depr else (None if bp is None else DP.business_cents(depr, bp))
     parts = (t["cost_micro"], lease, depr_biz)
-    net = None if None in parts else t["earned_micro"] - t["cost_micro"] - (lease + depr_biz) * 10000
+    net = None if t["cost_micro"] is None or None in parts else t["earned_micro"] - t["cost_micro"] - (lease + depr_biz) * 10000
     net_missing = [k for k, v in (("lease", lease), ("depreciation", depr_biz)) if v is None]
-    return {"period": period, "start": start, "end": end, "machine": machine, "days": rows, "totals": t, "entries": entries,
+    return {"lease_cents": lease, "depreciation_cents": depr, "depreciation_business_cents": depr_biz, "net_micro": net,
+            "net_missing": net_missing, "period": period, "start": start, "end": end, "machine": machine, "days": rows, "totals": t, "entries": entries,
             "power": {"basis": "metered" if t["minutes"] else "none", "estimated": False, "note": GRID_NOTE},
-            "not_set": not_set, "lease_cents": lease, "depreciation_cents": depr,
-            "depreciation_business_cents": depr_biz, "net_micro": net, "net_missing": net_missing}
+            "not_set": not_set}
