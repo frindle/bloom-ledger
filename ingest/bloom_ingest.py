@@ -42,8 +42,9 @@ def utc_day(ts):
     return dt.datetime.fromtimestamp(ts, dt.timezone.utc).strftime("%Y-%m-%d")
 
 
-def load_tokens(path):
-    """{sha256 hex of token: machine_id} from the tokens file; bad lines are skipped. {} when missing."""
+def load_tokens(path, machines_path=None):
+    """{sha256 hex of token: machine_id} from the tokens file; bad lines are skipped. {} when missing.
+    machines_path (optional): the dynamic machines.json, see bloom_settings.py (not merged yet)."""
     out = {}
     try:
         text = Path(path).read_text()
