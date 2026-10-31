@@ -20,6 +20,13 @@ def _date_ok(v):
         return False
 
 
+
+def _cents_ok(v):
+    if not isinstance(v, int) or isinstance(v, bool):
+        return False
+    return v > 0
+
+
 def validate_machine(m):
     if not isinstance(m, dict):
         return {"form": "not an object"}
@@ -58,6 +65,20 @@ def validate_machine(m):
     bm = m.get("business_mode")
     if bm not in BUSINESS_MODES:
         errors["business_mode"] = "business_mode must be one of the allowed modes"
+
+
+    # owned: purchase_cents must pass _cents_ok; depreciation_method must be in DEP_METHODS
+    # leased: lease_monthly_cents must pass _cents_ok; lease_start must pass _date_ok
+    if own == "owned":
+        if not _cents_ok(m.get("purchase_cents")):
+            errors["purchase_cents"] = "purchase_cents must be a positive integer"
+        if m.get("depreciation_method") not in DEP_METHODS:
+            errors["depreciation_method"] = "depreciation_method must be one of the allowed methods"
+    elif own == "leased":
+        if not _cents_ok(m.get("lease_monthly_cents")):
+            errors["lease_monthly_cents"] = "lease_monthly_cents must be a positive integer"
+        if not _date_ok(m.get("lease_start")):
+            errors["lease_start"] = "lease_start must be a valid date like YYYY-MM-DD"
 
     # watts: optional (None ok); when present must be int/float, not bool, 0 < watts <= 5000
     w = m.get("watts")
