@@ -1,5 +1,6 @@
 """Accounting index for the bloom-ledger ingest (stdlib only): derived, rebuildable sqlite tables parsed from the
 write-once log objects. Money is integer micro-USD or cents. Bookkeeping estimates, not tax advice."""
+from pathlib import Path
 import csv
 import datetime as dt
 import json
@@ -160,41 +161,65 @@ def parse_power_line(line, columns):
 
 
 def store_power(db, machine_id, sha, path, offset, payload, since_ts=INGEST_FROM_TS):
-    """Parse a power CSV payload into the power_minutes table; returns (stored, bad)."""
-    db.execute(
-        "CREATE TABLE IF NOT EXISTS acct_headers ("
-        "machine_id TEXT NOT NULL, path TEXT NOT NULL, header TEXT NOT NULL, "
-        "PRIMARY KEY (machine_id, path))"
-    )
+    """Parse a power CSV increment into power_minutes; returns (stored, bad). Header comes from the offset-0 object."""
+    db.execute("CREATE TABLE IF NOT EXISTS acct_headers (machine_id TEXT NOT NULL, path TEXT NOT NULL, header TEXT NOT NULL,"
+               " PRIMARY KEY (machine_id, path))")
+    lines = [ln for ln in payload.splitlines() if ln.strip()]
+    if offset == 0 and lines and power_columns(lines[0]):
+        db.execute("INSERT OR REPLACE INTO acct_headers (machine_id, path, header) VALUES (?, ?, ?)",
+                   (machine_id, path, lines[0]))
+        lines = lines[1:]
+    hdr = db.execute("SELECT header FROM acct_headers WHERE machine_id = ? AND path = ?", (machine_id, path)).fetchone()
+    cols = power_columns(hdr[0]) if hdr else LEGACY_POWER_COLUMNS
     stored = bad = 0
-    non_blank = [l for l in payload.splitlines() if l.strip()]
-    columns = LEGACY_POWER_COLUMNS
-    if offset == 0 and non_blank:
-        hdr = power_columns(non_blank[0])
-        if hdr is not None:
-            columns = hdr
-            db.execute(
-                "INSERT OR REPLACE INTO acct_headers (machine_id, path, header) VALUES (?, ?, ?)",
-                (machine_id, path, non_blank[0]),
-            )
-            non_blank = non_blank[1:]
-    for line in non_blank:
-        row = parse_power_line(line, columns)
-        if row is None:
+    for ln in lines:
+        r = parse_power_line(ln, cols)
+        if r is None:
             bad += 1
-        elif row["ts"] >= since_ts:
-            cur = db.execute(
-                "INSERT OR IGNORE INTO power_minutes "
-                "(machine_id, ts, wh, interval_s, power_ok, dbk_state, other_work, tokens_delta) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (machine_id, row["ts"], row["wh"], row["interval_s"], row["power_ok"],
-                 row["dbk_state"], row["other_work"], row["tokens_delta"]),
-            )
+        elif r["ts"] >= since_ts:
+            cur = db.execute("INSERT OR IGNORE INTO power_minutes (machine_id, ts, wh, interval_s, power_ok, dbk_state,"
+                             " other_work, tokens_delta) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                             (machine_id, r["ts"], r["wh"], r["interval_s"], r["power_ok"], r["dbk_state"],
+                              r["other_work"], r["tokens_delta"]))
             stored += cur.rowcount
     if bad:
-        db.execute(
-            "INSERT OR REPLACE INTO acct_parse_errors (machine_id, sha256, n) VALUES (?, ?, ?)",
-            (machine_id, sha, bad),
-        )
+        db.execute("INSERT OR REPLACE INTO acct_parse_errors (machine_id, sha256, n) VALUES (?, ?, ?)", (machine_id, sha, bad))
     db.commit()
     return stored, bad
+
+
+def index_new(db, root):
+    """Index new log objects from disk into accounting tables. Returns count of newly indexed."""
+    rows = db.execute(
+        "SELECT machine_id, sha256 FROM objects WHERE kind = ? ORDER BY received_at, rowid", ("log",))
+    count = 0
+    for (machine_id, sha) in rows:
+        if is_parsed(db, machine_id, sha):
+            continue
+        obj_path = Path(root) / "objects" / machine_id / "log" / f"{sha}.obj"
+        try:
+            body = obj_path.read_bytes()
+        except (OSError, IOError):
+            mark_parsed(db, machine_id, sha)
+            continue
+        try:
+            first_line, _, rest = body.partition(b"\n")
+            meta = json.loads(first_line)
+            if "path" not in meta:
+                mark_parsed(db, machine_id, sha)
+                continue
+        except (json.JSONDecodeError, Exception):
+            mark_parsed(db, machine_id, sha)
+            continue
+        text = rest.decode("utf-8", errors="replace")
+        kind = route(meta["path"])
+        if kind == "earnings":
+            store_earnings(db, machine_id, sha, text)
+        elif kind == "totals":
+            store_totals(db, text)
+        elif kind == "power":
+            offset = int(meta.get("offset") or 0)
+            store_power(db, machine_id, sha, meta["path"], offset, text)
+        mark_parsed(db, machine_id, sha)
+        count += 1
+    return count
