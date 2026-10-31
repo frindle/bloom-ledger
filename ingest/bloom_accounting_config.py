@@ -13,6 +13,8 @@ DEFAULTS = {
     "m5_business_mode": "leased_100",
     "m4_business_mode": "auto_paid_hours",
     "machine_ids": None,
+    "m4_machine_id": None,
+    "m5_machine_id": None,
     "rate_schedule": None,
     "rate_adder_usd_per_kwh": None,
     "universal_charge_usd_per_kwh": None,
