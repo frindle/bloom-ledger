@@ -6,7 +6,7 @@ from server_fixture import web  # noqa: F401
 def test_root_is_the_ledger_and_log_is_the_machine_log(web):
     assert callable(SV.Handler.do_GET)
     status, ctype, body = web("GET", "/")
-    assert status == 200 and ctype.startswith("text/html") and b"<title>Ledger</title>" in body and b'id="day-rows"' not in body
+    assert status == 200 and ctype.startswith("text/html") and b"<title>Ledger</title>" in body and b'id="machine-select"' not in body
     status, ctype, body = web("GET", "/log")
     assert status == 200 and ctype.startswith("text/html") and b'id="day-rows"' in body
     assert web("GET", "/index.html")[2] == web("GET", "/")[2]
