@@ -9,6 +9,7 @@ a token is never logged."""
 import datetime as dt
 import hashlib
 import hmac
+import json
 import os
 import re
 import sqlite3
@@ -49,11 +50,32 @@ def load_tokens(path, machines_path=None):
     try:
         text = Path(path).read_text()
     except OSError:
-        return out
-    for line in text.splitlines():
-        parts = line.split()
-        if len(parts) == 2 and not parts[0].startswith("#") and MID_RE.match(parts[0]) and SHA_RE.match(parts[1].lower()):
-            out[parts[1].lower()] = parts[0]
+        pass
+    else:
+        for line in text.splitlines():
+            parts = line.split()
+            if len(parts) == 2 and not parts[0].startswith("#") and MID_RE.match(parts[0]) and SHA_RE.match(parts[1].lower()):
+                out[parts[1].lower()] = parts[0]
+    if machines_path:
+        try:
+            data = json.loads(Path(machines_path).read_text())
+            revoked = set(data.get("revoked", []))
+            out = {sha: mid for sha, mid in out.items() if mid not in revoked}
+            for mid, info in data.get("machines", {}).items():
+                if mid in revoked:
+                    continue
+                if not isinstance(info, dict):
+                    continue
+                h = info.get("hash")
+                if not isinstance(h, str) or not SHA_RE.match(h.lower()):
+                    continue
+                if not MID_RE.match(mid):
+                    continue
+                hlow = h.lower()
+                if mid not in set(out.values()) and hlow not in out:
+                    out[hlow] = mid
+        except (OSError, ValueError, TypeError, KeyError):
+            pass
     return out
 
 
