@@ -51,7 +51,7 @@ def test_window_capped_at_90(tmp_path):
     assert len(days) == 90 and days[-1]["day"] == TODAY
 
 
-def test_root_serves_dashboard(tmp_path, monkeypatch):
+def test_log_serves_dashboard(tmp_path, monkeypatch):
     import server
     db, _ = seed(tmp_path)
     monkeypatch.setattr(server, "ROOT", tmp_path)
@@ -59,7 +59,7 @@ def test_root_serves_dashboard(tmp_path, monkeypatch):
     srv.db = db
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     try:
-        r = urllib.request.urlopen(f"http://127.0.0.1:{srv.server_port}/")
+        r = urllib.request.urlopen(f"http://127.0.0.1:{srv.server_port}/log")
         assert r.status == 200 and r.headers["Content-Type"].startswith("text/html")
         assert b"/v1/summary" in r.read()
         r = urllib.request.urlopen(f"http://127.0.0.1:{srv.server_port}/v1/summary")

@@ -41,6 +41,6 @@ def test_month_summary_with_rates():
 
 def test_unset_rates_and_machine_filter():
     s = SM.build(make(rates=False), "2026-10-31", "ytd", machine="m4")
-    assert s["not_set"] == ["rate_schedule"] and s["totals"]["cost_micro"] is None and s["totals"]["earned_micro"] == 500
+    assert s["not_set"] == ["rate_schedule", "rate_adder_usd_per_kwh", "universal_charge_usd_per_kwh", "county_fee_pct"] and s["totals"]["cost_micro"] is None and s["totals"]["earned_micro"] == 500
     assert [e["amount_cents"] for e in s["entries"]] == [5]
     assert SM.build(make(), "2026-10-31", "day", machine="m5")["power"]["basis"] == "none"
