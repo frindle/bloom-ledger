@@ -3,6 +3,7 @@
 Days are local dates (settings local_timezone); money is integer micro-USD. Bookkeeping estimates, not tax advice."""
 import datetime as dt
 from zoneinfo import ZoneInfo
+import bloom_accounting_rates as RT
 
 
 def ts_bounds(tz, start, end):
@@ -13,8 +14,8 @@ def ts_bounds(tz, start, end):
     return int(s.timestamp()), int(e.timestamp())
 
 
-def day_rows(db, tz, start, end, machine=None):
-    """Per local day {"date", "earned_micro", "tokens", "wh", "minutes", "paid_minutes"} for days that have earnings, newest first.
+def day_rows(db, tz, start, end, machine=None, settings=None):
+    """Per local day {"date", "earned_micro", "tokens"} for days that have earnings, newest first.
 
     `machine` (optional) limits to earnings whose source_machine matches."""
     lo, hi = ts_bounds(tz, start, end)
@@ -26,29 +27,29 @@ def day_rows(db, tz, start, end, machine=None):
     days = {}
     zone = ZoneInfo(tz)
 
-    def row_for(date):
-        return days.setdefault(date, {"date": date, "earned_micro": 0, "tokens": 0, "wh": 0.0, "minutes": 0, "paid_minutes": 0})
-
+    def row_for(d):
+        return days.setdefault(d, {"date": d, "earned_micro": 0, "tokens": 0, "wh": 0.0, "minutes": 0, "paid_minutes": 0, "cost_micro": 0 if settings else None})
     for ts, micro, tokens in db.execute(sql, args):
         d = dt.datetime.fromtimestamp(ts, zone).date().isoformat()
         row = row_for(d)
         row["earned_micro"] += micro
         row["tokens"] += tokens or 0
-
     psql = "SELECT ts, wh, power_ok, tokens_delta, other_work FROM power_minutes WHERE ts >= ? AND ts < ?"
     pargs = [lo, hi]
     if machine:
         psql += " AND machine_id = ?"
         pargs.append(machine)
-    for ts, wh, power_ok, tokens_delta, other_work in db.execute(psql, pargs):
-        d = dt.datetime.fromtimestamp(ts, zone).date().isoformat()
-        row = row_for(d)
-        if power_ok:
-            row["wh"] += wh if wh is not None else 0.0
+    for ts, wh, ok, tok, other in db.execute(psql, pargs):
+        row = row_for(dt.datetime.fromtimestamp(ts, zone).date().isoformat())
+        if ok:
+            row["wh"] += wh or 0.0
             row["minutes"] += 1
-            td = tokens_delta if tokens_delta is not None else 0
-            ow = other_work if other_work is not None else 0
-            if td > 0 and not ow:
+            if (tok or 0) > 0 and not other:
                 row["paid_minutes"] += 1
-
+            if settings and row["cost_micro"] is not None:
+                c = RT.interval_cost(settings, ts, wh or 0.0)
+                if c is None:
+                    row["cost_micro"] = None
+                else:
+                    row["cost_micro"] += c["total_micro"]
     return [days[d] for d in sorted(days, reverse=True)]
