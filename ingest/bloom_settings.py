@@ -52,7 +52,22 @@ def write_machines(path, data):
 
 
 def add_machine(path, machine_id, now):
-    raise NotImplementedError("not implemented: add_machine")
+    import hashlib
+    import json
+    import secrets
+    import bloom_ingest
+    if not isinstance(machine_id, str) or not bloom_ingest.MID_RE.match(machine_id):
+        raise ValueError(f"invalid machine_id: {machine_id!r}")
+    data = read_machines(path)
+    if machine_id in data["machines"]:
+        raise ValueError(f"duplicate machine_id: {machine_id!r}")
+    token = secrets.token_urlsafe(32)
+    h = hashlib.sha256(token.encode()).hexdigest()
+    data["machines"][machine_id] = {"hash": h, "created": now}
+    if machine_id in data["revoked"]:
+        data["revoked"].remove(machine_id)
+    write_machines(path, data)
+    return token
 
 
 def rotate_machine(path, machine_id, now):
