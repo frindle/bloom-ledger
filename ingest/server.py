@@ -25,15 +25,19 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import bloom_accounting_index as AX  # noqa: E402
+import bloom_accounting_admin as AA  # noqa: E402
+import bloom_accounting_entries as AE  # noqa: E402
+import bloom_lan as LAN  # noqa: E402
+import bloom_accounting_summary as AS  # noqa: E402
+import bloom_accounting_config as ACF  # noqa: E402
+import urllib.parse  # noqa: E402
+from zoneinfo import ZoneInfo  # noqa: E402
 import bloom_alerts as AL  # noqa: E402
 import bloom_ingest as I  # noqa: E402
 import bloom_ingest_ledger as IL  # noqa: E402
 import bloom_ledger as L  # noqa: E402
 import bloom_settings as BS  # noqa: E402
 import bloom_summary as SM  # noqa: E402
-import bloom_accounting_admin as AA  # noqa: E402
-import bloom_accounting_entries as AE  # noqa: E402
-import bloom_lan as LAN  # noqa: E402
 
 ROOT = Path(os.environ.get("BLOOM_DATA", "/data"))
 TOKENS_PATH = os.environ.get("BLOOM_TOKENS", "/run/secrets/bloom_tokens")
@@ -72,6 +76,18 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/v1/accounting/entries":
             with DB_LOCK:
                 self.reply(200, {"entries": AE.current_entries(self.server.db)})
+        elif self.path.split("?", 1)[0] == "/v1/accounting/summary":
+            try:
+                qs = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+                period = qs.get("period", ["month"])[0]
+                machine = qs.get("machine", [None])[0] or None
+                with DB_LOCK:
+                    tz = ACF.effective_settings(self.server.db, "9999-12-31")["values"]["local_timezone"]
+                    today = qs.get("today", [dt.datetime.now(ZoneInfo(tz)).date().isoformat()])[0]
+                    AX.create_schema(self.server.db)
+                    self.reply(200, AS.build(self.server.db, today, period, machine))
+            except ValueError:
+                self.reply(400, {"error": "bad period or date"})
         elif self.path == "/v1/summary":
             with DB_LOCK:
                 self.reply(200, SM.summary(self.server.db, ROOT, time.time()))
@@ -141,7 +157,7 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(code, obj)
         elif self.path.startswith("/v1/accounting/"):
             denied = LAN.write_guard(self.client_address[0], self.headers)
-            if denied is not None:
+            if denied:
                 self.reply(*denied)
                 return
             try:
