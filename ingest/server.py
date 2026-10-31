@@ -38,6 +38,8 @@ LISTEN = os.environ.get("BLOOM_LISTEN", "0.0.0.0")
 OTS_BIN = os.environ.get("BLOOM_OTS_BIN") or shutil.which("ots")
 WEBHOOK = os.environ.get("ALERT_WEBHOOK_URL", "")
 DASHBOARD = Path(__file__).resolve().parent / "dashboard.html"
+MACHINES_PATH = os.environ.get("BLOOM_MACHINES", str(ROOT / "machines.json"))
+SETTINGS = Path(__file__).resolve().parent / "settings.html"
 DB_LOCK = threading.Lock()
 
 
@@ -76,6 +78,13 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/v1/alerts":
             with DB_LOCK:
                 self.reply(200, AL.evaluate_alerts(self.server.db, time.time()))
+        elif self.path == "/settings":
+            data = SETTINGS.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
         else:
             self.reply(404, {"error": "not found"})
 
@@ -95,7 +104,7 @@ class Handler(BaseHTTPRequestHandler):
             self.close_connection = True
             return
         body = self.rfile.read(n)
-        tokens = I.load_tokens(TOKENS_PATH)
+        tokens = I.load_tokens(TOKENS_PATH, MACHINES_PATH)
         with DB_LOCK:
             code, obj = I.handle_post(self.headers, body, tokens, ROOT, self.server.db, time.time())
         self.reply(code, obj)
