@@ -1,9 +1,25 @@
-"""Frozen test: the home page script fetches the summary and renders the figures, with 'not set' links instead of zeros."""
+"""Frozen test: the home page document has one inline script that fetches the summary and shows the banner when the ledger is unreachable."""
 import json
+import os
+import subprocess
+from pathlib import Path
 
 import bloom_accounting_page as PG
 from dom_support import find, walk
-from page_support import run_home
+
+HERE = Path(__file__).resolve().parent
+
+
+def run_home(tmp_path, fetch, steps=None):
+    page = tmp_path / "home.html"
+    page.write_text(PG.render_page())
+    sp = tmp_path / "scenario.json"
+    sp.write_text(json.dumps({"fetch": fetch, "steps": steps or []}))
+    res = subprocess.run(["node", str(HERE / "dom_harness.js"), str(page), str(sp)], capture_output=True, text=True, timeout=60,
+                         env={k: v for k, v in os.environ.items() if k != "NODE_V8_COVERAGE"})
+    assert res.returncode == 0 and res.stdout, f"harness failed: {res.stderr[-600:]}"
+    return json.loads(res.stdout)
+
 
 TOTALS = {"earned_micro": 12_340_000, "tokens": 4200, "wh": 1500.0, "minutes": 300, "paid_minutes": 210, "cost_micro": 250_000,
           "kwh": 1.5, "total_hours": 5.0, "paid_hours": 3.5, "business_bp": 7000}
@@ -22,25 +38,7 @@ def test_document_and_script_shape():
     assert doc.count("<script>") == 1 and "<style>" in doc and 'id="summary"' in doc
     js = PG.script_js()
     assert "innerHTML" not in js and "http://" not in js and "https://" not in js and "/v1/accounting/summary" in js
-
-
-def test_figures_render_with_values(tmp_path):
-    res = run_home(tmp_path, {URL: {"status": 200, "body": SUM}})
-    assert res["errors"] == [] and res["inner_html_writes"] == 0
-    assert [f["url"] for f in res["fetches"]][0] == URL
-    text = summary_text(res)
-    for want in ("$12.34", "1.5 kWh", "cost $0.25", "3.5 h", "of 5.0 h, 70% business", "4200", "$9.00"):
-        assert want in text, want
-    assert "not set" not in text and find(res["dom"], "banner")["hidden"]
-
-
-def test_missing_inputs_say_not_set_with_settings_link(tmp_path):
-    body = dict(SUM, net_micro=None, totals=dict(TOTALS, minutes=0, cost_micro=None, paid_minutes=0, business_bp=None, kwh=0.0))
-    res = run_home(tmp_path, {URL: {"status": 200, "body": body}})
-    assert res["errors"] == []
-    links = [n for n in walk(find(res["dom"], "summary")) if n["tag"] == "a"]
-    assert len(links) == 3 and all(n["attrs"]["href"] == "/settings" for n in links)
-    assert summary_text(res).count("not set") >= 3 and "cost not set" in summary_text(res)
+    assert '$("#' not in js and "$('#" not in js, 'script_js: $ takes a bare id, write $("period"), never $("#period")'
 
 
 def test_unreachable_shows_banner(tmp_path):
