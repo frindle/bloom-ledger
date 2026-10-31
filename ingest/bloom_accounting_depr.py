@@ -22,9 +22,33 @@ MACRS5_BP = (2000, 3200, 1920, 1152, 1152)
 
 
 def section179_cents(basis_cents, in_service, start, end):
+    """Whole basis expensed on the in-service day: basis when in_service lies inside start..end (ISO strings), else 0."""
     return basis_cents if start <= in_service <= end else 0
 
 
 def macrs5_year_amounts(basis_cents):
+    """Six yearly amounts (cents) of 5-year half-year MACRS; the last absorbs rounding so they sum to the basis."""
     first = [basis_cents * bp // 10000 for bp in MACRS5_BP]
     return first + [basis_cents - sum(first)]
+
+
+def _cum_macrs5(amounts, in_service, day):
+    k = day.year - in_service.year
+    if day < in_service or k < 0:
+        return 0
+    if k >= 6:
+        return sum(amounts)
+    year_end = dt.date(day.year, 12, 31)
+    if k == 0:
+        num = (day - in_service).days + 1
+        den = (year_end - in_service).days + 1
+    else:
+        num = day.timetuple().tm_yday
+        den = year_end.timetuple().tm_yday
+    return sum(amounts[:k]) + amounts[k] * num // den
+
+
+def macrs5_cents(basis_cents, in_service, start, end):
+    amounts = macrs5_year_amounts(basis_cents)
+    a, s, e = (dt.date.fromisoformat(x) for x in (in_service, start, end))
+    return _cum_macrs5(amounts, a, e) - _cum_macrs5(amounts, a, s - dt.timedelta(days=1))
