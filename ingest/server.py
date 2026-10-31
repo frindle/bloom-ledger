@@ -27,11 +27,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import bloom_accounting_index as AX  # noqa: E402
 import bloom_accounting_admin as AA  # noqa: E402
 import bloom_accounting_entries as AE  # noqa: E402
-import bloom_lan as LAN  # noqa: E402
 import bloom_accounting_summary as AS  # noqa: E402
 import bloom_accounting_config as ACF  # noqa: E402
 import urllib.parse  # noqa: E402
 from zoneinfo import ZoneInfo  # noqa: E402
+import bloom_lan as LAN  # noqa: E402
 import bloom_alerts as AL  # noqa: E402
 import bloom_ingest as I  # noqa: E402
 import bloom_ingest_ledger as IL  # noqa: E402
@@ -45,6 +45,7 @@ PORT = int(os.environ.get("BLOOM_PORT", "8787"))
 LISTEN = os.environ.get("BLOOM_LISTEN", "0.0.0.0")
 WEBHOOK = os.environ.get("ALERT_WEBHOOK_URL", "")
 DASHBOARD = Path(__file__).resolve().parent / "dashboard.html"
+ACCOUNTING = Path(__file__).resolve().parent / "accounting.html"
 MACHINES_PATH = os.environ.get("BLOOM_MACHINES", str(ROOT / "machines.json"))
 SETTINGS = Path(__file__).resolve().parent / "settings.html"
 ADMIN_PATH = os.environ.get("BLOOM_ADMIN", "/run/secrets/bloom_admin")
@@ -77,22 +78,22 @@ class Handler(BaseHTTPRequestHandler):
             with DB_LOCK:
                 self.reply(200, {"entries": AE.current_entries(self.server.db)})
         elif self.path.split("?", 1)[0] == "/v1/accounting/summary":
-            try:
-                qs = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
-                period = qs.get("period", ["month"])[0]
-                machine = qs.get("machine", [None])[0] or None
-                with DB_LOCK:
-                    tz = ACF.effective_settings(self.server.db, "9999-12-31")["values"]["local_timezone"]
-                    today = qs.get("today", [dt.datetime.now(ZoneInfo(tz)).date().isoformat()])[0]
-                    AX.create_schema(self.server.db)
+            q = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+            period = (q.get("period") or ["month"])[0]
+            machine = (q.get("machine") or [None])[0] or None
+            with DB_LOCK:
+                tz = ACF.effective_settings(self.server.db, "9999-12-31")["values"]["local_timezone"]
+                today = (q.get("today") or [dt.datetime.now(ZoneInfo(tz)).date().isoformat()])[0]
+                AX.create_schema(self.server.db)
+                try:
                     self.reply(200, AS.build(self.server.db, today, period, machine))
-            except ValueError:
-                self.reply(400, {"error": "bad period or date"})
+                except ValueError:
+                    self.reply(400, {"error": "bad period or date"})
         elif self.path == "/v1/summary":
             with DB_LOCK:
                 self.reply(200, SM.summary(self.server.db, ROOT, time.time()))
-        elif self.path in ("/", "/index.html"):
-            data = DASHBOARD.read_bytes()
+        elif self.path in ("/", "/index.html", "/log"):
+            data = DASHBOARD.read_bytes() if self.path == "/log" else ACCOUNTING.read_bytes()
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(data)))
