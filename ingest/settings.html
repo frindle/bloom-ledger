@@ -81,15 +81,6 @@
   const adminNote = document.getElementById("admin-note");
   const addForm = document.getElementById("add-form");
 
-  function formatTime(epochSeconds) {
-    if (epochSeconds == null) return "never";
-    const now = Date.now();
-    const diff = Math.abs(now - epochSeconds * 1000);
-    if (diff < 90000) return Math.round(diff / 1000) + " seconds ago";
-    if (diff < 540000) return Math.round(diff / 60000) + " minutes ago";
-    if (diff < 172800000) return Math.round(diff / 3600000) + " hours ago";
-    return Math.round(diff / 86400000) + " days ago";
-  }
 
   function formatBytes(bytes) {
     if (bytes < 1024) return bytes + " B";
@@ -158,7 +149,7 @@
   function formatRelativeTime(healthTime, lastSeen) {
     const diff = (healthTime - lastSeen) * 1000;
     if (diff < 90000) return Math.round(diff / 1000) + " seconds ago";
-    if (diff < 540000) return Math.round(diff / 60000) + " minutes ago";
+    if (diff < 5400000) return Math.round(diff / 60000) + " minutes ago";
     if (diff < 172800000) return Math.round(diff / 3600000) + " hours ago";
     return Math.round(diff / 86400000) + " days ago";
   }
@@ -186,6 +177,7 @@
   async function fetchSettings() {
     try {
       const resp = await fetch("/v1/settings", { cache: "no-store" });
+      if (!resp.ok) throw new Error("HTTP error");
       const data = await resp.json();
       const health = data.health || {};
       renderHealth(health);
