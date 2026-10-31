@@ -16,10 +16,19 @@ def m4_business_bp(rows):
 
 
 def personal_minutes(windows, timestamps):
-    count = 0
-    for t in timestamps:
-        for s, e in windows:
-            if s <= t < e:
-                count += 1
-                break
-    return count
+    """Count timestamps (epoch seconds) inside any personal window; windows are half-open (start, end) pairs."""
+    return sum(1 for t in timestamps if any(s <= t < e for s, e in windows))
+
+
+def m5_business_bp(total_minutes, personal_minutes):
+    if total_minutes <= 0:
+        return 0
+    personal = max(0, min(personal_minutes, total_minutes))
+    return (total_minutes - personal) * 10000 // total_minutes
+
+
+def personal_token_share(total_tokens, personal_minutes, total_minutes):
+    if total_minutes <= 0:
+        return 0
+    personal = max(0, min(personal_minutes, total_minutes))
+    return total_tokens * personal // total_minutes
