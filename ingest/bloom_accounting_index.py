@@ -79,30 +79,65 @@ INGEST_FROM_TS = int(dt.datetime(2026, 10, 13, tzinfo=dt.timezone.utc).timestamp
 
 
 def store_earnings(db, machine_id, sha, payload, since_ts=INGEST_FROM_TS):
-    stored = 0
-    bad = 0
-    for line in payload.split("\n"):
-        stripped = line.strip()
-        if not stripped:
+    """Parse an earnings JSONL payload into the earnings table; returns (stored, bad)."""
+    stored = bad = 0
+    for line in payload.splitlines():
+        if not line.strip():
             continue
-        parsed = parse_earnings_line(stripped)
-        if parsed is None:
+        row = parse_earnings_line(line)
+        if row is None:
             bad += 1
-            continue
-        ts = parsed["ts"]
-        if ts < since_ts:
-            continue
-        cur = db.execute(
-            "INSERT OR IGNORE INTO earnings "
-            "(ledger_id, ts, micro_usd, kind, model, job_id, completion_tokens, source_machine) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (parsed["ledger_id"], ts, parsed["micro_usd"], parsed["kind"], parsed["model"],
-             parsed["job_id"], parsed["completion_tokens"], machine_id))
-        if cur.rowcount == 1:
-            stored += 1
-    if bad > 0:
-        db.execute(
-            "INSERT OR REPLACE INTO acct_parse_errors (machine_id, sha256, n) VALUES (?, ?, ?)",
-            (machine_id, sha, bad))
+        elif row["ts"] >= since_ts:
+            cur = db.execute("INSERT OR IGNORE INTO earnings (ledger_id, ts, micro_usd, kind, model, job_id, completion_tokens,"
+                             " source_machine) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                             (row["ledger_id"], row["ts"], row["micro_usd"], row["kind"], row["model"], row["job_id"],
+                              row["completion_tokens"], machine_id))
+            stored += cur.rowcount
+    if bad:
+        db.execute("INSERT OR REPLACE INTO acct_parse_errors (machine_id, sha256, n) VALUES (?, ?, ?)", (machine_id, sha, bad))
     db.commit()
-    return (stored, bad)
+    return stored, bad
+
+
+def parse_totals_line(line):
+    """Parse one JSON line of account totals snapshot -\u003e dict or None."""
+    try:
+        obj = json.loads(line)
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(obj, dict):
+        return None
+    at = obj.get("at")
+    if not isinstance(at, str) or not at:
+        return None
+    count = obj.get("count")
+    if isinstance(count, bool) or not isinstance(count, int) or count < 0:
+        count = None
+    total = obj.get("total_micro_usd")
+    if isinstance(total, bool) or not isinstance(total, int) or total < 0:
+        total = None
+    avail = obj.get("available_balance_micro_usd")
+    if isinstance(avail, bool) or not isinstance(avail, int) or avail < 0:
+        avail = None
+    wd = obj.get("withdrawable_balance_micro_usd")
+    if isinstance(wd, bool) or not isinstance(wd, int) or wd < 0:
+        wd = None
+    return {"at": at, "count": count, "total_micro_usd": total,
+            "available_micro_usd": avail, "withdrawable_micro_usd": wd}
+
+
+def store_totals(db, payload):
+    """Parse a JSONL payload into account_totals; returns accepted row count."""
+    accepted = 0
+    for line in payload.splitlines():
+        if not line.strip():
+            continue
+        row = parse_totals_line(line)
+        if row is not None:
+            db.execute(
+                "INSERT OR REPLACE INTO account_totals (at, count, total_micro_usd, "                "available_micro_usd, withdrawable_micro_usd) VALUES (?, ?, ?, ?, ?)",
+                (row["at"], row["count"], row["total_micro_usd"],
+                 row["available_micro_usd"], row["withdrawable_micro_usd"]))
+            accepted += 1
+    db.commit()
+    return accepted
