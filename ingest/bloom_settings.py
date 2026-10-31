@@ -188,8 +188,47 @@ def admin_post(path, headers, body, admin_path, machines_path, now):
 
 
 def machine_rows(db, root, now, extra_ids):
-    raise NotImplementedError("not implemented: machine_rows")
+    import bloom_ingest_ledger
+    import bloom_ledger
+    from pathlib import Path
+    rows = []
+    for mid, cnt, last in db.execute(
+        "SELECT machine_id, COUNT(*), MAX(received_at) FROM objects GROUP BY machine_id"
+    ).fetchall():
+        led_dir = bloom_ingest_ledger.ledger_dir(root, mid)
+        days_sealed = len(bloom_ledger.load_manifests(led_dir))
+        since = now - float(last)
+        if since <= 1800:
+            status = "reporting"
+        else:
+            status = "silent"
+        rows.append({
+            "id": mid,
+            "last_seen": int(last),
+            "objects": cnt,
+            "days_sealed": days_sealed,
+            "status": status,
+        })
+    existing = {r["id"] for r in rows}
+    for eid in extra_ids:
+        if eid not in existing:
+            rows.append({
+                "id": eid,
+                "last_seen": None,
+                "objects": 0,
+                "days_sealed": 0,
+                "status": "not-reporting-yet",
+            })
+    rows.sort(key=lambda r: r["id"])
+    return rows
 
 
 def ledger_health(db, root, now, version):
-    raise NotImplementedError("not implemented: ledger_health")
+    from pathlib import Path
+    total = 0
+    for f in Path(root).rglob("*"):
+        if f.is_file():
+            total += f.stat().st_size
+    count = db.execute("SELECT COUNT(*) FROM objects").fetchone()[0]
+    return {"version": version, "time": int(now), "data_bytes": total, "objects": count}
+
