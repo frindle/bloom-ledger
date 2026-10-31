@@ -1,0 +1,39 @@
+# bloom-ledger on Unraid (Compose Manager). Build context is this folder.
+# Data: /mnt/user/data/bloom-ledger (objects, ledger manifests + .ots proofs, index.sqlite) -- keep it on the array
+# and inside the Unraid backup. Secrets are files under /mnt/user/appdata/bloom-ledger/secrets (chmod 600, owner
+# 99:100); they are NOT in this repo. README.md has the deploy steps.
+services:
+  bloom-ledger:
+    build: .
+    image: bloom-ledger:latest
+    container_name: bloom-ledger
+    restart: unless-stopped
+    ports:
+      - "8787:8787"
+    environment:
+      ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}
+    volumes:
+      - /mnt/user/data/bloom-ledger:/data
+    secrets:
+      - bloom_tokens
+
+  # Optional: run the Darkbloom earnings archiver here instead of on the Mac. Enable with
+  #   docker compose --profile earnings up -d
+  # and only after the Mac LaunchAgent that runs bloom-earnings-archive is unloaded (one poller per account).
+  bloom-earnings:
+    profiles: ["earnings"]
+    build: .
+    image: bloom-ledger:latest
+    container_name: bloom-earnings
+    restart: unless-stopped
+    command: ["/app/earnings-loop.sh"]
+    volumes:
+      - /mnt/user/data/bloom-ledger/earnings:/state
+    secrets:
+      - darkbloom_token
+
+secrets:
+  bloom_tokens:
+    file: /mnt/user/appdata/bloom-ledger/secrets/bloom_tokens
+  darkbloom_token:
+    file: /mnt/user/appdata/bloom-ledger/secrets/darkbloom_token

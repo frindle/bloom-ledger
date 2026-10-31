@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bloom ledger</title>
+<style>
+  :root {
+    --paper: #e9efec; --card: #f6f9f7; --ink: #12211d; --muted: #4d625b; --rule: #a9bbb4;
+    --sealed: #0e6b5b; --waiting: #b7791f; --missing: #9b2c2c; --open: #12211d;
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Charter, Georgia, serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 16px/1.5 var(--serif); }
+  main { max-width: 64rem; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; }
+  h1 { font-size: 2.1rem; line-height: 1.15; margin: 0 0 .35rem; font-weight: 600; letter-spacing: -.01em; }
+  h2 { font-size: 1.25rem; margin: 0; font-weight: 600; }
+  p { margin: 0; }
+  .status { font-size: 1.15rem; max-width: 40rem; }
+  .meta { color: var(--muted); font-size: .9rem; margin-top: .4rem; }
+  .banner { margin: 1.25rem 0 0; padding: .7rem 1rem; border-left: 4px solid var(--missing); background: #f3dede; max-width: 40rem; }
+  .banner[hidden] { display: none; }
+  section { margin-top: 2.5rem; }
+  .alerts ul { list-style: none; margin: .75rem 0 0; padding: 0; display: grid; gap: .5rem; max-width: 44rem; }
+  .alerts li { padding: .6rem .9rem; background: var(--card); border-left: 4px solid var(--waiting); }
+  .machine { margin-top: 2.25rem; }
+  .machine-head { display: flex; flex-wrap: wrap; gap: .25rem 1.25rem; align-items: baseline; }
+  .machine-head .meta { margin: 0; }
+  .chain { position: relative; display: flex; gap: 3px; margin-top: 1rem; overflow-x: auto; padding: 6px 2px 10px; }
+  .chain::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 2px; background: var(--rule); transform: translateY(-5px); }
+  .day { position: relative; flex: 0 0 auto; width: 13px; height: 34px; padding: 0; border: 2px solid var(--sealed); background: var(--sealed); cursor: pointer; }
+  .day[data-state="waiting"] { border-color: var(--waiting); background: linear-gradient(to top, var(--waiting) 50%, var(--card) 50%); }
+  .day[data-state="open"] { border-color: var(--open); background: var(--card); border-style: dashed; }
+  .day[data-state="missing"] { border-color: var(--missing); background: repeating-linear-gradient(135deg, var(--card) 0 3px, var(--missing) 3px 5px); }
+  .day[data-state="empty"] { border-color: var(--rule); background: transparent; cursor: default; }
+  .day[aria-pressed="true"] { outline: 3px solid var(--ink); outline-offset: 2px; }
+  .day:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
+  .legend { display: flex; flex-wrap: wrap; gap: .25rem 1.25rem; margin-top: .6rem; font-size: .85rem; color: var(--muted); }
+  .legend span::before { content: ""; display: inline-block; width: 10px; height: 14px; margin-right: .4rem; vertical-align: -2px; border: 2px solid; }
+  .legend .l-sealed::before { border-color: var(--sealed); background: var(--sealed); }
+  .legend .l-waiting::before { border-color: var(--waiting); background: linear-gradient(to top, var(--waiting) 50%, var(--card) 50%); }
+  .legend .l-open::before { border-color: var(--open); border-style: dashed; background: var(--card); }
+  .legend .l-missing::before { border-color: var(--missing); background: repeating-linear-gradient(135deg, var(--card) 0 3px, var(--missing) 3px 5px); }
+  .detail { margin-top: .9rem; padding: .8rem 1rem; background: var(--card); max-width: 44rem; min-height: 4.2rem; }
+  .detail dl { display: grid; grid-template-columns: max-content 1fr; gap: .15rem 1rem; margin: 0; font-size: .95rem; }
+  .detail dt { color: var(--muted); }
+  .detail dd { margin: 0; overflow-wrap: anywhere; }
+  .hash { font-family: var(--mono); font-size: .85rem; }
+  .kinds { margin-top: .8rem; font-size: .9rem; color: var(--muted); }
+  @media (prefers-reduced-motion: no-preference) { .day { transition: outline-offset .12s; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Bloom ledger</h1>
+  <p class="status" id="status" aria-live="polite">Loading the ledger…</p>
+  <p class="meta" id="updated"></p>
+  <div class="banner" id="banner" role="alert" hidden></div>
+
+  <section class="alerts" aria-labelledby="alerts-h">
+    <h2 id="alerts-h">Open alerts</h2>
+    <ul id="alerts"></ul>
+  </section>
+
+  <div id="machines"></div>
+</main>
+<script>
+(() => {
+  "use strict";
+  const REFRESH_MS = 60000;
+  const STATE_LABEL = { sealed: "Sealed and timestamped on Bitcoin", waiting: "Sealed, waiting for the Bitcoin timestamp",
+                        open: "Day still open", missing: "No manifest for this day", empty: "No records" };
+  let lastOk = 0, failures = 0, summary = null, alerts = [], selected = {};
+
+  const el = (tag, props, ...kids) => {
+    const n = document.createElement(tag);
+    for (const [k, v] of Object.entries(props || {})) { if (k === "text") n.textContent = v; else n.setAttribute(k, v); }
+    for (const kid of kids) n.append(kid);
+    return n;
+  };
+  const ago = s => s < 90 ? `${Math.max(0, Math.round(s))} seconds` : s < 5400 ? `${Math.round(s / 60)} minutes`
+                  : s < 172800 ? `${Math.round(s / 3600)} hours` : `${Math.round(s / 86400)} days`;
+  const bytes = n => n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1048576).toFixed(1)} MB`;
+  const dayState = d => d.state === "sealed" ? (d.ots === "bitcoin" ? "sealed" : "waiting") : (d.files ? d.state : "empty");
+
+  function alertText(a) {
+    const who = a.machine_id;
+    if (a.alert === "machine-silent") return `${who} has sent nothing for ${ago(a.age_s)}.`;
+    if (a.alert === "ring-snapshot-stale") return a.age_s == null ? `${who} has never sent a ring snapshot.`
+      : `${who}'s last ring snapshot is ${ago(a.age_s)} old. Run the archive before the ring rolls off.`;
+    if (a.alert === "ots-not-upgraded") return `${who}'s ${a.manifest} has waited ${ago(a.age_s)} for its Bitcoin timestamp.`;
+    return `${who}: ${a.alert}`;
+  }
+
+  function renderDetail(box, m, d) {
+    box.replaceChildren();
+    if (!d) { box.append(el("p", { class: "meta", text: "Select a day to see its manifest." })); return; }
+    const rows = [["Day", d.day], ["Status", STATE_LABEL[dayState(d)]], ["Records", `${d.files} (${bytes(d.bytes)})`]];
+    const dl = el("dl");
+    for (const [k, v] of rows) dl.append(el("dt", { text: k }), el("dd", { text: v }));
+    if (d.chain_hash) dl.append(el("dt", { text: "Chain hash" }), el("dd", { class: "hash", text: d.chain_hash }));
+    box.append(dl);
+  }
+
+  function renderMachine(m) {
+    const detail = el("div", { class: "detail" });
+    const strip = el("div", { class: "chain", role: "group", "aria-label": `${m.id} days, oldest first` });
+    for (const d of m.days) {
+      const st = dayState(d);
+      const b = el("button", { type: "button", class: "day", "data-state": st, "aria-pressed": "false",
+                               title: `${d.day}: ${STATE_LABEL[st]}`, "aria-label": `${d.day}: ${STATE_LABEL[st]}` });
+      if (st === "empty") b.disabled = true;
+      b.addEventListener("click", () => {
+        selected[m.id] = d.day;
+        strip.querySelectorAll(".day").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+        renderDetail(detail, m, d);
+      });
+      strip.append(b);
+    }
+    const keep = m.days.find(d => d.day === selected[m.id]);
+    const buttons = strip.querySelectorAll(".day");
+    if (keep) { buttons[m.days.indexOf(keep)].setAttribute("aria-pressed", "true"); renderDetail(detail, m, keep); }
+    else renderDetail(detail, m, null);
+    const kinds = Object.entries(m.objects).map(([k, n]) => `${n} ${k}`).join(", ");
+    const sealed = m.days.filter(d => d.state === "sealed").length;
+    return el("section", { class: "machine" },
+      el("div", { class: "machine-head" }, el("h2", { text: m.id }),
+        el("p", { class: "meta", text: `Last heard ${ago(summary.generated_at - m.last_seen)} ago · ${sealed} days sealed` })),
+      strip,
+      el("div", { class: "legend" }, el("span", { class: "l-sealed", text: "Sealed on Bitcoin" }),
+        el("span", { class: "l-waiting", text: "Sealed, timestamp pending" }), el("span", { class: "l-open", text: "Open" }),
+        el("span", { class: "l-missing", text: "Missing manifest" })),
+      detail, el("p", { class: "kinds", text: kinds ? `Received: ${kinds}.` : "" }));
+  }
+
+  function render() {
+    const ms = summary.machines;
+    const sealed = ms.reduce((n, m) => n + m.days.filter(d => d.state === "sealed").length, 0);
+    const pending = ms.reduce((n, m) => n + m.days.filter(d => d.state === "sealed" && d.ots !== "bitcoin").length, 0);
+    const missing = ms.reduce((n, m) => n + m.days.filter(d => d.state === "missing").length, 0);
+    document.getElementById("status").textContent = !ms.length ? "No machine has sent records yet."
+      : `${ms.length} ${ms.length === 1 ? "machine" : "machines"} reporting. ${sealed} days sealed`
+        + (pending ? `, ${pending} still waiting for a Bitcoin timestamp` : "")
+        + (missing ? `, ${missing} missing a manifest` : "") + ".";
+    const ul = document.getElementById("alerts");
+    ul.replaceChildren(...(alerts.length ? alerts.map(a => el("li", { text: alertText(a) }))
+                                         : [el("li", { text: "No open alerts.", style: "border-left-color:var(--sealed)" })]));
+    document.getElementById("machines").replaceChildren(...ms.map(renderMachine));
+  }
+
+  function tick() {
+    const u = document.getElementById("updated"), banner = document.getElementById("banner");
+    u.textContent = lastOk ? `Updated ${ago((Date.now() - lastOk) / 1000)} ago` : "";
+    if (failures) {
+      banner.hidden = false;
+      banner.textContent = lastOk ? `Can't reach the ledger. Showing data from ${new Date(lastOk).toLocaleTimeString()}; retrying every minute.`
+                                  : "Can't reach the ledger. Check that the bloom-ledger container is running on Unraid.";
+    } else banner.hidden = true;
+  }
+
+  async function load() {
+    try {
+      const [s, a] = await Promise.all([fetch("/v1/summary", { cache: "no-store" }), fetch("/v1/alerts", { cache: "no-store" })]);
+      if (!s.ok || !a.ok) throw new Error(`HTTP ${s.status}/${a.status}`);
+      summary = await s.json(); alerts = await a.json();
+      lastOk = Date.now(); failures = 0;   // a good response always clears the error banner
+      render();
+    } catch (e) {
+      failures += 1;
+    } finally {
+      tick();
+      setTimeout(load, REFRESH_MS);        // reschedule no matter what happened
+    }
+  }
+  setInterval(tick, 15000);
+  load();
+})();
+</script>
+</body>
+</html>
