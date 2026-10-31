@@ -42,22 +42,14 @@ def set_setting(db, key, value, effective_from, now):
 
 
 def effective_settings(db, on_date):
+    """{'values': {key: value}, 'flags': [{'key', 'reason'}]} as of the YYYY-MM-DD `on_date`; defaults fill the gaps."""
     create_settings_table(db)
-    rows = db.execute(
-        "SELECT key, effective_from, value_json, created_at, rowid "
-        "FROM acct_settings WHERE effective_from <= ? ORDER BY effective_from, created_at, rowid",
-        (on_date,)
-    ).fetchall()
     values = dict(DEFAULTS)
-    best = {}
-    for key, effective_from, value_json, created_at, rowid in rows:
-        parsed = json.loads(value_json)
-        if key not in best or (effective_from, created_at, rowid) > (best[key][0], best[key][1], best[key][2]):
-            best[key] = (effective_from, created_at, rowid, parsed)
-    for key in best:
-        values[key] = best[key][3]
-    flags = []
-    for k in FLAGGED:
-        if k not in best or best[k][3] is None:
-            flags.append({"key": k, "reason": FLAGGED[k]})
+    set_keys = set()
+    rows = db.execute("SELECT key, value_json FROM acct_settings WHERE effective_from <= ? ORDER BY effective_from, created_at, rowid",
+                      (on_date,)).fetchall()
+    for key, value_json in rows:
+        values[key] = json.loads(value_json)
+        set_keys.add(key)
+    flags = [{"key": k, "reason": FLAGGED[k]} for k in FLAGGED if k not in set_keys or values[k] is None]
     return {"values": values, "flags": flags}

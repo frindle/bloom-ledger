@@ -31,12 +31,12 @@ def test_void_entry_path(tmp_path):
 
 def test_settings_path_sets_effective_value(tmp_path):
     ap, db = setup(tmp_path)
-    r = post(ap, db, "/v1/accounting/settings", {"key": "kwh_rate_cents", "value": 12, "effective_from": "2026-10-01"})
+    r = post(ap, db, "/v1/accounting/settings", {"key": "county_fee_pct", "value": 12, "effective_from": "2026-10-01"})
     assert r == (200, {"ok": True})
-    assert C.effective_settings(db, "2026-10-02")["values"]["kwh_rate_cents"] == 12
+    assert C.effective_settings(db, "2026-10-02")["values"]["county_fee_pct"] == 12
 
 
 def test_settings_path_validation(tmp_path):
     ap, db = setup(tmp_path)
     assert post(ap, db, "/v1/accounting/settings", {"key": "bogus", "value": 1, "effective_from": "2026-10-01"}) == (400, {"error": "bad key"})
-    assert post(ap, db, "/v1/accounting/settings", {"key": "kwh_rate_cents", "value": 1, "effective_from": "x"}) == (400, {"error": "bad effective_from"})
+    assert post(ap, db, "/v1/accounting/settings", {"key": "county_fee_pct", "value": 1, "effective_from": "x"}) == (400, {"error": "bad effective_from"})
