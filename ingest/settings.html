@@ -73,5 +73,135 @@
 </section>
 <div id="onboarding" hidden></div>
 </main>
+<script>
+(function () {
+  "use strict";
+  const tbody = document.getElementById("machine-rows");
+  const healthDl = document.getElementById("health");
+  const adminNote = document.getElementById("admin-note");
+  const addForm = document.getElementById("add-form");
+
+  function formatTime(epochSeconds) {
+    if (epochSeconds == null) return "never";
+    const now = Date.now();
+    const diff = Math.abs(now - epochSeconds * 1000);
+    if (diff < 90000) return Math.round(diff / 1000) + " seconds ago";
+    if (diff < 540000) return Math.round(diff / 60000) + " minutes ago";
+    if (diff < 172800000) return Math.round(diff / 3600000) + " hours ago";
+    return Math.round(diff / 86400000) + " days ago";
+  }
+
+  function formatBytes(bytes) {
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + " KB";
+    return (bytes / 1048576).toFixed(1) + " MB";
+  }
+
+  function formatServerTime(epochSeconds) {
+    const d = new Date(epochSeconds * 1000);
+    const y = d.getUTCFullYear();
+    const mo = String(d.getUTCMonth() + 1).padStart(2, "0");
+    const dy = String(d.getUTCDate()).padStart(2, "0");
+    const h = String(d.getUTCHours()).padStart(2, "0");
+    const mi = String(d.getUTCMinutes()).padStart(2, "0");
+    return y + "-" + mo + "-" + dy + " " + h + ":" + mi + " UTC";
+  }
+
+  function renderHealth(health) {
+    healthDl.replaceChildren();
+    const pairs = [
+      ["Version", health.version],
+      ["Server time", formatServerTime(health.time)],
+      ["Data size", formatBytes(health.data_bytes)],
+      ["Objects", String(health.objects)]
+    ];
+    for (const [label, value] of pairs) {
+      const dt = document.createElement("dt");
+      dt.textContent = label;
+      const dd = document.createElement("dd");
+      dd.textContent = value;
+      healthDl.appendChild(dt);
+      healthDl.appendChild(dd);
+    }
+  }
+
+  function renderMachines(machines, healthTime) {
+    tbody.replaceChildren();
+    if (machines.length === 0) {
+      const tr = document.createElement("tr");
+      const td = document.createElement("td");
+      td.textContent = "No machines yet.";
+      td.setAttribute("colspan", "6");
+      tr.appendChild(td);
+      tbody.appendChild(tr);
+      return;
+    }
+    for (const m of machines) {
+      const tr = document.createElement("tr");
+      const cells = [
+        m.id,
+        m.last_seen == null ? "never" : formatRelativeTime(healthTime, m.last_seen),
+        String(m.objects),
+        String(m.days_sealed),
+        m.status === "not-reporting-yet" ? "Not reporting yet" : m.status,
+        ""
+      ];
+      for (const c of cells) {
+        const td = document.createElement("td");
+        td.textContent = c;
+        tr.appendChild(td);
+      }
+      tbody.appendChild(tr);
+    }
+  }
+
+  function formatRelativeTime(healthTime, lastSeen) {
+    const diff = (healthTime - lastSeen) * 1000;
+    if (diff < 90000) return Math.round(diff / 1000) + " seconds ago";
+    if (diff < 540000) return Math.round(diff / 60000) + " minutes ago";
+    if (diff < 172800000) return Math.round(diff / 3600000) + " hours ago";
+    return Math.round(diff / 86400000) + " days ago";
+  }
+
+  function updateAdminUI(adminEnabled) {
+    if (!adminEnabled) {
+      adminNote.textContent = "Read-only: no admin secret (bloom_admin) is set on the server, so adding, rotating and removing machines is disabled.";
+      adminNote.hidden = false;
+      if (addForm) {
+        for (const el of [...addForm.querySelectorAll("input"), ...addForm.querySelectorAll("button")]) {
+          el.disabled = true;
+        }
+      }
+    } else {
+      adminNote.textContent = "";
+      adminNote.hidden = true;
+      if (addForm) {
+        for (const el of [...addForm.querySelectorAll("input"), ...addForm.querySelectorAll("button")]) {
+          el.disabled = false;
+        }
+      }
+    }
+  }
+
+  async function fetchSettings() {
+    try {
+      const resp = await fetch("/v1/settings", { cache: "no-store" });
+      const data = await resp.json();
+      const health = data.health || {};
+      renderHealth(health);
+      renderMachines(data.machines || [], health.time || Date.now());
+      updateAdminUI(data.admin_enabled || false);
+    } catch (e) {
+      adminNote.textContent = "Can't reach the ledger. Check that the bloom-ledger container is running.";
+      adminNote.hidden = false;
+    }
+  }
+
+  window.reloadSettings = fetchSettings;
+  fetchSettings();
+  setInterval(fetchSettings, 60000);
+})();
+</script>
+
 </body>
 </html>
