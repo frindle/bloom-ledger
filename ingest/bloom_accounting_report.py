@@ -3,6 +3,7 @@
 Days are local dates (settings local_timezone); money is integer micro-USD. Bookkeeping estimates, not tax advice."""
 import datetime as dt
 from zoneinfo import ZoneInfo
+
 import bloom_accounting_rates as RT
 
 
@@ -28,7 +29,8 @@ def day_rows(db, tz, start, end, machine=None, settings=None):
     zone = ZoneInfo(tz)
 
     def row_for(d):
-        return days.setdefault(d, {"date": d, "earned_micro": 0, "tokens": 0, "wh": 0.0, "minutes": 0, "paid_minutes": 0, "cost_micro": 0 if settings else None})
+        return days.setdefault(d, {"date": d, "earned_micro": 0, "tokens": 0, "wh": 0.0, "minutes": 0, "paid_minutes": 0,
+                                  "cost_micro": 0 if settings else None})
     for ts, micro, tokens in db.execute(sql, args):
         d = dt.datetime.fromtimestamp(ts, zone).date().isoformat()
         row = row_for(d)
@@ -44,12 +46,9 @@ def day_rows(db, tz, start, end, machine=None, settings=None):
         if ok:
             row["wh"] += wh or 0.0
             row["minutes"] += 1
-            if (tok or 0) > 0 and not other:
-                row["paid_minutes"] += 1
             if settings and row["cost_micro"] is not None:
                 c = RT.interval_cost(settings, ts, wh or 0.0)
-                if c is None:
-                    row["cost_micro"] = None
-                else:
-                    row["cost_micro"] += c["total_micro"]
+                row["cost_micro"] = None if c is None else row["cost_micro"] + c["total_micro"]
+            if (tok or 0) > 0 and not other:
+                row["paid_minutes"] += 1
     return [days[d] for d in sorted(days, reverse=True)]
