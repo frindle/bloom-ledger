@@ -1,5 +1,6 @@
 """Accounting index for the bloom-ledger ingest (stdlib only): derived, rebuildable sqlite tables parsed from the
 write-once log objects. Money is integer micro-USD or cents. Bookkeeping estimates, not tax advice."""
+import csv
 import datetime as dt
 import json
 import re
@@ -100,44 +101,105 @@ def store_earnings(db, machine_id, sha, payload, since_ts=INGEST_FROM_TS):
 
 
 def parse_totals_line(line):
-    """Parse one JSON line of account totals snapshot -\u003e dict or None."""
+    """One totals.jsonl snapshot -> dict(at, count, total_micro_usd, available_micro_usd, withdrawable_micro_usd) or None."""
     try:
-        obj = json.loads(line)
-    except (ValueError, TypeError):
+        e = json.loads(line)
+        at = e.get("at")
+    except (ValueError, AttributeError):
         return None
-    if not isinstance(obj, dict):
-        return None
-    at = obj.get("at")
     if not isinstance(at, str) or not at:
         return None
-    count = obj.get("count")
-    if isinstance(count, bool) or not isinstance(count, int) or count < 0:
-        count = None
-    total = obj.get("total_micro_usd")
-    if isinstance(total, bool) or not isinstance(total, int) or total < 0:
-        total = None
-    avail = obj.get("available_balance_micro_usd")
-    if isinstance(avail, bool) or not isinstance(avail, int) or avail < 0:
-        avail = None
-    wd = obj.get("withdrawable_balance_micro_usd")
-    if isinstance(wd, bool) or not isinstance(wd, int) or wd < 0:
-        wd = None
-    return {"at": at, "count": count, "total_micro_usd": total,
-            "available_micro_usd": avail, "withdrawable_micro_usd": wd}
+
+    def num(v):
+        return v if isinstance(v, int) and not isinstance(v, bool) and v >= 0 else None
+    return {"at": at, "count": num(e.get("count")), "total_micro_usd": num(e.get("total_micro_usd")),
+            "available_micro_usd": num(e.get("available_balance_micro_usd")),
+            "withdrawable_micro_usd": num(e.get("withdrawable_balance_micro_usd"))}
 
 
 def store_totals(db, payload):
-    """Parse a JSONL payload into account_totals; returns accepted row count."""
-    accepted = 0
+    """Parse a totals.jsonl payload into account_totals (one row per `at`, last one wins); returns rows stored."""
+    n = 0
     for line in payload.splitlines():
-        if not line.strip():
-            continue
-        row = parse_totals_line(line)
-        if row is not None:
-            db.execute(
-                "INSERT OR REPLACE INTO account_totals (at, count, total_micro_usd, "                "available_micro_usd, withdrawable_micro_usd) VALUES (?, ?, ?, ?, ?)",
-                (row["at"], row["count"], row["total_micro_usd"],
-                 row["available_micro_usd"], row["withdrawable_micro_usd"]))
-            accepted += 1
+        row = parse_totals_line(line) if line.strip() else None
+        if row:
+            db.execute("INSERT OR REPLACE INTO account_totals (at, count, total_micro_usd, available_micro_usd,"
+                       " withdrawable_micro_usd) VALUES (?, ?, ?, ?, ?)", (row["at"], row["count"], row["total_micro_usd"],
+                                                                         row["available_micro_usd"], row["withdrawable_micro_usd"]))
+            n += 1
     db.commit()
-    return accepted
+    return n
+
+
+LEGACY_POWER_COLUMNS = ["ts_utc", "interval_s", "samples", "power_ok", "avg_w", "max_w", "wh", "dbk_up", "dbk_state",
+                        "inference_active_frac", "requests_delta", "tokens_delta", "warm_models", "load_transition_active",
+                        "gpu_pct", "other_work", "other_procs", "note"]
+
+
+def power_columns(first_line):
+    """Return the list of column names when first_line is a power CSV header
+    (contains both 'ts_utc' and 'wh'), else None."""
+    try:
+        reader = csv.reader([first_line])
+        fields = next(reader)
+    except (StopIteration, TypeError):
+        return None
+    if "ts_utc" in fields and "wh" in fields:
+        return fields
+    return None
+
+
+def parse_power_line(line, columns):
+    """Parse one CSV data row against columns. Returns a dict or None."""
+    if not line or not line.strip():
+        return None
+    try:
+        reader = csv.reader([line])
+        values = next(reader)
+    except (StopIteration, TypeError):
+        return None
+    if len(values) < len(columns):
+        return None
+    mapping = dict(zip(columns, values))
+    # ts_utc -> ts (integer UTC epoch seconds)
+    try:
+        ts_text = mapping.get("ts_utc", "").strip()
+        if not ts_text:
+            return None
+        dt_obj = dt.datetime.fromisoformat(ts_text.replace("Z", "+00:00"))
+        ts = int(dt_obj.timestamp())
+    except (ValueError, AttributeError):
+        return None
+    # power_ok: 1 when lower-cased is '1' or 'true', else 0
+    po_text = (mapping.get("power_ok") or "").strip().lower()
+    power_ok = 1 if po_text in ("1", "true") else 0
+    # wh: float(wh), 0.0 when empty, always 0.0 when power_ok is 0
+    wh_text = (mapping.get("wh") or "").strip()
+    try:
+        wh = float(wh_text) if wh_text else 0.0
+    except ValueError:
+        return None
+    if power_ok == 0:
+        wh = 0.0
+    # interval_s: float(interval_s), 0.0 when empty
+    int_text = (mapping.get("interval_s") or "").strip()
+    try:
+        interval_s = float(int_text) if int_text else 0.0
+    except ValueError:
+        interval_s = 0.0
+    # dbk_state: text (empty string if absent)
+    dbk_state = mapping.get("dbk_state", "")
+    # other_work: 1 when float(other_work or 0) > 0 else 0
+    ow_text = (mapping.get("other_work") or "").strip()
+    try:
+        other_work = 1 if float(ow_text) > 0 else 0
+    except (ValueError, TypeError):
+        other_work = 0
+    # tokens_delta: int(float(tokens_delta or 0))
+    td_text = (mapping.get("tokens_delta") or "").strip()
+    try:
+        tokens_delta = int(float(td_text)) if td_text else 0
+    except (ValueError, TypeError):
+        tokens_delta = 0
+    return {"ts": ts, "wh": wh, "interval_s": interval_s, "power_ok": power_ok,
+            "dbk_state": dbk_state, "other_work": other_work, "tokens_delta": tokens_delta}
