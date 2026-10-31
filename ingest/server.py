@@ -6,17 +6,16 @@
   GET  /healthz      200 {"ok": true, "objects": n} | 503
   GET  /v1/summary 200 {generated_at, machines: [per-machine day ribbon, last 90 UTC days]}  (metadata only)
   GET  /            the static dashboard page (dashboard.html)
-  GET  /v1/alerts    200 [open alerts]  (machine silent > 30 min, ring snapshot > 12 h, OTS not upgraded in 48 h)
+  GET  /v1/alerts    200 [open alerts]  (machine silent > 30 min, ring snapshot > 12 h)
 
-Background: every 10 min closes every finished UTC day since the last manifest (per machine, hash-chained,
-OpenTimestamps-stamped); every 6 h runs `ots upgrade`; every 5 min evaluates alerts and, when the open set
+Background: every 10 min closes every finished UTC day since the last manifest (per machine, hash-chained);
+every 5 min evaluates alerts and, when the open set
 changes, POSTs it to ALERT_WEBHOOK_URL (optional). Env: BLOOM_DATA (/data), BLOOM_TOKENS
-(/run/secrets/bloom_tokens), BLOOM_PORT (8787), BLOOM_OTS_BIN (else `ots` on PATH), ALERT_WEBHOOK_URL.
+(/run/secrets/bloom_tokens), BLOOM_PORT (8787), ALERT_WEBHOOK_URL.
 Logs carry machine ids, counts and statuses only; never a token or a request body."""
 import datetime as dt
 import json
 import os
-import shutil
 import sys
 import threading
 import time
@@ -36,7 +35,6 @@ ROOT = Path(os.environ.get("BLOOM_DATA", "/data"))
 TOKENS_PATH = os.environ.get("BLOOM_TOKENS", "/run/secrets/bloom_tokens")
 PORT = int(os.environ.get("BLOOM_PORT", "8787"))
 LISTEN = os.environ.get("BLOOM_LISTEN", "0.0.0.0")
-OTS_BIN = os.environ.get("BLOOM_OTS_BIN") or shutil.which("ots")
 WEBHOOK = os.environ.get("ALERT_WEBHOOK_URL", "")
 DASHBOARD = Path(__file__).resolve().parent / "dashboard.html"
 MACHINES_PATH = os.environ.get("BLOOM_MACHINES", str(ROOT / "machines.json"))
@@ -155,7 +153,6 @@ def days_to_close(root, db, today):
 
 
 def scheduler(db, stop):
-    last_upgrade = 0.0
     last_alerts = None
     while not stop.wait(1):
         now = time.time()
@@ -163,20 +160,10 @@ def scheduler(db, stop):
         try:
             with DB_LOCK:
                 for day in days_to_close(ROOT, db, today):
-                    res = IL.manifest_run(ROOT, db, day, OTS_BIN, now)
+                    res = IL.manifest_run(ROOT, db, day)
                     log(f"manifest {day} {json.dumps(res, sort_keys=True)}")
                     if "conflict" in res.values():
                         break
-                if OTS_BIN and now - last_upgrade > 6 * 3600:
-                    for mid in IL.machines(db):
-                        results = L.ots_upgrade(IL.ledger_dir(ROOT, mid), OTS_BIN)
-                        for name, st in results.items():
-                            if st == "stamped":
-                                db.execute("INSERT OR IGNORE INTO ots (machine_id, manifest, stamped_at) "
-                                           "VALUES (?, ?, ?)", (mid, name, now))
-                        n = AL.record_upgrades(db, mid, results, now)
-                        log(f"ots upgrade {mid}: {n} newly upgraded of {len(results)}")
-                    last_upgrade = now
                 alerts = AL.evaluate_alerts(db, now)
             keys = sorted(AL.alert_key(a) for a in alerts)
             if keys != last_alerts:
@@ -200,7 +187,7 @@ def main():
     threading.Thread(target=scheduler, args=(db, stop), daemon=True).start()
     srv = ThreadingHTTPServer((LISTEN, PORT), Handler)
     srv.db = db
-    log(f"listening on :{PORT}, data {ROOT}, ots {'yes' if OTS_BIN else 'NO'}")
+    log(f"listening on :{PORT}, data {ROOT}")
     try:
         srv.serve_forever()
     finally:
