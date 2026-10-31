@@ -45,13 +45,9 @@
   tr[data-state="missing"] th { border-left-color: var(--missing); }
   tr[data-state="missing"] .st { color: var(--missing); font-weight: 600; }
   .st .mark { display: inline-block; width: 1.1em; }
-  td.num { text-align: right; }
-  .hash-toggle { font: inherit; background: none; border: 1px solid transparent; border-bottom-color: var(--ink); color: var(--ink); cursor: pointer;
-                 padding: .35rem .25rem; min-height: 2.75rem; text-align: left; font-family: var(--mono); font-size: .85rem;
-                 overflow-wrap: anywhere; max-width: 100%; }
-  .hash-toggle:hover { background: var(--paper); }
-  .none { color: var(--muted); }
+  td.num, th.num { text-align: right; }
   .empty { padding: 1rem; color: var(--muted); }
+  #period-summary[hidden] { display: none; }
   .empty[hidden] { display: none; }
   @media (max-width: 40rem) {
     thead { position: absolute; left: -9999px; }
@@ -61,10 +57,9 @@
     tbody th { grid-column: 1 / -1; }
     td.num { text-align: left; }
     tbody td::before { content: attr(data-label); color: var(--muted); font-size: .8rem; display: block; }
-    td.hashcell { grid-column: 1 / -1; }
     caption { display: block; width: 100%; }
   }
-  @media (prefers-reduced-motion: no-preference) { .hash-toggle { transition: background .12s; } }
+  @media (prefers-reduced-motion: no-preference) { .picker select { transition: background .12s; } }
 </style>
 </head>
 <body>
@@ -89,10 +84,11 @@
       <select id="machine-select"></select>
     </div>
     <div id="machine-summary"></div>
+    <div id="period-summary" hidden></div><!-- reserved: per-period summary band (day to last year) goes here -->
     <div class="logwrap">
       <table>
         <caption>Days received, newest first (up to the last 90 days)</caption>
-        <thead><tr><th scope="col">Date</th><th scope="col">Status</th><th scope="col">Records</th><th scope="col">Size</th><th scope="col">Chain hash</th></tr></thead>
+        <thead><tr><th scope="col">Date</th><th scope="col">Status</th><th scope="col" class="num">Records</th><th scope="col" class="num">Size</th></tr></thead>
         <tbody id="day-rows"></tbody>
       </table>
       <p class="empty" id="empty" hidden>No machine has sent records yet.</p>
@@ -106,7 +102,6 @@
   const STATE = { sealed: ["Sealed", "✓"], open: ["Open", "○"], missing: ["Missing", "✕"] };
   const STATE_NOTE = { sealed: "", open: " (still collecting)", missing: " (no manifest)" };
   let lastOk = 0, failures = 0, summary = null, alerts = [], current = null;
-  const expanded = new Set();
 
   const el = (tag, props, ...kids) => {
     const n = document.createElement(tag);
@@ -127,18 +122,6 @@
     return `${who}: ${a.alert}`;
   }
 
-  function hashCell(m, d) {
-    const td = el("td", { class: "hashcell", "data-label": "Chain hash" });
-    if (!d.chain_hash) { td.append(el("span", { class: "none", text: d.state === "open" ? "Not sealed yet" : "None" })); return td; }
-    const key = `${m.id}/${d.day}`, open = expanded.has(key);
-    const b = el("button", { type: "button", class: "hash-toggle", "aria-expanded": String(open),
-                             "aria-label": `Chain hash for ${d.day}, press to ${open ? "shorten" : "show all"}` });
-    b.textContent = open ? d.chain_hash : `${d.chain_hash.slice(0, 12)}…`;
-    b.addEventListener("click", () => { if (open) expanded.delete(key); else expanded.add(key); renderRows(); });
-    td.append(b);
-    return td;
-  }
-
   function renderRows() {
     const body = document.getElementById("day-rows");
     const m = summary.machines.find(x => x.id === current);
@@ -150,8 +133,7 @@
         el("td", { class: "st", "data-label": "Status" }, el("span", { class: "mark", "aria-hidden": "true", text: mark }),
           document.createTextNode(word + (STATE_NOTE[d.state] || ""))),
         el("td", { class: "num", "data-label": "Records", text: String(d.files) }),
-        el("td", { class: "num", "data-label": "Size", text: bytes(d.bytes) }),
-        hashCell(m, d));
+        el("td", { class: "num", "data-label": "Size", text: bytes(d.bytes) }));
     }));
   }
 

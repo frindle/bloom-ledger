@@ -25,7 +25,8 @@ FETCH = {"/v1/summary": {"status": 200, "body": SUMMARY},
 
 
 def test_static_shape_and_wording():
-    assert 'id="machine-select"' in SRC and 'id="day-rows"' in SRC and 'href="/settings"' in SRC
+    assert 'id="machine-select"' in SRC and 'id="day-rows"' in SRC and 'href="/settings"' in SRC and 'id="period-summary"' in SRC
+    assert not re.search(r"chain.?hash|hash-toggle", SRC, re.I)
     assert not re.search(r"bitcoin|opentimestamps|\bots\b|timestamp", SRC, re.I)
     assert 'class="chain"' not in SRC and 'class: "day"' not in SRC
     assert "prefers-reduced-motion" in SRC and ":focus-visible" in SRC
@@ -48,20 +49,20 @@ def test_selector_and_newest_first_rows(tmp_path):
     assert [r[0] for r in got] == ["2026-10-30", "2026-10-29", "2026-10-28"]
     flat = [" | ".join(r) for r in got]
     assert "Open" in flat[0] and "Missing" in flat[1] and "Sealed" in flat[2]
-    assert "3" in flat[2] and "2.0 KB" in flat[2] and H1[:12] in flat[2] and H1 not in flat[2]
+    assert "3" in flat[2] and "2.0 KB" in flat[2]
+    assert H1[:12] not in res["dom"]["text"] and len(got[2]) == 4
     assert "beta has sent nothing" in res["dom"]["text"]
     head = find(res["dom"], "machine-summary")["text"]
     assert "Last heard" in head and "1 day sealed" in head and "5 ring" in head
 
 
-def test_switch_machine_remembers_choice_and_expands_hash(tmp_path):
-    steps = [{"do": "change", "id": "machine-select", "values": {"machine-select": "beta"}},
-             {"do": "click", "sel": ".hash-toggle"}]
+def test_switch_machine_remembers_choice(tmp_path):
+    steps = [{"do": "change", "id": "machine-select", "values": {"machine-select": "beta"}}]
     res = run_page(tmp_path, FETCH, steps=steps, page="dashboard.html")
     assert res["errors"] == []
     assert [r[0] for r in rows(res, "day-rows")] == ["2026-10-30"]
     assert "beta" in res["session"].values()
-    assert H2 in find(res["dom"], "day-rows")["text"]
+    assert H2 not in res["dom"]["text"]
 
 
 def test_unreachable_ledger_shows_banner(tmp_path):
