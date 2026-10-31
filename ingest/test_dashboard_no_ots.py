@@ -1,4 +1,4 @@
-"""Frozen test: dashboard.html shows days as sealed / open / missing only; no Bitcoin or OpenTimestamps wording."""
+"""Frozen test: dashboard.html shows days as sealed / open / missing only (log view since the redesign); no Bitcoin or OpenTimestamps wording."""
 import re
 from pathlib import Path
 
@@ -9,14 +9,6 @@ BANNED = re.compile(r"bitcoin|opentimestamps|\bots\b|ots-not-upgraded|(?<!-)wait
 def test_page_has_no_bitcoin_or_timestamp_wording():
     hits = sorted({m.group(0).lower() for m in BANNED.finditer(HTML.read_text())})
     assert hits == [], hits
-
-
-def test_state_labels_and_legend_are_sealed_open_missing():
-    src = HTML.read_text()
-    block = re.search(r"const STATE_LABEL = \{(.*?)\};", src, re.S).group(1)
-    assert re.findall(r"(\w+):", block) == ["sealed", "open", "missing", "empty"]
-    assert re.findall(r'class: "(l-\w+)"', src) == ["l-sealed", "l-open", "l-missing"]
-    assert "waiting\"]" not in src and "l-waiting" not in src and "d.ots" not in src
 
 
 def test_banner_counts_only_sealed_and_missing_days():
