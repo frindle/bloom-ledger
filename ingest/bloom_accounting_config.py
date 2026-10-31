@@ -7,18 +7,27 @@ import re
 DEFAULTS = {
     "ingest_from": "2026-10-13",
     "m4_in_service_date": "2026-10-01",
-    "nevada_fee_pct": None,
-    "kwh_rate_cents": None,
     "m5_lease_start": None,
     "dep_method": "straight_line",
     "dep_life_months": 60,
+    "m5_lease_monthly_cents": None,
+    "m5_lease_months": None,
+    "m5_business_mode": "leased_100",
+    "m4_business_mode": "auto_paid_hours",
+    "machine_ids": None,
+    "rate_schedule": None,
+    "rate_adder_usd_per_kwh": None,
+    "county_fee_pct": None,
+    "local_timezone": "America/Los_Angeles",
 }
 FLAGGED = {
     "m4_in_service_date": "ASSUMED 2026-10-01 (Darkbloom start); confirm the real placed-in-service date",
-    "nevada_fee_pct": "UNKNOWN: not applied until set; confirm whether earnings rows are already net of the fee",
-    "kwh_rate_cents": "UNKNOWN: power cost is not computed until the electricity rate is set",
     "m5_lease_start": "UNKNOWN: no lease expense until the M5 start date is set at delivery",
     "dep_method": "DEFAULT straight_line over dep_life_months; the accountant picks the method",
+    "rate_schedule": "UNKNOWN: not applied until set; enter the electricity rate schedule",
+    "rate_adder_usd_per_kwh": "UNKNOWN: not applied until set; enter the adder amount",
+    "county_fee_pct": "UNKNOWN: not applied until set; confirm the county fee percentage",
+    "m5_lease_monthly_cents": "UNKNOWN: not applied until set; enter the M5 monthly lease cents",
 }
 
 

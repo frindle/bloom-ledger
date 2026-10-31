@@ -21,7 +21,7 @@ def test_effective_dating_and_newest_wins(tmp_path):
     C.set_setting(db, "county_fee_pct", 11, "2026-10-01", 3)
     assert C.effective_settings(db, "2026-12-31")["values"]["county_fee_pct"] == 11
     assert C.effective_settings(db, "2027-01-01")["values"]["county_fee_pct"] == 15
-    assert C.effective_settings(db, "2026-09-30")["values"]["county_fee_pct"] == 5
+    assert C.effective_settings(db, "2026-09-30")["values"]["county_fee_pct"] is None
 
 
 def test_flags_clear_when_set_and_return_when_nulled(tmp_path):
