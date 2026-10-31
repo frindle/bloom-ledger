@@ -1,12 +1,10 @@
-"""LAN-only write guard for the ledger: private client address, no public proxy hop, same-origin browser writes.
-
-The ledger is a local service; this replaces the admin key for settings writes."""
-import ipaddress
+"""bloom_lan.py"""
+from urllib.parse import urlparse
 
 
-def is_private_ip(ip):
-    raise NotImplementedError("is_private_ip")
+def same_origin(headers):
+    raise NotImplementedError("same_origin")
 
 
-def forwarded_ok(headers):
-    raise NotImplementedError("forwarded_ok")
+def write_guard(client_ip, headers):
+    raise NotImplementedError("write_guard")
