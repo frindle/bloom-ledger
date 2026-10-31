@@ -35,6 +35,12 @@
 <a href="/">Back to the ledger</a>
 <h1>Settings</h1>
 <p class="note" id="admin-note" aria-live="polite"></p>
+<form id="admin-form">
+<label for="admin-token">Admin token</label>
+<input id="admin-token" type="password" autocomplete="off" spellcheck="false">
+<button type="submit">Use token</button>
+<span id="admin-state"></span>
+</form>
 
 <section>
 <h2>Machines</h2>
@@ -62,6 +68,8 @@
 <input id="new-id" name="id" autocomplete="off" spellcheck="false" required>
 <button type="submit">Add machine</button>
 </form>
+
+<p class="note" id="form-error" role="alert" hidden></p>
 </section>
 <section aria-labelledby="health-heading">
 <h2 id="health-heading">Ledger health</h2>
@@ -192,6 +200,63 @@
   window.reloadSettings = fetchSettings;
   fetchSettings();
   setInterval(fetchSettings, 60000);
+})();
+</script>
+
+<script>
+(function () {
+  "use strict";
+  const KEY = "bloom-admin-token";
+  const adminForm = document.getElementById("admin-form");
+  const adminTokenInput = document.getElementById("admin-token");
+  const adminState = document.getElementById("admin-state");
+  const formError = document.getElementById("form-error");
+  const addForm = document.getElementById("add-form");
+  const idRegex = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+
+  function updateAdminUIState() {
+    const token = sessionStorage.getItem(KEY);
+    if (token) {
+      adminState.textContent = "Admin token set for this tab.";
+    } else {
+      adminState.textContent = "Enter the admin token to make changes.";
+    }
+  }
+
+  updateAdminUIState();
+
+  if (adminForm) {
+    adminForm.addEventListener("submit", function (e) {
+      e.preventDefault();
+      const raw = (adminTokenInput.value || "").trim();
+      if (raw) {
+        sessionStorage.setItem(KEY, raw);
+        adminTokenInput.value = "";
+        adminTokenInput.type = "password";
+      }
+      updateAdminUIState();
+    });
+  }
+
+  if (addForm) {
+    addForm.addEventListener("submit", function (e) {
+      e.preventDefault();
+      formError.textContent = "";
+      formError.hidden = true;
+      const newId = (document.getElementById("new-id").value || "").trim();
+      const token = sessionStorage.getItem(KEY);
+      if (!token) {
+        formError.textContent = "Enter the admin token first (above), then add the machine.";
+        formError.hidden = false;
+        return;
+      }
+      if (!idRegex.test(newId)) {
+        formError.textContent = "Machine id must be 1 to 64 letters, digits, dots, dashes or underscores, starting with a letter or digit.";
+        formError.hidden = false;
+        return;
+      }
+    });
+  }
 })();
 </script>
 
