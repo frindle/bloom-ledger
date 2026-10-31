@@ -57,25 +57,46 @@ def add_entry(db, entry, created_at):
 
 
 def void_entry(db, entry_id, voided_at):
+    """Mark a live entry voided (kept for audit). True when a live row was voided, False when missing or already void."""
     create_entries_table(db)
-    cur = db.execute(
-        "UPDATE acct_entries SET voided_at = ? WHERE id = ? AND voided_at IS NULL",
-        (voided_at, entry_id))
+    cur = db.execute("UPDATE acct_entries SET voided_at = ? WHERE id = ? AND voided_at IS NULL", (voided_at, entry_id))
     db.commit()
     return cur.rowcount == 1
 
 
+def all_entries(db, start=None, end=None):
+    """Non-filtered-on-void entries as dicts (id, kind, date, amount_cents, category, machine_id, note, voided),
+    ordered by date then id. start/end are optional inclusive YYYY-MM-DD bounds."""
+    create_entries_table(db)
+    sql = "SELECT id, kind, date, amount_cents, category, machine_id, note, voided_at FROM acct_entries"
+    args = []
+    filters = []
+    if start is not None:
+        filters.append("date >= ?")
+        args.append(start)
+    if end is not None:
+        filters.append("date <= ?")
+        args.append(end)
+    if filters:
+        sql += " WHERE " + " AND ".join(filters)
+    sql += " ORDER BY date, id"
+    keys = ("id", "kind", "date", "amount_cents", "category", "machine_id", "note", "voided_at")
+    rows = db.execute(sql, args).fetchall()
+    return [dict(zip(keys[:-1], r[:-1])) | {"voided": r[-1] is not None} for r in rows]
+
+
 def current_entries(db, start=None, end=None):
+    """Non-voided entries as dicts (id, kind, date, amount_cents, category, machine_id, note), ordered by date then id.
+    start/end are optional inclusive YYYY-MM-DD bounds."""
     create_entries_table(db)
     sql = "SELECT id, kind, date, amount_cents, category, machine_id, note FROM acct_entries WHERE voided_at IS NULL"
-    params = []
+    args = []
     if start is not None:
         sql += " AND date >= ?"
-        params.append(start)
+        args.append(start)
     if end is not None:
         sql += " AND date <= ?"
-        params.append(end)
+        args.append(end)
     sql += " ORDER BY date, id"
-    cols = ("id", "kind", "date", "amount_cents", "category", "machine_id", "note")
-    rows = db.execute(sql, params).fetchall()
-    return [dict(zip(cols, r)) for r in rows]
+    keys = ("id", "kind", "date", "amount_cents", "category", "machine_id", "note")
+    return [dict(zip(keys, r)) for r in db.execute(sql, args).fetchall()]
