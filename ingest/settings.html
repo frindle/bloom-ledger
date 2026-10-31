@@ -211,6 +211,7 @@
   const adminTokenInput = document.getElementById("admin-token");
   const adminState = document.getElementById("admin-state");
   const formError = document.getElementById("form-error");
+  const adminNote = document.getElementById("admin-note");
   const addForm = document.getElementById("add-form");
   const idRegex = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
@@ -239,7 +240,7 @@
   }
 
   if (addForm) {
-    addForm.addEventListener("submit", function (e) {
+    addForm.addEventListener("submit", async function (e) {
       e.preventDefault();
       formError.textContent = "";
       formError.hidden = true;
@@ -254,6 +255,35 @@
         formError.textContent = "Machine id must be 1 to 64 letters, digits, dots, dashes or underscores, starting with a letter or digit.";
         formError.hidden = false;
         return;
+      }
+      try {
+        const resp = await fetch("/v1/settings/machines", {
+          method: "POST",
+          headers: { "Authorization": "Bearer " + token, "Content-Type": "application/json" },
+          body: JSON.stringify({ id: newId })
+        });
+        if (resp.status === 401) {
+          sessionStorage.removeItem(KEY);
+          updateAdminUIState();
+          adminNote.textContent = "The admin token was not accepted. Enter it again.";
+          adminNote.hidden = false;
+        } else if (resp.status === 403) {
+          adminNote.textContent = "Admin changes are disabled on the server.";
+          adminNote.hidden = false;
+        } else if (resp.status === 409) {
+          sessionStorage.setItem(KEY, token);
+          formError.textContent = "That machine id already exists.";
+          formError.hidden = false;
+        } else if (!resp.ok) {
+          formError.textContent = "The server refused that id.";
+          formError.hidden = false;
+        } else {
+          document.getElementById("new-id").value = "";
+          window.reloadSettings();
+        }
+      } catch (networkError) {
+        formError.textContent = "Can\u0027t reach the ledger.";
+        formError.hidden = false;
       }
     });
   }
