@@ -24,13 +24,16 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import bloom_accounting_index as AX  # noqa: E402
 import bloom_alerts as AL  # noqa: E402
 import bloom_ingest as I  # noqa: E402
 import bloom_ingest_ledger as IL  # noqa: E402
 import bloom_ledger as L  # noqa: E402
 import bloom_settings as BS  # noqa: E402
 import bloom_summary as SM  # noqa: E402
-import bloom_accounting_index as AX  # noqa: E402
+import bloom_accounting_admin as AA  # noqa: E402
+import bloom_accounting_entries as AE  # noqa: E402
+import bloom_lan as LAN  # noqa: E402
 
 ROOT = Path(os.environ.get("BLOOM_DATA", "/data"))
 TOKENS_PATH = os.environ.get("BLOOM_TOKENS", "/run/secrets/bloom_tokens")
@@ -66,6 +69,9 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/healthz":
             with DB_LOCK:
                 self.reply(*I.healthz(ROOT, self.server.db))
+        elif self.path == "/v1/accounting/entries":
+            with DB_LOCK:
+                self.reply(200, {"entries": AE.current_entries(self.server.db)})
         elif self.path == "/v1/summary":
             with DB_LOCK:
                 self.reply(200, SM.summary(self.server.db, ROOT, time.time()))
@@ -132,6 +138,26 @@ class Handler(BaseHTTPRequestHandler):
             body = self.rfile.read(n)
             with DB_LOCK:
                 code, obj = BS.admin_post(self.path, self.headers, body, ADMIN_PATH, MACHINES_PATH, time.time())
+            self.reply(code, obj)
+        elif self.path.startswith("/v1/accounting/"):
+            denied = LAN.write_guard(self.client_address[0], self.headers)
+            if denied is not None:
+                self.reply(*denied)
+                return
+            try:
+                n = int(self.headers.get("Content-Length") or "-1")
+            except ValueError:
+                n = -1
+            if n < 0:
+                self.reply(411, {"error": "length required"})
+                return
+            if n > 4096:
+                self.reply(413, {"error": "too large"})
+                self.close_connection = True
+                return
+            body = self.rfile.read(n)
+            with DB_LOCK:
+                code, obj = AA.accounting_post(self.path, self.headers, body, None, self.server.db, time.time())
             self.reply(code, obj)
         else:
             self.reply(404, {"error": "not found"})
