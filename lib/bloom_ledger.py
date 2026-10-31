@@ -4,7 +4,6 @@
 Daily manifest = sha256 + byte length of the CLOSED part of every raw file (power-log CSVs, earnings
 archive jsonl, totals.jsonl), hash-chained to the previous day's manifest and written append-only to
 ~/.darkbloom/ledger/manifest-YYYY-MM-DD.json. `verify_chain` walks the chain and re-hashes every file range.
-Optional OpenTimestamps stamping of each manifest (`ots` binary; skipped and logged when absent).
 Used by bloom-manifest.py. Reads no secrets and writes none. Bookkeeping data, not tax advice
 (see docs/bloom-power.md, "Integrity ledger").
 """
@@ -13,7 +12,6 @@ import hashlib
 import json
 import os
 import re
-import subprocess
 import sys
 from pathlib import Path
 
@@ -87,12 +85,6 @@ def manifest_path(ledger_dir, day):
 
 def manifest_bytes(manifest):
     return (json.dumps(manifest, sort_keys=True, indent=1) + "\n").encode()
-
-
-def _ots_log(ledger_dir, name, action, status, reason=""):
-    rec = {"ts": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "manifest": name,
-           "action": action, "status": status, "reason": reason}
-    P.append_line(Path(ledger_dir) / "ots-status.jsonl", json.dumps(rec, sort_keys=True))
 
 
 # ---------------------------------------------------------------- closed range + hashing
@@ -285,57 +277,3 @@ def verify_chain(home, items):
         prev = m
         prev_day = day
     return problems
-
-
-
-
-# ---------------------------------------------------------------- OpenTimestamps
-def ots_stamp(manifest_path, ots_bin, run=subprocess.run):
-    """Timestamp one manifest with OpenTimestamps (`ots stamp FILE` writes FILE.ots). Never raises.
-    Returns 'exists' (FILE.ots already there, nothing run), 'skipped' (ots_bin is None/empty), 'stamped' or
-    'failed'. Every outcome except 'exists' appends a line to <manifest dir>/ots-status.jsonl."""
-    proof_path = str(manifest_path) + ".ots"
-    if Path(proof_path).exists():
-        return "exists"
-    if not ots_bin:
-        _ots_log(Path(manifest_path).parent, Path(manifest_path).name, "stamp", "skipped", "ots binary not found")
-        return "skipped"
-    try:
-        result = run([str(ots_bin), "stamp", str(manifest_path)], capture_output=True, text=True, timeout=120)
-    except (OSError, subprocess.SubprocessError) as exc:
-        _ots_log(Path(manifest_path).parent, Path(manifest_path).name, "stamp", "failed", exc.__class__.__name__)
-        return "failed"
-    if result.returncode == 0 and Path(proof_path).exists():
-        _ots_log(Path(manifest_path).parent, Path(manifest_path).name, "stamp", "stamped")
-        return "stamped"
-    _ots_log(Path(manifest_path).parent, Path(manifest_path).name, "stamp", "failed", f"rc={result.returncode}")
-    return "failed"
-
-
-
-def ots_upgrade(ledger_dir, ots_bin, run=subprocess.run):
-    """For every manifest-*.json oldest first: no FILE.ots yet -> ots_stamp (catches up days stamped while ots was
-    missing); else `ots upgrade FILE.ots` -> 'upgraded' (rc 0) or 'pending' (non-zero rc or the run failed).
-    Returns {manifest file name: status}. ots_bin None/empty -> {} and nothing is run."""
-    if not ots_bin:
-        return {}
-    result = {}
-    ledger_dir = Path(ledger_dir)
-    for mf in sorted(ledger_dir.glob("manifest-*.json"), key=lambda x: x.name):
-        if not MANIFEST_RE.match(mf.name):
-            continue
-        proof = Path(str(mf) + ".ots")
-        if not proof.exists():
-            result[mf.name] = ots_stamp(mf, ots_bin, run)
-        else:
-            try:
-                res = run([str(ots_bin), "upgrade", str(proof)], capture_output=True, text=True, timeout=120)
-            except (OSError, subprocess.SubprocessError):
-                result[mf.name] = "pending"
-                continue
-            if res.returncode == 0:
-                result[mf.name] = "upgraded"
-            else:
-                result[mf.name] = "pending"
-    return result
-
