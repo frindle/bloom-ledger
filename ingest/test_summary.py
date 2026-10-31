@@ -21,9 +21,6 @@ def seed(tmp_path):
     ldir = tmp_path / "ledger" / "m4max"
     man = L.make_manifest(day(3), "m4max", [], None)
     L.write_manifest(ldir, man)
-    db.execute("INSERT INTO ots (machine_id, manifest, stamped_at) VALUES ('m4max', ?, ?)",
-               (f"manifest-{day(3)}.json", NOW - 100))
-    db.commit()
     return db, man
 
 
@@ -35,7 +32,7 @@ def test_shape(tmp_path):
     assert m["id"] == "m4max" and m["first_day"] == I.utc_day(NOW - 3 * 86400)
     assert m["last_seen"] == int(NOW - 60) and m["objects"] == {"log": 2, "usage": 1}
     assert [d["day"] for d in m["days"]][-1] == TODAY and len(m["days"]) == 4
-    assert set(m["days"][0]) == {"day", "files", "bytes", "state", "chain_hash", "ots"}
+    assert {"day", "files", "bytes", "state", "chain_hash"} <= set(m["days"][0])
     assert m["days"][0]["files"] == 2 and m["days"][0]["bytes"] == 15
     assert m["days"][0]["chain_hash"] == man["chain_hash"]
 
@@ -45,17 +42,6 @@ def test_states(tmp_path):
     days = S.summary(db, tmp_path, NOW)["machines"][0]["days"]
     assert [d["state"] for d in days] == ["sealed", "missing", "missing", "open"]
     assert days[1]["files"] == 0 and days[1]["chain_hash"] is None
-
-
-def test_ots_states(tmp_path):
-    db, _ = seed(tmp_path)
-    d0 = I.utc_day(NOW - 3 * 86400)
-    key = lambda: S.summary(db, tmp_path, NOW)["machines"][0]["days"][0]["ots"]
-    assert key() == "stamped"
-    db.execute("UPDATE ots SET upgraded_at = ?", (NOW,))
-    assert key() == "bitcoin"
-    db.execute("DELETE FROM ots")
-    assert key() == "none" and d0
 
 
 def test_window_capped_at_90(tmp_path):

@@ -2,8 +2,8 @@
 
 Layout under ROOT (the /data volume):
   objects/<machine_id>/<kind>/<sha256>.obj   write-once, exactly the bytes the Mac spooled
-  ledger/<machine_id>/manifest-<day>.json    daily hash-chained manifests (+ .ots proofs), bloom_ingest_ledger.py
-  index.sqlite                               objects + ots tables
+  ledger/<machine_id>/manifest-<day>.json    daily hash-chained manifests, bloom_ingest_ledger.py
+  index.sqlite                               objects table
 Tokens: /run/secrets/bloom_tokens, one "<machine_id> <sha256 hex of the token>" per line. Only hashes are stored;
 a token is never logged."""
 import datetime as dt
@@ -26,9 +26,6 @@ CREATE TABLE IF NOT EXISTS objects (
   machine_id TEXT NOT NULL, kind TEXT NOT NULL, sha256 TEXT NOT NULL, bytes INTEGER NOT NULL,
   received_at REAL NOT NULL, day TEXT NOT NULL, PRIMARY KEY (machine_id, sha256));
 CREATE INDEX IF NOT EXISTS objects_day ON objects (machine_id, day);
-CREATE TABLE IF NOT EXISTS ots (
-  machine_id TEXT NOT NULL, manifest TEXT NOT NULL, stamped_at REAL NOT NULL, upgraded_at REAL,
-  PRIMARY KEY (machine_id, manifest));
 """
 
 
