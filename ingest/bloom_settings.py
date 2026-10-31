@@ -7,11 +7,48 @@ Admin writes need the secret /run/secrets/bloom_admin sent as a Bearer token. No
 
 
 def read_machines(path):
-    raise NotImplementedError("not implemented: read_machines")
+    try:
+        import json
+        with open(path) as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            return {"machines": {}, "revoked": []}
+        machines = data.get("machines", {})
+        revoked = data.get("revoked", [])
+        if not isinstance(machines, dict):
+            machines = {}
+        if not isinstance(revoked, list):
+            revoked = []
+        else:
+            revoked = [r for r in revoked if isinstance(r, str)]
+        return {"machines": machines, "revoked": revoked}
+    except Exception:
+        return {"machines": {}, "revoked": []}
 
 
 def write_machines(path, data):
-    raise NotImplementedError("not implemented: write_machines")
+    import json
+    import os
+    import tempfile
+    dirn = os.path.dirname(os.path.abspath(path))
+    fd, tmp = tempfile.mkstemp(dir=dirn, suffix=".tmp")
+    try:
+        os.write(fd, json.dumps(data).encode())
+        os.close(fd)
+        fd = -1
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            if fd >= 0:
+                os.close(fd)
+        except Exception:
+            pass
+        try:
+            os.unlink(tmp)
+        except Exception:
+            pass
+        raise
 
 
 def add_machine(path, machine_id, now):
