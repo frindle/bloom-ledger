@@ -59,21 +59,30 @@ def load_tokens(path, machines_path=None):
     if machines_path:
         try:
             data = json.loads(Path(machines_path).read_text())
-            revoked = set(data.get("revoked", []))
+            if not isinstance(data, dict):
+                return out
+            raw_revoked = data.get("revoked", [])
+            revoked = set()
+            if isinstance(raw_revoked, list):
+                for r in raw_revoked:
+                    if isinstance(r, str):
+                        revoked.add(r)
             out = {sha: mid for sha, mid in out.items() if mid not in revoked}
-            for mid, info in data.get("machines", {}).items():
-                if mid in revoked:
-                    continue
-                if not isinstance(info, dict):
-                    continue
-                h = info.get("hash")
-                if not isinstance(h, str) or not SHA_RE.match(h.lower()):
-                    continue
-                if not MID_RE.match(mid):
-                    continue
-                hlow = h.lower()
-                if mid not in set(out.values()) and hlow not in out:
-                    out[hlow] = mid
+            machines = data.get("machines", {})
+            if isinstance(machines, dict):
+                for mid, info in machines.items():
+                    if mid in revoked:
+                        continue
+                    if not isinstance(info, dict):
+                        continue
+                    h = info.get("hash")
+                    if not isinstance(h, str) or not SHA_RE.match(h.lower()):
+                        continue
+                    if not MID_RE.match(mid):
+                        continue
+                    hlow = h.lower()
+                    if mid not in set(out.values()) and hlow not in out:
+                        out[hlow] = mid
         except (OSError, ValueError, TypeError, KeyError):
             pass
     return out
