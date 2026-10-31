@@ -32,7 +32,7 @@ def test_power_fields_per_day():
     d = rows[1]
     assert d["earned_micro"] == 10 and d["tokens"] == 4
     assert d["wh"] == 8.0 and d["minutes"] == 3 and d["paid_minutes"] == 1
-    assert rows[0] == {"date": "2026-10-22", "earned_micro": 0, "tokens": 0, "wh": 1.0, "minutes": 1, "paid_minutes": 1}
+    assert rows[0] == {"date": "2026-10-22", "earned_micro": 0, "tokens": 0, "wh": 1.0, "minutes": 1, "paid_minutes": 1, "cost_micro": None}
 
 
 def test_machine_filter_applies_to_power():

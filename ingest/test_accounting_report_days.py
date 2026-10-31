@@ -24,7 +24,8 @@ def make(rows):
 
 def test_groups_by_local_day_newest_first():
     db = make([(utc(2026, 10, 20, 6, 0), 100, 10, "m4"), (utc(2026, 10, 20, 20, 0), 50, None, "m4"), (utc(2026, 10, 21, 20, 0), 7, 3, "m4")])
-    assert RP.day_rows(db, TZ, "2026-10-19", "2026-10-21") == [
+    got = [{k: r[k] for k in ("date", "earned_micro", "tokens")} for r in RP.day_rows(db, TZ, "2026-10-19", "2026-10-21")]
+    assert got == [
         {"date": "2026-10-21", "earned_micro": 7, "tokens": 3},
         {"date": "2026-10-20", "earned_micro": 50, "tokens": 0},
         {"date": "2026-10-19", "earned_micro": 100, "tokens": 10}]
