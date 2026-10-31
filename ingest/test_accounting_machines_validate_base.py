@@ -8,7 +8,7 @@ OWNED = {"id": "m4max", "display_name": "M4 Max", "processor": "Apple M4 Max", "
 def test_valid_common_fields_have_no_errors():
     assert M.validate_machine(OWNED) == {}
     assert M.validate_machine(dict(OWNED, watts=None, address="studio.local", plug_address="10.0.0.5", plug_type="shelly")) == {}
-    assert M.validate_machine(dict(OWNED, ownership="leased", business_mode="leased_100")) == {}
+    assert M.validate_machine(dict(OWNED, ownership="leased", business_mode="leased_100", lease_monthly_cents=13735, lease_start="2026-11-15")) == {}
 
 
 def test_each_bad_field_is_named():
