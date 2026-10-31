@@ -136,7 +136,55 @@ def admin_check(headers, secret_path):
 
 
 def admin_post(path, headers, body, admin_path, machines_path, now):
-    raise NotImplementedError("not implemented: admin_post")
+    import json
+    import bloom_ingest
+    result = admin_check(headers, admin_path)
+    if result is not None:
+        return result
+    if path == "/v1/settings/machines":
+        try:
+            data = json.loads(body)
+        except Exception:
+            return (400, {"error": "bad request"})
+        if not isinstance(data, dict):
+            return (400, {"error": "bad request"})
+        mid = data.get("id")
+        if not isinstance(mid, str) or not bloom_ingest.MID_RE.match(mid):
+            return (400, {"error": "bad request"})
+        try:
+            token = add_machine(machines_path, mid, now)
+        except ValueError:
+            return (409, {"error": "machine exists"})
+        return (201, {"id": mid, "token": token})
+    elif path == "/v1/settings/machines/rotate":
+        try:
+            data = json.loads(body)
+        except Exception:
+            return (400, {"error": "bad request"})
+        if not isinstance(data, dict):
+            return (400, {"error": "bad request"})
+        mid = data.get("id")
+        if not isinstance(mid, str) or not bloom_ingest.MID_RE.match(mid):
+            return (400, {"error": "bad request"})
+        try:
+            token = rotate_machine(machines_path, mid, now)
+        except ValueError:
+            return (404, {"error": "unknown machine"})
+        return (200, {"id": mid, "token": token})
+    elif path == "/v1/settings/machines/revoke":
+        try:
+            data = json.loads(body)
+        except Exception:
+            return (400, {"error": "bad request"})
+        if not isinstance(data, dict):
+            return (400, {"error": "bad request"})
+        mid = data.get("id")
+        if not isinstance(mid, str) or not bloom_ingest.MID_RE.match(mid):
+            return (400, {"error": "bad request"})
+        revoke_machine(machines_path, mid)
+        return (200, {"id": mid, "revoked": True})
+    else:
+        return (404, {"error": "not found"})
 
 
 def machine_rows(db, root, now, extra_ids):
