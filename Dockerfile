@@ -2,9 +2,8 @@
 # Build context = this folder (Dockerfile, ingest/, lib/).
 FROM python:3.12-slim
 
-# OpenTimestamps client (`ots`) for the daily manifest proofs. Pinned major; no other runtime deps.
-RUN pip install --no-cache-dir "opentimestamps-client>=0.7,<0.8" \
- && useradd --uid 99 --gid 100 --no-create-home --home-dir /state bloom 2>/dev/null || true
+# No runtime deps beyond the Python standard library.
+RUN useradd --uid 99 --gid 100 --no-create-home --home-dir /state bloom 2>/dev/null || true
 
 WORKDIR /app
 COPY lib/ /app/

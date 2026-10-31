@@ -1,6 +1,6 @@
 # bloom-ledger
 
-Tamper-evident record keeping for Darkbloom provider machines. Machines POST content-addressed objects (power and earnings snapshots) to a small stdlib-only Python server. The server indexes them in SQLite and closes each UTC day into a hash-chained manifest stamped with OpenTimestamps (Bitcoin). A web dashboard at `/` shows each machine's last 90 days of manifests, and `/v1/alerts` reports silent machines, stale ring snapshots and un-upgraded timestamps.
+Tamper-evident record keeping for Darkbloom provider machines. Machines POST content-addressed objects (power and earnings snapshots) to a small stdlib-only Python server. The server indexes them in SQLite and closes each UTC day into a hash-chained manifest. A web dashboard at `/` shows each machine's last 90 days of manifests, and `/v1/alerts` reports silent machines and stale ring snapshots.
 
 This is bookkeeping data, not tax advice.
 

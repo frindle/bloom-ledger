@@ -1,5 +1,5 @@
 # bloom-ledger on Unraid (Compose Manager). Build context is this folder.
-# Data: /mnt/user/data/bloom-ledger (objects, ledger manifests + .ots proofs, index.sqlite) -- keep it on the array
+# Data: /mnt/user/data/bloom-ledger (objects, ledger manifests, index.sqlite) -- keep it on the array
 # and inside the Unraid backup. Secrets are files under /mnt/user/appdata/bloom-ledger/secrets (chmod 600, owner
 # 99:100); they are NOT in this repo. README.md has the deploy steps.
 services:
