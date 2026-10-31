@@ -104,7 +104,35 @@ def revoke_machine(path, machine_id):
 
 
 def admin_check(headers, secret_path):
-    raise NotImplementedError("not implemented: admin_check")
+    import hashlib
+    import hmac
+    import os
+    import re
+    try:
+        secret = open(secret_path).read().strip()
+    except Exception:
+        return (403, {"error": "admin disabled"})
+    if not secret:
+        return (403, {"error": "admin disabled"})
+    auth = headers.get("Authorization")
+    if not auth or not auth.startswith("Bearer "):
+        return (401, {"error": "unauthorized"})
+    token = auth[7:].strip()
+    if not token:
+        return (401, {"error": "unauthorized"})
+    secret_lower = secret.lower()
+    is_64_hex = bool(re.fullmatch(r"[0-9a-f]{64}", secret_lower))
+    if is_64_hex:
+        if hmac.compare_digest(token.encode(), secret.encode()):
+            return None
+        if hmac.compare_digest(hashlib.sha256(token.encode()).hexdigest().encode(), secret_lower.encode()):
+            return None
+    else:
+        if hmac.compare_digest(token.encode(), secret.encode()):
+            return None
+        if hmac.compare_digest(hashlib.sha256(token.encode()).hexdigest().encode(), secret_lower.encode()):
+            return None
+    return (401, {"error": "unauthorized"})
 
 
 def admin_post(path, headers, body, admin_path, machines_path, now):
