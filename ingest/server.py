@@ -101,25 +101,41 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(404, {"error": "not found"})
 
     def do_POST(self):
-        if self.path != "/v1/objects":
+        if self.path == "/v1/objects":
+            try:
+                n = int(self.headers.get("Content-Length") or "-1")
+            except ValueError:
+                n = -1
+            if n < 0:
+                self.reply(411, {"error": "length required"})
+                return
+            if n > I.MAX_BYTES:
+                self.reply(413, {"error": "too large"})
+                self.close_connection = True
+                return
+            body = self.rfile.read(n)
+            tokens = I.load_tokens(TOKENS_PATH, MACHINES_PATH)
+            with DB_LOCK:
+                code, obj = I.handle_post(self.headers, body, tokens, ROOT, self.server.db, time.time())
+            self.reply(code, obj)
+        elif self.path.startswith("/v1/settings/"):
+            try:
+                n = int(self.headers.get("Content-Length") or "-1")
+            except ValueError:
+                n = -1
+            if n < 0:
+                self.reply(411, {"error": "length required"})
+                return
+            if n > 4096:
+                self.reply(413, {"error": "too large"})
+                self.close_connection = True
+                return
+            body = self.rfile.read(n)
+            with DB_LOCK:
+                code, obj = BS.admin_post(self.path, self.headers, body, ADMIN_PATH, MACHINES_PATH, time.time())
+            self.reply(code, obj)
+        else:
             self.reply(404, {"error": "not found"})
-            return
-        try:
-            n = int(self.headers.get("Content-Length") or "-1")
-        except ValueError:
-            n = -1
-        if n < 0:
-            self.reply(411, {"error": "length required"})
-            return
-        if n > I.MAX_BYTES:
-            self.reply(413, {"error": "too large"})
-            self.close_connection = True
-            return
-        body = self.rfile.read(n)
-        tokens = I.load_tokens(TOKENS_PATH, MACHINES_PATH)
-        with DB_LOCK:
-            code, obj = I.handle_post(self.headers, body, tokens, ROOT, self.server.db, time.time())
-        self.reply(code, obj)
 
 
 def days_to_close(root, db, today):
