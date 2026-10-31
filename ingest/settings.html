@@ -54,6 +54,24 @@
 </tbody>
 </table>
 </section>
+
+<section aria-labelledby="add-heading">
+<h2 id="add-heading">Add a machine</h2>
+<form id="add-form" method="post" action="/api/machines">
+<label for="new-id">Machine id</label>
+<input id="new-id" name="id" autocomplete="off" spellcheck="false" required>
+<button type="submit">Add machine</button>
+</form>
+</section>
+<section aria-labelledby="health-heading">
+<h2 id="health-heading">Ledger health</h2>
+<dl id="health"></dl>
+</section>
+<section aria-labelledby="names-heading">
+<h2 id="names-heading">Machine names</h2>
+<p>A machine name cannot be renamed because its history is write-once and hash-chained. To use a new name, add a new machine and remove the old token.</p>
+</section>
+<div id="onboarding" hidden></div>
 </main>
 </body>
 </html>
