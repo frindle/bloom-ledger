@@ -52,3 +52,43 @@ def day_rows(db, tz, start, end, machine=None, settings=None):
             if (tok or 0) > 0 and not other:
                 row["paid_minutes"] += 1
     return [days[d] for d in sorted(days, reverse=True)]
+
+
+def totals(rows):
+    """Aggregate day_rows into period figures."""
+    earned_micro = 0
+    tokens = 0
+    wh = 0.0
+    minutes = 0
+    paid_minutes = 0
+    cost_micro = 0
+    cost_none = False
+    for r in rows:
+        earned_micro += r["earned_micro"]
+        tokens += r["tokens"]
+        wh += r["wh"]
+        minutes += r["minutes"]
+        paid_minutes += r["paid_minutes"]
+        c = r["cost_micro"]
+        if c is None:
+            cost_none = True
+        else:
+            cost_micro += c
+    if cost_none:
+        cost_micro = None
+    kwh = round(wh / 1000, 3)
+    total_hours = round(minutes / 60, 2)
+    paid_hours = round(paid_minutes / 60, 2)
+    business_bp = None if minutes == 0 else paid_minutes * 10000 // minutes
+    return {
+        "earned_micro": earned_micro,
+        "tokens": tokens,
+        "wh": wh,
+        "minutes": minutes,
+        "paid_minutes": paid_minutes,
+        "cost_micro": cost_micro,
+        "kwh": kwh,
+        "total_hours": total_hours,
+        "paid_hours": paid_hours,
+        "business_bp": business_bp,
+    }
