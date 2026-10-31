@@ -137,69 +137,64 @@ LEGACY_POWER_COLUMNS = ["ts_utc", "interval_s", "samples", "power_ok", "avg_w", 
 
 
 def power_columns(first_line):
-    """Return the list of column names when first_line is a power CSV header
-    (contains both 'ts_utc' and 'wh'), else None."""
-    try:
-        reader = csv.reader([first_line])
-        fields = next(reader)
-    except (StopIteration, TypeError):
-        return None
-    if "ts_utc" in fields and "wh" in fields:
-        return fields
-    return None
+    """Header columns when `first_line` is a power CSV header (has ts_utc and wh), else None."""
+    cols = next(csv.reader([first_line.strip()]), [])
+    return cols if "ts_utc" in cols and "wh" in cols else None
 
 
 def parse_power_line(line, columns):
-    """Parse one CSV data row against columns. Returns a dict or None."""
-    if not line or not line.strip():
+    """One power CSV row -> dict(ts, wh, interval_s, power_ok, dbk_state, other_work, tokens_delta), or None."""
+    vals = next(csv.reader([line.strip()]), [])
+    if len(vals) < len(columns) or not line.strip():
         return None
+    r = dict(zip(columns, vals))
     try:
-        reader = csv.reader([line])
-        values = next(reader)
-    except (StopIteration, TypeError):
+        ts = int(dt.datetime.fromisoformat(r["ts_utc"].replace("Z", "+00:00")).timestamp())
+        ok = 1 if r["power_ok"].strip().lower() in ("1", "true") else 0
+        wh = float(r["wh"] or 0) if ok else 0.0
+        return {"ts": ts, "wh": wh, "interval_s": float(r["interval_s"] or 0), "power_ok": ok,
+                "dbk_state": r.get("dbk_state", ""), "other_work": 1 if float(r.get("other_work") or 0) > 0 else 0,
+                "tokens_delta": int(float(r.get("tokens_delta") or 0))}
+    except (KeyError, ValueError):
         return None
-    if len(values) < len(columns):
-        return None
-    mapping = dict(zip(columns, values))
-    # ts_utc -> ts (integer UTC epoch seconds)
-    try:
-        ts_text = mapping.get("ts_utc", "").strip()
-        if not ts_text:
-            return None
-        dt_obj = dt.datetime.fromisoformat(ts_text.replace("Z", "+00:00"))
-        ts = int(dt_obj.timestamp())
-    except (ValueError, AttributeError):
-        return None
-    # power_ok: 1 when lower-cased is '1' or 'true', else 0
-    po_text = (mapping.get("power_ok") or "").strip().lower()
-    power_ok = 1 if po_text in ("1", "true") else 0
-    # wh: float(wh), 0.0 when empty, always 0.0 when power_ok is 0
-    wh_text = (mapping.get("wh") or "").strip()
-    try:
-        wh = float(wh_text) if wh_text else 0.0
-    except ValueError:
-        return None
-    if power_ok == 0:
-        wh = 0.0
-    # interval_s: float(interval_s), 0.0 when empty
-    int_text = (mapping.get("interval_s") or "").strip()
-    try:
-        interval_s = float(int_text) if int_text else 0.0
-    except ValueError:
-        interval_s = 0.0
-    # dbk_state: text (empty string if absent)
-    dbk_state = mapping.get("dbk_state", "")
-    # other_work: 1 when float(other_work or 0) > 0 else 0
-    ow_text = (mapping.get("other_work") or "").strip()
-    try:
-        other_work = 1 if float(ow_text) > 0 else 0
-    except (ValueError, TypeError):
-        other_work = 0
-    # tokens_delta: int(float(tokens_delta or 0))
-    td_text = (mapping.get("tokens_delta") or "").strip()
-    try:
-        tokens_delta = int(float(td_text)) if td_text else 0
-    except (ValueError, TypeError):
-        tokens_delta = 0
-    return {"ts": ts, "wh": wh, "interval_s": interval_s, "power_ok": power_ok,
-            "dbk_state": dbk_state, "other_work": other_work, "tokens_delta": tokens_delta}
+
+
+def store_power(db, machine_id, sha, path, offset, payload, since_ts=INGEST_FROM_TS):
+    """Parse a power CSV payload into the power_minutes table; returns (stored, bad)."""
+    db.execute(
+        "CREATE TABLE IF NOT EXISTS acct_headers ("
+        "machine_id TEXT NOT NULL, path TEXT NOT NULL, header TEXT NOT NULL, "
+        "PRIMARY KEY (machine_id, path))"
+    )
+    stored = bad = 0
+    non_blank = [l for l in payload.splitlines() if l.strip()]
+    columns = LEGACY_POWER_COLUMNS
+    if offset == 0 and non_blank:
+        hdr = power_columns(non_blank[0])
+        if hdr is not None:
+            columns = hdr
+            db.execute(
+                "INSERT OR REPLACE INTO acct_headers (machine_id, path, header) VALUES (?, ?, ?)",
+                (machine_id, path, non_blank[0]),
+            )
+            non_blank = non_blank[1:]
+    for line in non_blank:
+        row = parse_power_line(line, columns)
+        if row is None:
+            bad += 1
+        elif row["ts"] >= since_ts:
+            cur = db.execute(
+                "INSERT OR IGNORE INTO power_minutes "
+                "(machine_id, ts, wh, interval_s, power_ok, dbk_state, other_work, tokens_delta) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (machine_id, row["ts"], row["wh"], row["interval_s"], row["power_ok"],
+                 row["dbk_state"], row["other_work"], row["tokens_delta"]),
+            )
+            stored += cur.rowcount
+    if bad:
+        db.execute(
+            "INSERT OR REPLACE INTO acct_parse_errors (machine_id, sha256, n) VALUES (?, ?, ?)",
+            (machine_id, sha, bad),
+        )
+    db.commit()
+    return stored, bad
