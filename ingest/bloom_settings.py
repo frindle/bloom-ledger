@@ -105,6 +105,8 @@ def revoke_machine(path, machine_id):
 
 def admin_check(headers, secret_path):
     import hashlib
+    if secret_path is None:
+        return None
     import hmac
     import os
     import re
