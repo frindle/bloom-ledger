@@ -71,11 +71,36 @@ def add_machine(path, machine_id, now):
 
 
 def rotate_machine(path, machine_id, now):
-    raise NotImplementedError("not implemented: rotate_machine")
+    import hashlib
+    import json
+    import secrets
+    import bloom_ingest
+    if not isinstance(machine_id, str) or not bloom_ingest.MID_RE.match(machine_id):
+        raise ValueError(f"invalid machine_id: {machine_id!r}")
+    data = read_machines(path)
+    if machine_id not in data["machines"]:
+        raise ValueError(f"unknown machine_id: {machine_id!r}")
+    token = secrets.token_urlsafe(32)
+    h = hashlib.sha256(token.encode()).hexdigest()
+    data["machines"][machine_id]["hash"] = h
+    data["machines"][machine_id]["rotated"] = now
+    write_machines(path, data)
+    return token
 
 
 def revoke_machine(path, machine_id):
-    raise NotImplementedError("not implemented: revoke_machine")
+    import json
+    import bloom_ingest
+    if not isinstance(machine_id, str) or not bloom_ingest.MID_RE.match(machine_id):
+        raise ValueError(f"invalid machine_id: {machine_id!r}")
+    data = read_machines(path)
+    if machine_id in data["machines"]:
+        del data["machines"][machine_id]
+    if machine_id not in data["revoked"]:
+        data["revoked"].append(machine_id)
+    data["revoked"] = sorted(set(data["revoked"]))
+    write_machines(path, data)
+    return None
 
 
 def admin_check(headers, secret_path):
