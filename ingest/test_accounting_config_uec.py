@@ -16,6 +16,6 @@ def test_versioned_by_effective_date():
     C.create_settings_table(db)
     C.set_setting(db, "universal_charge_usd_per_kwh", "0.00039", "2026-10-01", 1)
     C.set_setting(db, "rate_schedule", SCHED, "2026-10-01", 2)
-    assert C.effective_settings(db, "2026-09-30")["universal_charge_usd_per_kwh"] is None
-    got = C.effective_settings(db, "2026-10-02")
+    assert C.effective_settings(db, "2026-09-30")["values"]["universal_charge_usd_per_kwh"] is None
+    got = C.effective_settings(db, "2026-10-02")["values"]
     assert got["universal_charge_usd_per_kwh"] == "0.00039" and got["rate_schedule"] == SCHED
