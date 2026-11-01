@@ -101,6 +101,9 @@ def apply_view(report, view):
 
 
 def build_tax(db, year, view="business"):
+    """Tax-year report dict for calendar `year` from the ledger database, shaped for `view` ("business" or "hobby"; ValueError otherwise).
+
+    Business share is paid minutes only. Voided entries are excluded. Keys: year, view, months (month_rows), totals (tax_totals), disclaimer."""
     settings = CF.effective_settings(db, "%d-12-31" % year)["values"]
     start, end = "%d-01-01" % year, "%d-12-31" % year
     shares = month_shares(year, RP.day_rows(db, settings["local_timezone"], start, end, None, settings))
@@ -108,3 +111,20 @@ def build_tax(db, year, view="business"):
     months = month_rows(year, shares, fixed)
     report = {"year": year, "view": "business", "months": months, "totals": tax_totals(months), "disclaimer": "Bookkeeping, not tax advice"}
     return apply_view(report, view)
+
+
+def tax_csv(report):
+    buf = io.StringIO()
+    w = csv.writer(buf, lineterminator="\n")
+    months = report.get("months", [])
+    if months:
+        header = list(months[0].keys())
+    else:
+        header = ["month", "income_micro"]
+    w.writerow(header)
+    for m in months:
+        w.writerow([m.get(c) for c in header])
+    totals = report.get("totals", {})
+    w.writerow(["TOTAL"] + [totals.get(c, "") for c in header[1:]])
+    w.writerow([report["disclaimer"]])
+    return buf.getvalue()
