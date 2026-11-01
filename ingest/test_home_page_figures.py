@@ -37,7 +37,7 @@ def test_figures_render_with_values(tmp_path):
     assert res["errors"] == [] and res["inner_html_writes"] == 0
     assert [f["url"] for f in res["fetches"] if f["url"].startswith("/v1/accounting/")][0] == URL
     text = summary_text(res)
-    for want in ("$12.34", "1.5 kWh", "cost $0.25", "3.5 h", "of 5 h, 70% business", "4,200", "$9.00"):
+    for want in ("$12.34", "1.5 kWh", "cost $0.25", "3.5 h", "of 5 h, 70% paid", "4,200", "$9.00"):
         assert want in text, want
     assert "not set" not in text and find(res["dom"], "banner")["hidden"]
 

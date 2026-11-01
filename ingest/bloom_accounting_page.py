@@ -120,7 +120,7 @@ def script_js():
     const cost = t.cost_micro !== null ? "$" + (t.cost_micro / 1e6).toFixed(2) : null;
     const power_note = "cost " + (cost || "not set");
     const power_val = t.minutes ? fmtKwh(t.kwh) + " kWh" : null;
-    const paid_note = "of " + t.total_hours + " h, " + (t.business_bp !== null ? (t.business_bp / 100) + "% business" : "not set");
+    const paid_note = "of " + t.total_hours + " h, " + (t.business_bp !== null ? (t.business_bp / 100) + "% paid" : "not set");
     const paid_val = t.minutes ? t.paid_hours + " h" : null;
     const tokens_val = fmtTokensCompact(t.tokens);
     const net_val = s.net_micro !== null ? "$" + (s.net_micro / 1e6).toFixed(2) : null;
