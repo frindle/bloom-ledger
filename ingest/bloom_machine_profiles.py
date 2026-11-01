@@ -81,26 +81,30 @@ def list_profiles(db):
 
 
 def profile_post(path, body, db, machines_path, now):
+    """Handle POST /v1/settings/machines/profile and /v1/settings/machines/remove; returns (status, json-able object).
+
+    profile: body {"id": ..., plus any of FIELDS} saves the profile and answers 200 {"id", "profile"}.
+    remove:  body {"id": ...} revokes the machine's ingest token and marks the profile inactive; every stored
+    row for that machine stays. Answers 200 {"id", "removed": true}."""
     import json
     import bloom_settings
     if path not in ("/v1/settings/machines/profile", "/v1/settings/machines/remove"):
         return (404, {"error": "not found"})
     try:
-        raw = json.loads(body)
-    except (ValueError, TypeError):
+        data = json.loads(body)
+    except Exception:
         return (400, {"error": "bad request"})
-    if not isinstance(raw, dict):
+    if not isinstance(data, dict):
         return (400, {"error": "bad request"})
-    mid = raw.get("id")
+    mid = data.get("id")
     if not isinstance(mid, str) or not bloom_ingest.MID_RE.match(mid):
         return (400, {"error": "bad request"})
     if path.endswith("/remove"):
         bloom_settings.revoke_machine(machines_path, mid)
         deactivate_profile(db, mid, now)
         return (200, {"id": mid, "removed": True})
-    fields = {k: v for k, v in raw.items() if k != "id"}
+    fields = {k: v for k, v in data.items() if k != "id"}
     errors = validate_profile(fields)
     if errors:
-        return (400, {"error": "bad fields", "fields": sorted(errors.keys())})
+        return (400, {"error": "bad fields", "fields": errors})
     return (200, {"id": mid, "profile": upsert_profile(db, mid, fields, now)})
-
