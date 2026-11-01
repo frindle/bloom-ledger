@@ -102,14 +102,6 @@ def revoke_machine(path, machine_id):
     write_machines(path, data)
     return None
 
-
-def admin_check(headers, secret_path):
-    import hashlib
-    if secret_path is None:
-        return None
-    return (401, {"error": "unauthorized"})
-
-
 def admin_post(path, headers, body, machines_path, now):
     import json
     import bloom_ingest
