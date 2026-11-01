@@ -114,17 +114,15 @@ def build_tax(db, year, view="business"):
 
 
 def tax_csv(report):
+    """CSV text (header, one row per month, then a TOTAL row, then the disclaimer line) for a build_tax report.
+
+    Columns are the keys of the first month row, in order, with money columns in whole micro-USD as integers; None is an empty cell."""
+    cols = list(report["months"][0]) if report["months"] else ["month", "income_micro"]
     buf = io.StringIO()
     w = csv.writer(buf, lineterminator="\n")
-    months = report.get("months", [])
-    if months:
-        header = list(months[0].keys())
-    else:
-        header = ["month", "income_micro"]
-    w.writerow(header)
-    for m in months:
-        w.writerow([m.get(c) for c in header])
-    totals = report.get("totals", {})
-    w.writerow(["TOTAL"] + [totals.get(c, "") for c in header[1:]])
+    w.writerow(cols)
+    for m in report["months"]:
+        w.writerow(["" if m[c] is None else m[c] for c in cols])
+    w.writerow(["TOTAL"] + ["" if report["totals"].get(c, "") is None else report["totals"].get(c, "") for c in cols[1:]])
     w.writerow([report["disclaimer"]])
     return buf.getvalue()
