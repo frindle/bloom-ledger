@@ -29,6 +29,8 @@ Open `http://<host>:8787/`. Health check: `GET /healthz`.
 
 Changes need no password: the server only accepts them from a private (LAN) address with a same-origin request, and refuses anything that arrives through a public proxy. That is a guard, not authentication, so never expose port 8787 to the internet. The page also lets you edit each machine's display name, model and lease, and links to `/settings/accounting`. Machines added here are stored as token hashes in `/data/machines.json`; `bloom_tokens` stays read-only and wins if the same id is in both. Reads are open.
 
+Tunnel access: settings writes that arrive through a public Cloudflare tunnel need a verified Cloudflare Access JWT (RS256). The team domain and the application AUD come from the `BLOOM_ACCESS_TEAM_DOMAIN` and `BLOOM_ACCESS_AUD` environment variables (set them in a git-ignored `.env` next to `compose.yaml`); if either is unset, tunnel writes fail closed. Cloudflare Access must stay in front of the hostname. The token's email claim only has to exist; it is not matched against an allowlist, so the Access policy is the access control. The Access policy and the tunnel configuration live outside this repository.
+
 The optional `bloom-earnings` service archives Darkbloom earnings from the same image (`docker compose --profile earnings up -d`) and needs a `darkbloom_token` secret file.
 
 ## Tests

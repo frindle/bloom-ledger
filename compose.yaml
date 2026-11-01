@@ -12,6 +12,8 @@ services:
       - "8787:8787"
     environment:
       ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}
+      BLOOM_ACCESS_TEAM_DOMAIN: ${BLOOM_ACCESS_TEAM_DOMAIN:-}
+      BLOOM_ACCESS_AUD: ${BLOOM_ACCESS_AUD:-}
     volumes:
       - /mnt/user/data/bloom-ledger:/data
     secrets:
