@@ -69,9 +69,19 @@ def tokens_format_js():
         "}\n"
     )
 
+
+def kwh_format_js():
+    """Return JS source for the fmtKwh formatter used in the inline script."""
+    return """function fmtKwh(n) {
+  if (typeof n !== "number" || isNaN(n) || !isFinite(n) || n < 0) return "0.0";
+  return n.toFixed(1);
+}
+""".strip() + '\n'
+
+
 def script_js():
     """The inline JavaScript that fetches summary data and shows the banner when unreachable."""
-    return tokens_format_js() + """(() => {
+    return tokens_format_js() + kwh_format_js() + """(() => {
   "use strict";
   const $ = id => document.getElementById(id);
   function render(s) {
@@ -109,7 +119,7 @@ def script_js():
     const earned = "$" + (t.earned_micro / 1e6).toFixed(2);
     const cost = t.cost_micro !== null ? "$" + (t.cost_micro / 1e6).toFixed(2) : null;
     const power_note = "cost " + (cost || "not set");
-    const power_val = t.minutes ? (t.kwh || 0) + " kWh" : null;
+    const power_val = t.minutes ? fmtKwh(t.kwh) + " kWh" : null;
     const paid_note = "of " + t.total_hours + " h, " + (t.business_bp !== null ? (t.business_bp / 100) + "% business" : "not set");
     const paid_val = t.minutes ? t.paid_hours + " h" : null;
     const tokens_val = fmtTokensCompact(t.tokens);
@@ -135,7 +145,7 @@ def script_js():
         tr.appendChild(td1);
         const td2 = document.createElement("td");
         td2.className = "num";
-        td2.textContent = (d.wh / 1000).toFixed(3);
+        td2.textContent = fmtKwh(d.wh / 1000);
         tr.appendChild(td2);
         const td3 = document.createElement("td");
         td3.className = "num";

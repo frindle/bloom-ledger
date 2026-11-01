@@ -34,7 +34,7 @@ def test_day_rows_newest_first_with_formatted_cells(tmp_path):
     assert "day-rows" in PG.script_js() and "day-rows" in PG.render_page()
     res = run_home(tmp_path, FETCH)
     assert res["errors"] == [] and res["inner_html_writes"] == 0
-    assert rows(res, "day-rows") == [["2026-10-30", "$2.00", "1.500", "1.50", "200"], ["2026-10-29", "$1.50", "1.000", "1.00", "100"]]
+    assert rows(res, "day-rows") == [["2026-10-30", "$2.00", "1.5", "1.50", "200"], ["2026-10-29", "$1.50", "1.0", "1.00", "100"]]
 
 
 def test_entries_newest_first_and_voided_marked(tmp_path):
