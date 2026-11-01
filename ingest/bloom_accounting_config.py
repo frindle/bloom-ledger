@@ -22,6 +22,8 @@ DEFAULTS = {
     "local_timezone": "America/Los_Angeles",
     "dep_method": "straight_line",
     "dep_life_months": 60,
+    "machines": None,
+    "entry_machine_links": None,
 }
 FLAGGED = {
     "m4_in_service_date": "ASSUMED 2026-10-01 (Darkbloom start); confirm the real placed-in-service date",
