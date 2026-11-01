@@ -50,7 +50,6 @@ WEBHOOK = os.environ.get("ALERT_WEBHOOK_URL", "")
 DASHBOARD = Path(__file__).resolve().parent / "dashboard.html"
 MACHINES_PATH = os.environ.get("BLOOM_MACHINES", str(ROOT / "machines.json"))
 SETTINGS = Path(__file__).resolve().parent / "settings.html"
-ADMIN_PATH = os.environ.get("BLOOM_ADMIN", "/run/secrets/bloom_admin")
 DB_LOCK = threading.Lock()
 
 

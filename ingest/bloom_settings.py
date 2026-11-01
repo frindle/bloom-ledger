@@ -3,7 +3,7 @@
 Dynamic tokens live in <data>/machines.json (mode 0600, hashes only, never a plaintext token):
   {"machines": {"<id>": {"hash": "<sha256 hex of the token>", "created": <unix time>}}, "revoked": ["<id>", ...]}
 The read-only docker secret bloom_tokens stays the base set; bloom_ingest.load_tokens merges both.
-Admin writes need the secret /run/secrets/bloom_admin sent as a Bearer token. Nothing here logs a token or a body."""
+There is no admin key: server.py guards every write with the LAN write guard. Nothing here logs a token or a body."""
 
 
 def read_machines(path):
