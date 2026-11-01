@@ -73,26 +73,20 @@ def settings_form_rows():
 
 
 def settings_form_page():
+    """Full HTML document of the /settings/accounting page: one labelled field per accounting input, a CPA reminder, inline script."""
     return """<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Accounting settings</title>
-<style>
-body { font-family: sans-serif; max-width: 40em; margin: 2em auto; }
-label { display: block; margin-top: 0.5em; }
-input, select, textarea { margin-top: 0.25em; }
-</style>
-</head>
-<body>
+<style>body { font-family: system-ui, sans-serif; margin: 1.5rem; } label { display: inline-block; min-width: 18rem; } textarea { width: 30rem; height: 5rem; }</style>
+</head><body>
 <h1>Accounting settings</h1>
 <p><strong>Bookkeeping, not tax advice.</strong> Confirm with CPA: depreciation method, elections and business-use figures.</p>
 <form id="acct-form">
 <p><label for="effective-from">Effective from (YYYY-MM-DD)</label> <input id="effective-from" required></p>
-""" + settings_form_rows() + """<p><button type="submit">Save changed fields</button> <span id="status" role="status"></span></p>
+%s
+<p><button type="submit">Save changed fields</button> <span id="status" role="status"></span></p>
 </form>
 <p>Blank fields are left unchanged. Each save adds a new dated row; earlier rows are kept.</p>
-<script>""" + settings_form_script() + settings_form_wiring() + """</script>
-</body>
-</html>"""
+<script>%s%s</script>
+</body></html>
+""" % (settings_form_rows(), settings_form_script(), settings_form_wiring())

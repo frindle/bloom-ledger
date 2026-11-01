@@ -30,6 +30,7 @@ import bloom_accounting_entries as AE  # noqa: E402
 import bloom_accounting_page as PG  # noqa: E402
 import bloom_accounting_summary as AS  # noqa: E402
 import bloom_accounting_tax as AT  # noqa: E402
+import bloom_accounting_settings_form as SF  # noqa: E402
 import bloom_accounting_config as ACF  # noqa: E402
 import urllib.parse  # noqa: E402
 from zoneinfo import ZoneInfo  # noqa: E402
@@ -97,11 +98,11 @@ class Handler(BaseHTTPRequestHandler):
             with DB_LOCK:
                 AX.create_schema(self.server.db)
                 code, ctype, data = AT.tax_response(self.server.db, self.path)
-                self.send_response(code)
-                self.send_header("Content-Type", ctype)
-                self.send_header("Content-Length", str(len(data)))
-                self.end_headers()
-                self.wfile.write(data)
+            self.send_response(code)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
         elif self.path in ("/", "/index.html", "/log"):
             data = DASHBOARD.read_bytes() if self.path == "/log" else PG.render_page().encode()
             self.send_response(200)
@@ -112,6 +113,13 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/v1/alerts":
             with DB_LOCK:
                 self.reply(200, AL.evaluate_alerts(self.server.db, time.time()))
+        elif self.path == "/settings/accounting":
+            data = SF.settings_form_page().encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
         elif self.path == "/settings":
             data = SETTINGS.read_bytes()
             self.send_response(200)
