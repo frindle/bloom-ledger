@@ -87,11 +87,24 @@ def fixed_by_month(settings, entries, year, shares):
 
 
 def apply_view(report, view):
+    """Return a copy of a business-view tax report for `view`: "business" unchanged, "hobby" = income only.
+
+    The hobby view keeps only month, income_micro and bp in each month and only income_micro in totals. Sets report["view"].
+    ValueError for any other view."""
     if view not in ("business", "hobby"):
-        raise ValueError(f"unknown view: {view!r}")
-    out = dict(report)
-    out["view"] = view
+        raise ValueError("bad view")
+    out = dict(report, view=view)
     if view == "hobby":
-        out["months"] = [{"month": m["month"], "income_micro": m["income_micro"], "bp": m["bp"]} for m in report["months"]]
+        out["months"] = [{k: m[k] for k in ("month", "income_micro", "bp")} for m in report["months"]]
         out["totals"] = {"income_micro": report["totals"]["income_micro"]}
     return out
+
+
+def build_tax(db, year, view="business"):
+    settings = CF.effective_settings(db, "%d-12-31" % year)["values"]
+    start, end = "%d-01-01" % year, "%d-12-31" % year
+    shares = month_shares(year, RP.day_rows(db, settings["local_timezone"], start, end, None, settings))
+    fixed = fixed_by_month(settings, AE.current_entries(db), year, shares)
+    months = month_rows(year, shares, fixed)
+    report = {"year": year, "view": "business", "months": months, "totals": tax_totals(months), "disclaimer": "Bookkeeping, not tax advice"}
+    return apply_view(report, view)
