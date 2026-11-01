@@ -24,7 +24,7 @@ def test_a_profile_is_attached_without_the_active_flag(tmp_path):
     MP.upsert_profile(db, "m4", {"display_name": "Desk", "model": "Test-Model 1", "lease_monthly_cents": 100}, 1)
     rows = {r["id"]: r for r in S.machine_rows(db, tmp_path, NOW, [])}
     assert rows["m4"]["profile"] == {"display_name": "Desk", "model": "Test-Model 1", "lease_start": None,
-                                     "lease_monthly_cents": 100}
+                                     "lease_monthly_cents": 100, "acquisition": "leased"}
     assert rows["m4"]["status"] == "reporting" and "profile" not in rows["m5"]
 
 

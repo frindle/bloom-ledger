@@ -8,9 +8,10 @@ import dom_support as D
 
 HERE = Path(__file__).resolve().parent
 TOKENS = ["paper", "card", "ink", "muted", "rule", "sealed", "waiting", "missing", "serif", "mono"]
-COLUMNS = ["Machine id", "Display name", "Model", "Lease start", "Lease $/month", "Last seen", "Days sealed", "Status", "Actions"]
+COLUMNS = ["Machine id", "Display name", "Model", "Acquired", "Lease start", "Lease $/month", "Last seen", "Days sealed", "Status", "Actions"]
 PROFILE = {"display_name": "Studio", "model": "M4 Max", "lease_start": "2026-01-15", "lease_monthly_cents": 12345}
 NO_PROFILE = {"display_name": None, "model": None, "lease_start": None, "lease_monthly_cents": None}
+ACQ_TEXT = "LeasedPurchased"
 SETTINGS = {
     "machines": [{"id": "m4max", "last_seen": 1793299880, "objects": 573, "days_sealed": 12, "status": "reporting", "profile": PROFILE},
                  {"id": "mini", "last_seen": None, "objects": 0, "days_sealed": 0, "status": "not-reporting-yet", "profile": NO_PROFILE}],
@@ -58,7 +59,7 @@ def css_tokens(text):
     return {n: v.strip() for n, v in re.findall(r"--(\w+):\s*([^;]+);", text)}
 
 
-def test_table_has_nine_columns_and_a_caption():
+def test_table_has_ten_columns_and_a_caption():
     html = (HERE / "settings.html").read_text()
     assert re.search(r'<table[^>]*id="machines"', html) and 'id="machine-rows"' in html and "<caption" in html
     heads = re.findall(r'<th scope="col">([^<]*)</th>', html)
@@ -68,8 +69,8 @@ def test_table_has_nine_columns_and_a_caption():
 def test_rows_show_every_column(tmp_path):
     res = load(tmp_path)
     assert res["errors"] == [], res["errors"]
-    assert D.rows(res) == [["m4max", "", "", "", "", "2 minutes ago", "12", "reporting", "SaveNew tokenRemove"],
-                           ["mini", "", "", "", "", "never", "0", "Not reporting yet", "SaveNew tokenRemove"]], D.rows(res)
+    assert D.rows(res) == [["m4max", "", "", ACQ_TEXT, "", "", "2 minutes ago", "12", "reporting", "SaveNew tokenRemove"],
+                           ["mini", "", "", ACQ_TEXT, "", "", "never", "0", "Not reporting yet", "SaveNew tokenRemove"]], D.rows(res)
     first, second = table_row_inputs(res)
     assert [i["value"] for i in first] == ["Studio", "M4 Max", "2026-01-15", "123.45"], first
     assert [i["attrs"].get("type") for i in first] == ["text", "text", "date", "number"]
@@ -88,7 +89,7 @@ def test_empty_machine_list_has_a_message(tmp_path):
     res = load(tmp_path, {"machines": []})
     assert D.rows(res) == [["No machines yet. Add one below."]], D.rows(res)
     cell = D.find(res["dom"], "machine-rows")["children"][0]["children"][0]
-    assert cell["attrs"].get("colspan") == "9"
+    assert cell["attrs"].get("colspan") == "10"
 
 
 def test_health_list(tmp_path):
@@ -103,7 +104,7 @@ def test_relative_time_ranges(tmp_path):
     machines = [{"id": name, "last_seen": now - secs, "objects": 1, "days_sealed": 0, "status": "silent", "profile": NO_PROFILE}
                 for name, secs in (("a", 30), ("b", 1800), ("c", 3 * 3600), ("d", 3 * 86400))]
     res = load(tmp_path, {"machines": machines})
-    assert [r[5] for r in D.rows(res)] == ["30 seconds ago", "30 minutes ago", "3 hours ago", "3 days ago"], D.rows(res)
+    assert [r[6] for r in D.rows(res)] == ["30 seconds ago", "30 minutes ago", "3 hours ago", "3 days ago"], D.rows(res)
 
 
 def test_failed_load_shows_the_page_error(tmp_path):
@@ -123,15 +124,15 @@ def test_save_posts_the_row_profile(tmp_path):
     assert post["url"] == "/v1/settings/machines/profile" and post["headers"]["content-type"] == "application/json"
     assert "authorization" not in post["headers"]
     assert json.loads(post["body"]) == {"id": "m4max", "display_name": "Studio", "model": "M4 Max",
-                                        "lease_start": "2026-01-15", "lease_monthly_cents": 12345}
-    assert "Saved." in D.rows(res)[0][8]
+                                        "lease_start": "2026-01-15", "lease_monthly_cents": 12345, "acquisition": "leased"}
+    assert "Saved." in D.rows(res)[0][9]
     assert len(get_calls(res)) == 1, "saving does not reload the table"
 
 
 def test_save_sends_nulls_for_an_empty_profile(tmp_path):
     res = load(tmp_path, one(NO_PROFILE), [{"do": "click", "sel": ".primary"}], **{"/profile": (200, {"ok": True})})
     (post,) = post_calls(res)
-    assert json.loads(post["body"]) == dict(NO_PROFILE, id="m4max")
+    assert json.loads(post["body"]) == dict(NO_PROFILE, id="m4max", acquisition="leased")
 
 
 def test_save_refusals_are_explained_in_the_row(tmp_path):
@@ -150,7 +151,7 @@ def test_save_refusals_are_explained_in_the_row(tmp_path):
 def test_remove_needs_two_clicks(tmp_path):
     click = {"do": "click", "sel": ".danger"}
     res = load(tmp_path, one(), [click], **{"/remove": (200, {"ok": True})})
-    assert post_calls(res) == [] and "Confirm" in D.rows(res)[0][8], D.rows(res)
+    assert post_calls(res) == [] and "Confirm" in D.rows(res)[0][9], D.rows(res)
     res = load(tmp_path, one(), [click, click], **{"/remove": (200, {"ok": True})})
     (post,) = post_calls(res)
     assert post["url"] == "/v1/settings/machines/remove" and json.loads(post["body"]) == {"id": "m4max"}
@@ -226,3 +227,4 @@ def test_reuses_the_dashboard_css_tokens():
     theirs = css_tokens((HERE / "dashboard.html").read_text())
     for name in TOKENS:
         assert name in mine and mine[name] == theirs[name], f"--{name}: {mine.get(name)!r} vs {theirs[name]!r}"
+

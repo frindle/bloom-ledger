@@ -6,13 +6,17 @@ import datetime as dt
 
 import bloom_ingest
 
-FIELDS = ("display_name", "model", "lease_start", "lease_monthly_cents")
+ACQUISITIONS = ("leased", "purchased")
+FIELDS = ("display_name", "model", "lease_start", "lease_monthly_cents", "acquisition")
 
 
 def create_table(db):
     db.execute("CREATE TABLE IF NOT EXISTS machine_profiles (machine_id TEXT PRIMARY KEY, display_name TEXT, model TEXT,"
                " lease_start TEXT, lease_monthly_cents INTEGER, active INTEGER NOT NULL DEFAULT 1,"
                " updated_at INTEGER NOT NULL)")
+    cols = [r[1] for r in db.execute("PRAGMA table_info(machine_profiles)")]
+    if "acquisition" not in cols:
+        db.execute("ALTER TABLE machine_profiles ADD COLUMN acquisition TEXT")
     db.commit()
 
 
@@ -41,6 +45,10 @@ def validate_profile(fields):
         v = fields["lease_monthly_cents"]
         if v is not None and (not isinstance(v, int) or isinstance(v, bool) or v <= 0):
             errors["lease_monthly_cents"] = "lease_monthly_cents must be a positive integer"
+    if "acquisition" in fields:
+        v = fields["acquisition"]
+        if v is not None and v not in ACQUISITIONS:
+            errors["acquisition"] = "acquisition must be leased or purchased"
     return errors
 
 
@@ -73,10 +81,10 @@ def deactivate_profile(db, machine_id, now):
 def list_profiles(db):
     create_table(db)
     out = {}
-    for mid, name, model, start, cents, active in db.execute(
-            "SELECT machine_id, display_name, model, lease_start, lease_monthly_cents, active FROM machine_profiles"):
+    for mid, name, model, start, cents, active, acq in db.execute(
+            "SELECT machine_id, display_name, model, lease_start, lease_monthly_cents, active, acquisition FROM machine_profiles"):
         out[mid] = {"display_name": name, "model": model, "lease_start": start, "lease_monthly_cents": cents,
-                    "active": bool(active)}
+                    "acquisition": acq or "leased", "active": bool(active)}
     return out
 
 
