@@ -54,15 +54,30 @@ def render_page():
     )
 
 
+def tokens_format_js():
+    """Return JS source defining fmtTokensFull and fmtTokensCompact."""
+    return (
+        "function fmtTokensFull(n) {\n"
+        '  if (typeof n !== "number" || !isFinite(n) || n < 0 || isNaN(n)) return "0";\n'
+        "  var s = String(Math.floor(n));\n"
+        '  return s.replace(/\\B(?=(\\d{3})+(?!\\d))/g, ",");\n'
+        "}\n"
+        "function fmtTokensCompact(n) {\n"
+        '  if (typeof n !== "number" || !isFinite(n) || n < 0 || isNaN(n)) return "0";\n'
+        '  if (n >= 1000000) return (n / 1000000).toFixed(1) + "M";\n'
+        "  return fmtTokensFull(n);\n"
+        "}\n"
+    )
+
 def script_js():
     """The inline JavaScript that fetches summary data and shows the banner when unreachable."""
-    return """(() => {
+    return tokens_format_js() + """(() => {
   "use strict";
   const $ = id => document.getElementById(id);
   function render(s) {
     const t = s.totals;
     const dl = $("summary");
-    function figure(label, value, note) {
+    function figure(label, value, note, title) {
       const d = document.createElement("div");
       const dt = document.createElement("dt");
       dt.textContent = label;
@@ -79,6 +94,9 @@ def script_js():
       } else {
         dd.textContent = value;
       }
+      if (title) {
+        dd.setAttribute("title", title);
+      }
       d.appendChild(dd);
       if (note !== undefined && note !== null) {
         const p = document.createElement("p");
@@ -94,13 +112,13 @@ def script_js():
     const power_val = t.minutes ? (t.kwh || 0) + " kWh" : null;
     const paid_note = "of " + t.total_hours + " h, " + (t.business_bp !== null ? (t.business_bp / 100) + "% business" : "not set");
     const paid_val = t.minutes ? t.paid_hours + " h" : null;
-    const tokens_val = String(t.tokens);
+    const tokens_val = fmtTokensCompact(t.tokens);
     const net_val = s.net_micro !== null ? "$" + (s.net_micro / 1e6).toFixed(2) : null;
     dl.replaceChildren(
       figure("Earned from jobs", earned),
       figure("Power", power_val, power_note),
       figure("Paid hours", paid_val, paid_note),
-      figure("Tokens", tokens_val),
+      figure("Tokens", tokens_val, null, fmtTokensFull(t.tokens)),
       figure("Net", net_val)
     );
     const dayRows = $("day-rows");
@@ -125,7 +143,7 @@ def script_js():
         tr.appendChild(td3);
         const td4 = document.createElement("td");
         td4.className = "num";
-        td4.textContent = String(d.tokens);
+        td4.textContent = fmtTokensFull(d.tokens);
         tr.appendChild(td4);
         rows.push(tr);
       }
