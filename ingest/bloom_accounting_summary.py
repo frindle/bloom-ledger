@@ -30,16 +30,21 @@ def build(db, today, period, machine=None):
     parts = (t["cost_micro"], lease, depr_biz)
     net = None if t["cost_micro"] is None or None in parts else t["earned_micro"] - t["cost_micro"] - (lease + depr_biz) * 10000
     net_missing = [k for k, v in (("lease", lease), ("depreciation", depr_biz)) if v is None]
+    machines = machine_breakdown(settings, AE.current_entries(db), start, end)
     return {"lease_cents": lease, "depreciation_cents": depr, "depreciation_business_cents": depr_biz, "net_micro": net,
             "net_missing": net_missing, "period": period, "start": start, "end": end, "machine": machine, "days": rows, "totals": t, "entries": entries,
             "power": {"basis": "metered" if t["minutes"] else "none", "estimated": False, "note": GRID_NOTE},
-            "not_set": not_set}
+            "machines": machines, "not_set": not_set}
 
 
 def machine_breakdown(settings, entries, start, end):
-    machines = settings.get("machines") or []
+    """Per-machine fixed costs for start..end from the machine records in settings; [] when none are configured.
+
+    Each row: {"id", "display_name", "ownership", "depreciation_cents", "lease_cents"} (gross cents, None when an owned machine has no basis)."""
     links = settings.get("entry_machine_links")
-    return [{"id": m["id"], "display_name": m.get("display_name", m["id"]), "ownership": m["ownership"],
-             "depreciation_cents": FX.machine_fixed_cents(m, entries, links, start, end)["depreciation_cents"],
-             "lease_cents": FX.machine_fixed_cents(m, entries, links, start, end)["lease_cents"]}
-            for m in machines]
+    rows = []
+    for m in settings.get("machines") or []:
+        c = FX.machine_fixed_cents(m, entries, links, start, end)
+        rows.append({"id": m["id"], "display_name": m.get("display_name", m["id"]), "ownership": m["ownership"],
+                     "depreciation_cents": c["depreciation_cents"], "lease_cents": c["lease_cents"]})
+    return rows
