@@ -44,3 +44,21 @@ def owned_depreciation_cents(settings, entries, start, end, machine=None):
         settings.get("dep_method"), basis, in_service,
         settings.get("dep_life_months"), start, end
     )
+
+
+def machine_basis_cents(machine, entries, links=None):
+    lid = machine.get("id")
+    link_map = links if links is not None else {}
+    total = 0
+    found = False
+    for e in entries:
+        if e.get("kind") != "cost" or e.get("category") != "hardware":
+            continue
+        mid = link_map.get(str(e["id"]), e.get("machine_id"))
+        if mid != lid:
+            continue
+        total += e["amount_cents"]
+        found = True
+    if found:
+        return total
+    return machine.get("purchase_cents")
