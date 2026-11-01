@@ -13,82 +13,110 @@
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--paper); color: var(--ink); font: 16px/1.5 var(--serif); }
-  main { max-width: 64rem; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; }
+  main { max-width: 72rem; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; }
   h1 { font-size: 2.1rem; line-height: 1.15; margin: 0 0 .35rem; font-weight: 600; letter-spacing: -.01em; }
-  h2 { font-size: 1.25rem; margin: 0; font-weight: 600; }
+  h2 { font-size: 1.25rem; margin: 0 0 .6rem; font-weight: 600; }
   p { margin: 0; }
   a { color: var(--sealed); }
-  a:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
-  button:focus-visible, input:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
+  section { background: var(--card); border: 1px solid var(--rule); border-radius: 6px; padding: 1.25rem; margin-top: 1.5rem; }
+  .nav { display: flex; gap: 1.25rem; flex-wrap: wrap; margin-bottom: .75rem; }
+  .note { color: var(--muted); }
+  .error { color: var(--missing); font-weight: 600; }
+  a:focus-visible, button:focus-visible, input:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
   button:disabled, input:disabled { opacity: .5; cursor: not-allowed; }
+  button { font: inherit; padding: .3rem .8rem; border: 1px solid var(--ink); background: var(--card); color: var(--ink); border-radius: 4px; cursor: pointer; }
+  button.primary { background: var(--ink); color: var(--paper); }
+  button.danger { border-color: var(--missing); color: var(--missing); }
+  input { font: inherit; padding: .3rem .5rem; border: 1px solid var(--rule); border-radius: 4px; background: #fff; color: var(--ink); max-width: 100%; }
+  label { display: block; color: var(--muted); font-size: .9rem; margin-bottom: .15rem; }
+  .table-wrap { overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; }
-  th, td { text-align: left; padding: .5rem .75rem; border-bottom: 1px solid var(--rule); }
-  caption { font-size: 1.1rem; font-weight: 600; margin-bottom: .5rem; }
-  dl { display: grid; grid-template-columns: max-content 1fr; gap: .15rem 1rem; }
+  th, td { text-align: left; padding: .5rem .6rem; border-bottom: 1px solid var(--rule); vertical-align: middle; }
+  th { color: var(--muted); font-weight: 600; font-size: .9rem; white-space: nowrap; }
+  td.id { font-family: var(--mono); }
+  td input { width: 100%; min-width: 7rem; }
+  td.actions { white-space: nowrap; }
+  td.actions button { margin-right: .35rem; }
+  .status-ok { color: var(--sealed); font-weight: 600; }
+  .status-wait { color: var(--waiting); font-weight: 600; }
+  .row-form { display: flex; gap: .75rem; align-items: flex-end; flex-wrap: wrap; }
+  .token-box { margin-top: .9rem; padding: .75rem; border: 2px solid var(--waiting); border-radius: 6px; background: #fff; }
+  .token-box code { display: block; font-family: var(--mono); overflow-wrap: anywhere; margin: .4rem 0; user-select: all; }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: .15rem 1rem; margin: 0; }
   dt { color: var(--muted); }
   dd { margin: 0; overflow-wrap: anywhere; }
-  @media (prefers-reduced-motion: no-preference) {}
 </style>
 </head>
 <body>
 <main>
-<a href="/">Back to the ledger</a>
+<div class="nav"><a href="/">Back to the ledger</a><a href="/settings/accounting">Accounting settings</a></div>
 <h1>Settings</h1>
-<p class="note" id="admin-note" aria-live="polite"></p>
-<form id="admin-form">
-<label for="admin-token">Admin token</label>
-<input id="admin-token" type="password" autocomplete="off" spellcheck="false">
-<button type="submit">Use token</button>
-<span id="admin-state"></span>
-</form>
+<p class="note">Changes are accepted only from your local network. There is no password: keep this service off the public internet.</p>
+<p class="error" id="page-error" role="alert" hidden></p>
 
-<section>
-<h2>Machines</h2>
+<section aria-labelledby="machines-heading">
+<h2 id="machines-heading">Machines</h2>
+<div class="table-wrap">
 <table id="machines">
-<caption>Machines overview</caption>
+<caption class="note">Each machine reports into the ledger with its own token. Edit the name, model and lease, then save the row.</caption>
 <thead>
 <tr>
-<th scope="col">Machine</th>
+<th scope="col">Machine id</th>
+<th scope="col">Display name</th>
+<th scope="col">Model</th>
+<th scope="col">Lease start</th>
+<th scope="col">Lease $/month</th>
 <th scope="col">Last seen</th>
-<th scope="col">Objects</th>
 <th scope="col">Days sealed</th>
 <th scope="col">Status</th>
 <th scope="col">Actions</th>
 </tr>
 </thead>
-<tbody id="machine-rows">
-</tbody>
+<tbody id="machine-rows"></tbody>
 </table>
+</div>
+<p class="note" id="rename-note" style="margin-top:.6rem">A machine id cannot be renamed because its history is write-once and hash-chained. To use a new id, add a machine and remove the old one. Removing a machine revokes its token and hides it here; its history is kept.</p>
 </section>
 
 <section aria-labelledby="add-heading">
 <h2 id="add-heading">Add a machine</h2>
-<form id="add-form" method="post" action="/api/machines">
+<form id="add-form" class="row-form">
+<div>
 <label for="new-id">Machine id</label>
 <input id="new-id" name="id" autocomplete="off" spellcheck="false" required>
-<button type="submit">Add machine</button>
+</div>
+<button type="submit" class="primary">Add machine</button>
 </form>
-
-<p class="note" id="form-error" role="alert" hidden></p>
+<p class="error" id="form-error" role="alert" hidden></p>
+<div class="token-box" id="token-box" hidden>
+<strong id="token-title"></strong>
+<code id="token-value"></code>
+<p class="note">Shown once. Put it in that machine's ingest config now; the server keeps only a hash.</p>
+<button type="button" id="token-copy">Copy token</button>
+<button type="button" id="token-dismiss">Done</button>
+</div>
 </section>
+
 <section aria-labelledby="health-heading">
 <h2 id="health-heading">Ledger health</h2>
 <dl id="health"></dl>
 </section>
-<section aria-labelledby="names-heading">
-<h2 id="names-heading">Machine names</h2>
-<p>A machine name cannot be renamed because its history is write-once and hash-chained. To use a new name, add a new machine and remove the old token.</p>
-</section>
-<div id="onboarding" hidden></div>
 </main>
 <script>
 (function () {
   "use strict";
   const tbody = document.getElementById("machine-rows");
   const healthDl = document.getElementById("health");
-  const adminNote = document.getElementById("admin-note");
+  const pageError = document.getElementById("page-error");
+  const formError = document.getElementById("form-error");
   const addForm = document.getElementById("add-form");
+  const tokenBox = document.getElementById("token-box");
+  const tokenTitle = document.getElementById("token-title");
+  const tokenValue = document.getElementById("token-value");
+  const idRegex = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+  let editing = false;
 
+  function showError(el, msg) { el.textContent = msg; el.hidden = !msg; }
 
   function formatBytes(bytes) {
     if (bytes < 1024) return bytes + " B";
@@ -98,12 +126,17 @@
 
   function formatServerTime(epochSeconds) {
     const d = new Date(epochSeconds * 1000);
-    const y = d.getUTCFullYear();
-    const mo = String(d.getUTCMonth() + 1).padStart(2, "0");
-    const dy = String(d.getUTCDate()).padStart(2, "0");
-    const h = String(d.getUTCHours()).padStart(2, "0");
-    const mi = String(d.getUTCMinutes()).padStart(2, "0");
-    return y + "-" + mo + "-" + dy + " " + h + ":" + mi + " UTC";
+    const p = (n) => String(n).padStart(2, "0");
+    return d.getUTCFullYear() + "-" + p(d.getUTCMonth() + 1) + "-" + p(d.getUTCDate()) +
+      " " + p(d.getUTCHours()) + ":" + p(d.getUTCMinutes()) + " UTC";
+  }
+
+  function formatRelativeTime(healthTime, lastSeen) {
+    const diff = (healthTime - lastSeen) * 1000;
+    if (diff < 90000) return Math.round(diff / 1000) + " seconds ago";
+    if (diff < 5400000) return Math.round(diff / 60000) + " minutes ago";
+    if (diff < 172800000) return Math.round(diff / 3600000) + " hours ago";
+    return Math.round(diff / 86400000) + " days ago";
   }
 
   function renderHealth(health) {
@@ -115,70 +148,138 @@
       ["Objects", String(health.objects)]
     ];
     for (const [label, value] of pairs) {
-      const dt = document.createElement("dt");
-      dt.textContent = label;
-      const dd = document.createElement("dd");
-      dd.textContent = value;
-      healthDl.appendChild(dt);
-      healthDl.appendChild(dd);
+      const dt = document.createElement("dt"); dt.textContent = label;
+      const dd = document.createElement("dd"); dd.textContent = value;
+      healthDl.append(dt, dd);
     }
+  }
+
+  async function post(path, body) {
+    const resp = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    let obj = null;
+    try { obj = await resp.json(); } catch (e) { obj = null; }
+    return { status: resp.status, ok: resp.ok, body: obj };
+  }
+
+  function explain(res) {
+    if (res.status === 403) return "Changes are only accepted from your local network.";
+    if (res.status === 409) return "That machine id already exists.";
+    if (res.status === 400 && res.body && res.body.fields) return Object.values(res.body.fields).join(" ");
+    if (res.status === 404) return "Unknown machine.";
+    return "The server refused that change.";
+  }
+
+  function showToken(title, token) {
+    tokenTitle.textContent = title;
+    tokenValue.textContent = token;
+    tokenBox.hidden = false;
+  }
+
+  function cell(child, cls) {
+    const td = document.createElement("td");
+    if (cls) td.className = cls;
+    if (typeof child === "string") td.textContent = child; else if (child) td.appendChild(child);
+    return td;
+  }
+
+  function field(value, label, type) {
+    const input = document.createElement("input");
+    input.type = type || "text";
+    input.value = value == null ? "" : value;
+    input.setAttribute("aria-label", label);
+    input.addEventListener("input", () => { editing = true; });
+    return input;
+  }
+
+  function button(text, cls, handler) {
+    const b = document.createElement("button");
+    b.type = "button"; b.textContent = text;
+    if (cls) b.className = cls;
+    b.addEventListener("click", handler);
+    return b;
   }
 
   function renderMachines(machines, healthTime) {
     tbody.replaceChildren();
     if (machines.length === 0) {
       const tr = document.createElement("tr");
-      const td = document.createElement("td");
-      td.textContent = "No machines yet.";
-      td.setAttribute("colspan", "6");
-      tr.appendChild(td);
-      tbody.appendChild(tr);
+      const td = cell("No machines yet. Add one below.");
+      td.setAttribute("colspan", "9");
+      tr.appendChild(td); tbody.appendChild(tr);
       return;
     }
     for (const m of machines) {
+      const prof = m.profile || {};
+      const name = field(prof.display_name, "Display name for " + m.id);
+      const model = field(prof.model, "Model for " + m.id);
+      const lstart = field(prof.lease_start, "Lease start for " + m.id, "date");
+      const lamt = field(prof.lease_monthly_cents == null ? "" : (prof.lease_monthly_cents / 100).toFixed(2),
+        "Lease per month for " + m.id, "number");
+      lamt.step = "0.01"; lamt.min = "0.01";
+      const rowErr = document.createElement("div");
+      rowErr.className = "error"; rowErr.hidden = true;
+      const saved = document.createElement("span");
+      saved.className = "note";
+
+      const save = button("Save", "primary", async () => {
+        rowErr.hidden = true; saved.textContent = "";
+        const fields = { id: m.id };
+        fields.display_name = name.value.trim() || null;
+        fields.model = model.value.trim() || null;
+        fields.lease_start = lstart.value || null;
+        const dollars = lamt.value.trim();
+        fields.lease_monthly_cents = dollars === "" ? null : Math.round(parseFloat(dollars) * 100);
+        if (fields.lease_monthly_cents !== null && !(fields.lease_monthly_cents > 0)) {
+          showError(rowErr, "Lease per month must be a positive amount."); return;
+        }
+        try {
+          const res = await post("/v1/settings/machines/profile", fields);
+          if (res.ok) { editing = false; saved.textContent = "Saved."; } else showError(rowErr, explain(res));
+        } catch (e) { showError(rowErr, "Can't reach the ledger."); }
+      });
+
+      const rotate = button("New token", "", async () => {
+        if (!rotate.dataset.armed) {
+          rotate.dataset.armed = "1"; rotate.textContent = "Confirm: new token";
+          setTimeout(() => { delete rotate.dataset.armed; rotate.textContent = "New token"; }, 5000);
+          return;
+        }
+        try {
+          const res = await post("/v1/settings/machines/rotate", { id: m.id });
+          if (res.ok) showToken("New token for " + m.id + " (the old one stopped working)", res.body.token);
+          else showError(rowErr, explain(res));
+        } catch (e) { showError(rowErr, "Can't reach the ledger."); }
+        delete rotate.dataset.armed; rotate.textContent = "New token";
+      });
+
+      const remove = button("Remove", "danger", async () => {
+        if (!remove.dataset.armed) {
+          remove.dataset.armed = "1"; remove.textContent = "Confirm: remove";
+          setTimeout(() => { delete remove.dataset.armed; remove.textContent = "Remove"; }, 5000);
+          return;
+        }
+        try {
+          const res = await post("/v1/settings/machines/remove", { id: m.id });
+          if (res.ok) { editing = false; fetchSettings(); } else showError(rowErr, explain(res));
+        } catch (e) { showError(rowErr, "Can't reach the ledger."); }
+      });
+
+      const statusText = m.status === "not-reporting-yet" ? "Not reporting yet" : m.status;
+      const status = cell(statusText, m.status === "not-reporting-yet" ? "status-wait" : "status-ok");
+      const actions = cell(null, "actions");
+      actions.append(save, rotate, remove, saved, rowErr);
+
       const tr = document.createElement("tr");
-      const cells = [
-        m.id,
-        m.last_seen == null ? "never" : formatRelativeTime(healthTime, m.last_seen),
-        String(m.objects),
-        String(m.days_sealed),
-        m.status === "not-reporting-yet" ? "Not reporting yet" : m.status,
-        ""
-      ];
-      for (const c of cells) {
-        const td = document.createElement("td");
-        td.textContent = c;
-        tr.appendChild(td);
-      }
+      tr.append(
+        cell(m.id, "id"), cell(name), cell(model), cell(lstart), cell(lamt),
+        cell(m.last_seen == null ? "never" : formatRelativeTime(healthTime, m.last_seen)),
+        cell(String(m.days_sealed)), status, actions
+      );
       tbody.appendChild(tr);
-    }
-  }
-
-  function formatRelativeTime(healthTime, lastSeen) {
-    const diff = (healthTime - lastSeen) * 1000;
-    if (diff < 90000) return Math.round(diff / 1000) + " seconds ago";
-    if (diff < 5400000) return Math.round(diff / 60000) + " minutes ago";
-    if (diff < 172800000) return Math.round(diff / 3600000) + " hours ago";
-    return Math.round(diff / 86400000) + " days ago";
-  }
-
-  function updateAdminUI(adminEnabled) {
-    if (!adminEnabled) {
-      adminNote.textContent = "Read-only: no admin secret (bloom_admin) is set on the server, so adding, rotating and removing machines is disabled.";
-      adminNote.hidden = false;
-      if (addForm) {
-        for (const el of [...addForm.querySelectorAll("input"), ...addForm.querySelectorAll("button")]) {
-          el.disabled = true;
-        }
-      }
-    } else {
-      adminNote.textContent = "";
-      adminNote.hidden = true;
-      if (addForm) {
-        for (const el of [...addForm.querySelectorAll("input"), ...addForm.querySelectorAll("button")]) {
-          el.disabled = false;
-        }
-      }
     }
   }
 
@@ -189,106 +290,41 @@
       const data = await resp.json();
       const health = data.health || {};
       renderHealth(health);
-      renderMachines(data.machines || [], health.time || Date.now());
-      updateAdminUI(data.admin_enabled || false);
+      if (!editing) renderMachines(data.machines || [], health.time || Date.now() / 1000);
+      showError(pageError, "");
     } catch (e) {
-      adminNote.textContent = "Can't reach the ledger. Check that the bloom-ledger container is running.";
-      adminNote.hidden = false;
+      showError(pageError, "Can't reach the ledger. Check that the bloom-ledger container is running.");
     }
   }
 
-  window.reloadSettings = fetchSettings;
+  addForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    showError(formError, "");
+    const newId = (document.getElementById("new-id").value || "").trim();
+    if (!idRegex.test(newId)) {
+      showError(formError, "Machine id must be 1 to 64 letters, digits, dots, dashes or underscores, starting with a letter or digit.");
+      return;
+    }
+    try {
+      const res = await post("/v1/settings/machines", { id: newId });
+      if (res.ok) {
+        document.getElementById("new-id").value = "";
+        showToken("Token for " + newId, res.body.token);
+        editing = false; fetchSettings();
+      } else showError(formError, explain(res));
+    } catch (err) { showError(formError, "Can't reach the ledger."); }
+  });
+
+  document.getElementById("token-copy").addEventListener("click", () => {
+    if (navigator.clipboard) navigator.clipboard.writeText(tokenValue.textContent);
+  });
+  document.getElementById("token-dismiss").addEventListener("click", () => {
+    tokenBox.hidden = true; tokenValue.textContent = "";
+  });
+
   fetchSettings();
   setInterval(fetchSettings, 60000);
 })();
 </script>
-
-<script>
-(function () {
-  "use strict";
-  const KEY = "bloom-admin-token";
-  const adminForm = document.getElementById("admin-form");
-  const adminTokenInput = document.getElementById("admin-token");
-  const adminState = document.getElementById("admin-state");
-  const formError = document.getElementById("form-error");
-  const adminNote = document.getElementById("admin-note");
-  const addForm = document.getElementById("add-form");
-  const idRegex = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
-
-  function updateAdminUIState() {
-    const token = sessionStorage.getItem(KEY);
-    if (token) {
-      adminState.textContent = "Admin token set for this tab.";
-    } else {
-      adminState.textContent = "Enter the admin token to make changes.";
-    }
-  }
-
-  updateAdminUIState();
-
-  if (adminForm) {
-    adminForm.addEventListener("submit", function (e) {
-      e.preventDefault();
-      const raw = (adminTokenInput.value || "").trim();
-      if (raw) {
-        sessionStorage.setItem(KEY, raw);
-        adminTokenInput.value = "";
-        adminTokenInput.type = "password";
-      }
-      updateAdminUIState();
-    });
-  }
-
-  if (addForm) {
-    addForm.addEventListener("submit", async function (e) {
-      e.preventDefault();
-      formError.textContent = "";
-      formError.hidden = true;
-      const newId = (document.getElementById("new-id").value || "").trim();
-      const token = sessionStorage.getItem(KEY);
-      if (!token) {
-        formError.textContent = "Enter the admin token first (above), then add the machine.";
-        formError.hidden = false;
-        return;
-      }
-      if (!idRegex.test(newId)) {
-        formError.textContent = "Machine id must be 1 to 64 letters, digits, dots, dashes or underscores, starting with a letter or digit.";
-        formError.hidden = false;
-        return;
-      }
-      try {
-        const resp = await fetch("/v1/settings/machines", {
-          method: "POST",
-          headers: { "Authorization": "Bearer " + token, "Content-Type": "application/json" },
-          body: JSON.stringify({ id: newId })
-        });
-        if (resp.status === 401) {
-          sessionStorage.removeItem(KEY);
-          updateAdminUIState();
-          adminNote.textContent = "The admin token was not accepted. Enter it again.";
-          adminNote.hidden = false;
-        } else if (resp.status === 403) {
-          adminNote.textContent = "Admin changes are disabled on the server.";
-          adminNote.hidden = false;
-        } else if (resp.status === 409) {
-          sessionStorage.setItem(KEY, token);
-          formError.textContent = "That machine id already exists.";
-          formError.hidden = false;
-        } else if (!resp.ok) {
-          formError.textContent = "The server refused that id.";
-          formError.hidden = false;
-        } else {
-          document.getElementById("new-id").value = "";
-          window.reloadSettings();
-        }
-      } catch (networkError) {
-        formError.textContent = "Can\u0027t reach the ledger.";
-        formError.hidden = false;
-      }
-    });
-  }
-})();
-</script>
-
 </body>
 </html>
