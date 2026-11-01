@@ -3,6 +3,10 @@
 The ledger is a local service; this replaces the admin key for settings writes."""
 from urllib.parse import urlparse
 import ipaddress
+import os
+import re
+import time
+import bloom_access
 
 
 def is_private_ip(ip):
@@ -33,9 +37,21 @@ def same_origin(headers):
     return urlparse(origin).netloc.lower() == host.strip().lower()
 
 
-def write_guard(client_ip, headers):
+def access_ok(headers, env, fetch_jwks, now):
+    team = (env.get("BLOOM_ACCESS_TEAM_DOMAIN") or "").strip()
+    aud = (env.get("BLOOM_ACCESS_AUD") or "").strip()
+    if not aud or not re.fullmatch(r"[a-z0-9-]+\.cloudflareaccess\.com", team):
+        return False
+    token = headers.get("Cf-Access-Jwt-Assertion")
+    return bloom_access.verify(token, team, aud, fetch_jwks or bloom_access.default_fetch, now) is not None
+
+
+def write_guard(client_ip, headers, env=None, fetch_jwks=None, now=None):
+    env = os.environ if env is None else env
+    now = time.time() if now is None else now
     if not is_private_ip(client_ip) or not forwarded_ok(headers):
-        return (403, {"error": "local network only"})
+        if not access_ok(headers, env, fetch_jwks, now):
+            return (403, {"error": "local network only"})
     if not same_origin(headers):
         return (403, {"error": "cross-origin write blocked"})
     return None
