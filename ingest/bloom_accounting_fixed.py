@@ -60,28 +60,26 @@ def machine_basis_cents(machine, entries, links=None):
 
 
 def machine_fixed_cents(machine, entries, links, start, end, default_bp=None):
-    bp = 10000 if default_bp is None else default_bp
-    ownership = machine.get("ownership")
-    if ownership == "owned":
-        basis = machine_basis_cents(machine, entries, links)
-        if basis is None:
-            return {"depreciation_cents": None, "depreciation_business_cents": None, "lease_cents": 0, "lease_business_cents": 0}
-        asset = {"basis_cents": basis, "placed_in_service": machine["in_service"], "method": machine.get("depreciation_method", "macrs5")}
-        for k in ("section179_cents", "bonus_bp", "business_use_bp", "class", "convention"):
-            if k in machine:
-                asset[k] = machine[k]
-        dep = DP.asset_depreciation_cents(asset, start, end)
-        dep_bus = DP.asset_business_cents(asset, start, end, bp)
-        return {"depreciation_cents": dep, "depreciation_business_cents": dep_bus, "lease_cents": 0, "lease_business_cents": 0}
-    elif ownership == "leased":
-        m = machine["lease_monthly_cents"]
-        months = machine.get("lease_months") or 1200
-        begin = dt.date.fromisoformat(machine["lease_start"])
-        s = dt.date.fromisoformat(start)
-        e = dt.date.fromisoformat(end)
-        lc = _cum_lease(m, months, begin, e) - _cum_lease(m, months, begin, s - dt.timedelta(days=1))
-        lbc = DP.business_cents(lc, bp)
-        return {"depreciation_cents": 0, "depreciation_business_cents": 0, "lease_cents": lc, "lease_business_cents": lbc}
-    else:
-        return {"depreciation_cents": 0, "depreciation_business_cents": 0, "lease_cents": 0, "lease_business_cents": 0}
+    """Fixed costs (cents) of one machine record for the inclusive range start..end, gross and at business share.
 
+    Returns {"depreciation_cents", "depreciation_business_cents", "lease_cents", "lease_business_cents"}; depreciation is None
+    when an owned machine has no basis. default_bp (basis points, None = 10000) is the business share for years the machine
+    record gives no business_use_bp."""
+    bp = 10000 if default_bp is None else default_bp
+    dep = dep_biz = None
+    lease = 0
+    if machine["ownership"] == "owned":
+        basis = machine_basis_cents(machine, entries, links)
+        if basis is not None:
+            asset = {"basis_cents": basis, "placed_in_service": machine["in_service"], "method": machine.get("depreciation_method", "macrs5"),
+                     **{k: machine[k] for k in ("class", "convention", "section179_cents", "bonus_bp", "business_use_bp") if k in machine}}
+            dep = DP.asset_depreciation_cents(asset, start, end)
+            dep_biz = DP.asset_business_cents(asset, start, end, bp)
+        lease_biz = 0
+    else:
+        b, s, e = (dt.date.fromisoformat(x) for x in (machine["lease_start"], start, end))
+        months = machine.get("lease_months") or 1200
+        lease = _cum_lease(machine["lease_monthly_cents"], months, b, e) - _cum_lease(machine["lease_monthly_cents"], months, b, s - dt.timedelta(days=1))
+        lease_biz = DP.business_cents(lease, bp)
+        dep = dep_biz = 0
+    return {"depreciation_cents": dep, "depreciation_business_cents": dep_biz, "lease_cents": lease, "lease_business_cents": lease_biz}

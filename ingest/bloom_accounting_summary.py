@@ -34,3 +34,12 @@ def build(db, today, period, machine=None):
             "net_missing": net_missing, "period": period, "start": start, "end": end, "machine": machine, "days": rows, "totals": t, "entries": entries,
             "power": {"basis": "metered" if t["minutes"] else "none", "estimated": False, "note": GRID_NOTE},
             "not_set": not_set}
+
+
+def machine_breakdown(settings, entries, start, end):
+    machines = settings.get("machines") or []
+    links = settings.get("entry_machine_links")
+    return [{"id": m["id"], "display_name": m.get("display_name", m["id"]), "ownership": m["ownership"],
+             "depreciation_cents": FX.machine_fixed_cents(m, entries, links, start, end)["depreciation_cents"],
+             "lease_cents": FX.machine_fixed_cents(m, entries, links, start, end)["lease_cents"]}
+            for m in machines]
