@@ -4,52 +4,53 @@ Each input is saved as one append-only, effective-dated row through POST /v1/acc
 
 
 def settings_form_script():
-    return (
-        "function buildUpdates(items, effective) {\n"
-        "  var result = [];\n"
-        "  for (var i = 0; i < items.length; i++) {\n"
-        "    var item = items[i];\n"
-        "    var trimmed = String(item.raw).trim();\n"
-        "    if (trimmed === '') continue;\n"
-        "    var value;\n"
-        "    if (item.type === 'int') {\n"
-        "      value = Number(trimmed);\n"
-        "      if (value !== Math.floor(value)) {\n"
-        "        throw new Error(item.key + ': not an integer');\n"
-        "      }\n"
-        "    } else if (item.type === 'json') {\n"
-        "      try {\n"
-        "        value = JSON.parse(trimmed);\n"
-        "      } catch (e) {\n"
-        "        throw new Error(item.key + ': ' + e.message);\n"
-        "      }\n"
-        "    } else {\n"
-        "      value = trimmed;\n"
-        "    }\n"
-        "    result.push({key: item.key, value: value, effective_from: effective});\n"
-        "  }\n"
-        "  return result;\n"
-        "}\n\n"
-        "function sendUpdates(updates) {\n"
-        "  if (updates.length === 0) return Promise.resolve([]);\n"
-        "  var idx = 0;\n"
-        "  var saved = [];\n"
-        "  function next() {\n"
-        "    if (idx >= updates.length) return Promise.resolve(saved);\n"
-        "    var update = updates[idx];\n"
-        "    idx++;\n"
-        "    return fetch('/v1/accounting/settings', {\n"
-        "      method: 'POST',\n"
-        "      headers: {'Content-Type': 'application/json'},\n"
-        "      body: JSON.stringify(update)\n"
-        "    }).then(function(resp) {\n"
-        "      if (!resp.ok) {\n"
-        "        throw new Error(update.key + ': HTTP ' + resp.status);\n"
-        "      }\n"
-        "      saved.push(update.key);\n"
-        "      return next();\n"
-        "    });\n"
-        "  }\n"
-        "  return next();\n"
-        "}"
-    )
+    """JavaScript (no <script> tags) for the accounting settings form: buildUpdates(items, effective) and sendUpdates(updates)."""
+    return """
+function buildUpdates(items, effective) {
+  var out = [];
+  items.forEach(function (it) {
+    var raw = String(it.raw).trim();
+    if (raw === "") { return; }
+    var value = raw;
+    try {
+      if (it.type === "int") { value = Number(raw); if (!Number.isInteger(value)) { throw new Error("not an integer"); } }
+      else if (it.type === "json") { value = JSON.parse(raw); }
+    } catch (e) { throw new Error(it.key + ": " + e.message); }
+    out.push({key: it.key, value: value, effective_from: effective});
+  });
+  return out;
+}
+function sendUpdates(updates) {
+  return updates.reduce(function (p, u) {
+    return p.then(function (done) {
+      return fetch("/v1/accounting/settings", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(u)})
+        .then(function (r) { if (!r.ok) { throw new Error(u.key + ": HTTP " + r.status); } return done.concat([u.key]); });
+    });
+  }, Promise.resolve([]));
+}
+"""
+
+
+def settings_form_wiring():
+    return """
+document.getElementById("acct-form").addEventListener("submit", function(ev) {
+  ev.preventDefault();
+  try {
+    var items = Array.prototype.map.call(document.querySelectorAll("[data-key]"), function(el) {
+      return {key: el.getAttribute("data-key"), type: el.getAttribute("data-type") || "text", raw: el.value};
+    });
+    var effective = document.getElementById("effective-from").value;
+    sendUpdates(buildUpdates(items, effective)).then(function(keys) {
+      if (keys.length === 0) {
+        document.getElementById("status").textContent = "Saved: nothing to save";
+      } else {
+        document.getElementById("status").textContent = "Saved: " + keys.join(", ");
+      }
+    }).catch(function(e) {
+      document.getElementById("status").textContent = "Failed: " + e.message;
+    });
+  } catch (e) {
+    document.getElementById("status").textContent = "Failed: " + e.message;
+  }
+});
+"""
