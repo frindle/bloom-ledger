@@ -17,36 +17,61 @@ def create_table(db):
 
 
 def validate_profile(fields):
-    errors = {}
     if not isinstance(fields, dict):
         return {"form": "not an object"}
+    errors = {}
     for key in fields:
         if key not in FIELDS:
             errors[str(key)] = "unknown field"
-            continue
-        val = fields[key]
-        if val is None:
-            continue
-        if key == "display_name" or key == "model":
-            if not isinstance(val, str):
-                errors[key] = "must be a string"
-            elif not val.strip():
-                errors[key] = "must not be blank"
-            elif len(val) > 60:
-                errors[key] = "too long"
-        elif key == "lease_start":
-            if not isinstance(val, str) or len(val) != 10:
-                errors[key] = "invalid date string"
-            else:
-                try:
-                    dt.date.fromisoformat(val)
-                except ValueError:
-                    errors[key] = "invalid date"
-        elif key == "lease_monthly_cents":
-            if isinstance(val, bool) or not isinstance(val, int) or val <= 0:
-                errors[key] = "must be a positive integer"
+    for key in ("display_name", "model"):
+        if key in fields:
+            v = fields[key]
+            if v is not None and not (isinstance(v, str) and v.strip() and len(v) <= 60):
+                errors[key] = key + " must be a non-blank string of at most 60 characters"
+    if "lease_start" in fields:
+        v = fields["lease_start"]
+        if v is not None:
+            try:
+                if not isinstance(v, str) or len(v) != 10:
+                    raise ValueError(v)
+                dt.date.fromisoformat(v)
+            except ValueError:
+                errors["lease_start"] = "lease_start must be a valid date like YYYY-MM-DD"
+    if "lease_monthly_cents" in fields:
+        v = fields["lease_monthly_cents"]
+        if v is not None and (not isinstance(v, int) or isinstance(v, bool) or v <= 0):
+            errors["lease_monthly_cents"] = "lease_monthly_cents must be a positive integer"
     return errors
 
+
+def upsert_profile(db, machine_id, fields, now):
+    if not isinstance(machine_id, str) or not bloom_ingest.MID_RE.match(machine_id):
+        raise ValueError(f"invalid machine_id: {machine_id!r}")
+    errors = validate_profile(fields)
+    if errors:
+        raise ValueError(str(errors))
+    create_table(db)
+    db.execute("INSERT OR IGNORE INTO machine_profiles (machine_id, updated_at) VALUES (?, ?)", (machine_id, int(now)))
+    for key, value in fields.items():
+        if value is None:
+            db.execute(f"UPDATE machine_profiles SET {key} = NULL WHERE machine_id = ?", (machine_id,))
+        elif isinstance(value, str):
+            db.execute(f"UPDATE machine_profiles SET {key} = ? WHERE machine_id = ?", (value.strip(), machine_id))
+        else:
+            db.execute(f"UPDATE machine_profiles SET {key} = ? WHERE machine_id = ?", (value, machine_id))
+    db.execute("UPDATE machine_profiles SET active = 1, updated_at = ? WHERE machine_id = ?", (int(now), machine_id))
+    db.commit()
+    return list_profiles(db)[machine_id]
+
+
+def deactivate_profile(db, machine_id, now):
+    if not isinstance(machine_id, str) or not bloom_ingest.MID_RE.match(machine_id):
+        raise ValueError(f"invalid machine_id: {machine_id!r}")
+    create_table(db)
+    db.execute("INSERT OR IGNORE INTO machine_profiles (machine_id, updated_at) VALUES (?, ?)", (machine_id, int(now)))
+    db.execute("UPDATE machine_profiles SET active = 0, updated_at = ? WHERE machine_id = ?", (int(now), machine_id))
+    db.commit()
+    return None
 
 
 def list_profiles(db):
