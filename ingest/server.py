@@ -27,6 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import bloom_accounting_index as AX  # noqa: E402
 import bloom_accounting_admin as AA  # noqa: E402
 import bloom_accounting_entries as AE  # noqa: E402
+import bloom_accounting_page as PG  # noqa: E402
 import bloom_accounting_summary as AS  # noqa: E402
 import bloom_accounting_config as ACF  # noqa: E402
 import urllib.parse  # noqa: E402
@@ -45,7 +46,6 @@ PORT = int(os.environ.get("BLOOM_PORT", "8787"))
 LISTEN = os.environ.get("BLOOM_LISTEN", "0.0.0.0")
 WEBHOOK = os.environ.get("ALERT_WEBHOOK_URL", "")
 DASHBOARD = Path(__file__).resolve().parent / "dashboard.html"
-ACCOUNTING = Path(__file__).resolve().parent / "accounting.html"
 MACHINES_PATH = os.environ.get("BLOOM_MACHINES", str(ROOT / "machines.json"))
 SETTINGS = Path(__file__).resolve().parent / "settings.html"
 ADMIN_PATH = os.environ.get("BLOOM_ADMIN", "/run/secrets/bloom_admin")
@@ -93,7 +93,7 @@ class Handler(BaseHTTPRequestHandler):
             with DB_LOCK:
                 self.reply(200, SM.summary(self.server.db, ROOT, time.time()))
         elif self.path in ("/", "/index.html", "/log"):
-            data = DASHBOARD.read_bytes() if self.path == "/log" else ACCOUNTING.read_bytes()
+            data = DASHBOARD.read_bytes() if self.path == "/log" else PG.render_page().encode()
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(data)))
