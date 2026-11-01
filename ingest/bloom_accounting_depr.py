@@ -109,14 +109,8 @@ def asset_business_cents(asset, start, end, default_bp=None):
 
 
 def new_asset_defaults():
-    return {
-        "method": "macrs5",
-        "class": "5-year",
-        "convention": "half_year",
-        "life_months": 60,
-        "section179_cents": 0,
-        "bonus_bp": 0,
-        "business_use_bp": {},
-        "cpa_flag": "confirm with CPA",
-    }
+    """Fields a newly added asset starts with: 5-year MACRS, half-year, no elections, flagged for a CPA to confirm.
 
+    Old records keep whatever method they already carry (for example straight_line over 60 months)."""
+    return {"method": "macrs5", "class": "5-year", "convention": "half_year", "life_months": 60,
+            "section179_cents": 0, "bonus_bp": 0, "business_use_bp": {}, "cpa_flag": "confirm with CPA"}
