@@ -53,12 +53,8 @@ def upsert_profile(db, machine_id, fields, now):
     create_table(db)
     db.execute("INSERT OR IGNORE INTO machine_profiles (machine_id, updated_at) VALUES (?, ?)", (machine_id, int(now)))
     for key, value in fields.items():
-        if value is None:
-            db.execute(f"UPDATE machine_profiles SET {key} = NULL WHERE machine_id = ?", (machine_id,))
-        elif isinstance(value, str):
-            db.execute(f"UPDATE machine_profiles SET {key} = ? WHERE machine_id = ?", (value.strip(), machine_id))
-        else:
-            db.execute(f"UPDATE machine_profiles SET {key} = ? WHERE machine_id = ?", (value, machine_id))
+        db.execute("UPDATE machine_profiles SET " + key + " = ? WHERE machine_id = ?",
+                   (value.strip() if isinstance(value, str) else value, machine_id))
     db.execute("UPDATE machine_profiles SET active = 1, updated_at = ? WHERE machine_id = ?", (int(now), machine_id))
     db.commit()
     return list_profiles(db)[machine_id]
@@ -82,3 +78,29 @@ def list_profiles(db):
         out[mid] = {"display_name": name, "model": model, "lease_start": start, "lease_monthly_cents": cents,
                     "active": bool(active)}
     return out
+
+
+def profile_post(path, body, db, machines_path, now):
+    import json
+    import bloom_settings
+    if path not in ("/v1/settings/machines/profile", "/v1/settings/machines/remove"):
+        return (404, {"error": "not found"})
+    try:
+        raw = json.loads(body)
+    except (ValueError, TypeError):
+        return (400, {"error": "bad request"})
+    if not isinstance(raw, dict):
+        return (400, {"error": "bad request"})
+    mid = raw.get("id")
+    if not isinstance(mid, str) or not bloom_ingest.MID_RE.match(mid):
+        return (400, {"error": "bad request"})
+    if path.endswith("/remove"):
+        bloom_settings.revoke_machine(machines_path, mid)
+        deactivate_profile(db, mid, now)
+        return (200, {"id": mid, "removed": True})
+    fields = {k: v for k, v in raw.items() if k != "id"}
+    errors = validate_profile(fields)
+    if errors:
+        return (400, {"error": "bad fields", "fields": sorted(errors.keys())})
+    return (200, {"id": mid, "profile": upsert_profile(db, mid, fields, now)})
+
