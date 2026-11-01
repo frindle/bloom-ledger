@@ -52,9 +52,53 @@ def month_rows(year, shares, fixed):
 
 
 def tax_totals(rows):
-    keys = ("income_micro", "power_business_micro", "depreciation_business_micro", "lease_business_micro", "expenses_micro", "net_micro")
+    """Year totals over month_rows output: the sum of each *_micro column; a column is None when any month's value is None.
+
+    Keys: income_micro, power_business_micro, depreciation_business_micro, lease_business_micro, expenses_micro, net_micro."""
     out = {}
-    for k in keys:
+    for k in ("income_micro", "power_business_micro", "depreciation_business_micro", "lease_business_micro", "expenses_micro", "net_micro"):
         vals = [r[k] for r in rows]
-        out[k] = 0 if not vals else (sum(v for v in vals) if None not in vals else None)
+        out[k] = None if None in vals else sum(vals)
+    return out
+
+
+def fixed_by_month(settings, entries, year, shares):
+    out = {}
+    machines = settings.get("machines")
+    links = settings.get("entry_machine_links")
+    for key in sorted(shares):
+        bp = shares[key].get("bp") or 0
+        y, m = key.split("-")
+        start = "%s-%02d-01" % (y, int(m))
+        mm = int(m)
+        if mm == 12:
+            nxt = "%s-01-01" % str(int(y) + 1)
+        else:
+            nxt = "%s-%02d-01" % (y, mm + 1)
+        end = (dt.date.fromisoformat(nxt) - dt.timedelta(days=1)).isoformat()
+        if machines:
+            dep_total = lease_total = None
+            for mch in machines:
+                r = FX.machine_fixed_cents(mch, entries, links, start, end, bp)
+                d = r.get("depreciation_business_cents")
+                l = r.get("lease_business_cents")
+                if dep_total is None and d is not None:
+                    dep_total = 0
+                if dep_total is not None and d is not None:
+                    dep_total += d
+                elif d is None:
+                    dep_total = None
+                if lease_total is None and l is not None:
+                    lease_total = 0
+                if lease_total is not None and l is not None:
+                    lease_total += l
+                elif l is None:
+                    lease_total = None
+            out[key] = {"depreciation_business_cents": dep_total, "lease_business_cents": lease_total}
+        else:
+            dep = FX.owned_depreciation_cents(settings, entries, start, end)
+            lease = FX.lease_cents(settings, start, end)
+            dep_biz = DP.business_cents(dep, bp) if dep is not None else None
+            lease_biz = DP.business_cents(lease, bp) if lease is not None else None
+            out[key] = {"depreciation_business_cents": dep_biz, "lease_business_cents": lease_biz}
     return out
