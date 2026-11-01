@@ -137,12 +137,9 @@ def admin_check(headers, secret_path):
     return (401, {"error": "unauthorized"})
 
 
-def admin_post(path, headers, body, admin_path, machines_path, now):
+def admin_post(path, headers, body, machines_path, now):
     import json
     import bloom_ingest
-    result = admin_check(headers, admin_path)
-    if result is not None:
-        return result
     if path == "/v1/settings/machines":
         try:
             data = json.loads(body)

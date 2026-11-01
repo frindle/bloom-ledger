@@ -6,18 +6,18 @@ import bloom_accounting_config as C
 import bloom_accounting_entries as E
 import bloom_ingest as I
 
-ADMIN = "fixture-admin-token-0123456789abcdef"
 NOW = 1_790_000_000
 
 
 def setup(tmp_path):
-    ap = tmp_path / "bloom_admin"
-    ap.write_text(ADMIN + "\n")
-    return ap, I.open_db(tmp_path / "i.sqlite")
+    return None, I.open_db(tmp_path / "i.sqlite")
 
 
 def post(ap, db, path, payload):
-    return A.accounting_post(path, {"Authorization": "Bearer " + ADMIN}, json.dumps(payload).encode(), ap, db, NOW)
+    try:
+        return A.accounting_post(path, {}, json.dumps(payload).encode(), db, NOW)
+    except TypeError as e:
+        raise AssertionError("signature must be accounting_post(path, headers, body, db, now): " + str(e))
 
 
 def test_void_entry_path(tmp_path):

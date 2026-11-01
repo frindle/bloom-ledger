@@ -17,6 +17,8 @@ def test_writes_work_on_the_lan_without_any_key(web):
     assert status == 201 and ctype == "application/json"
     assert post_object(web, json.loads(body)["token"]) == 201, "an added machine can ingest at once"
     assert machines(web) == ["m1", "studio"]
+    entry = b'{"kind": "cost", "date": "2026-10-20", "amount_cents": 99, "category": "software"}'
+    assert web("POST", "/v1/accounting/entries", entry, headers=H)[0] == 201, "accounting writes need no key either"
 
 
 def test_guard_rejections_write_nothing(web):

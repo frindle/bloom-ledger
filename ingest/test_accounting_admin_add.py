@@ -5,33 +5,19 @@ import bloom_accounting_admin as A
 import bloom_accounting_entries as E
 import bloom_ingest as I
 
-ADMIN = "fixture-admin-token-0123456789abcdef"
 NOW = 1_790_000_000.5
 
 
-def env(tmp_path, admin=True):
-    ap = tmp_path / "bloom_admin"
-    if admin:
-        ap.write_text(ADMIN + "\n")
-    return ap, I.open_db(tmp_path / "i.sqlite")
-
-
-def post(tmp_path, payload, token=ADMIN, admin=True, raw=None, path="/v1/accounting/entries"):
-    ap, db = env(tmp_path, admin)
+def post(tmp_path, payload, raw=None, path="/v1/accounting/entries"):
+    db = I.open_db(tmp_path / "i.sqlite")
     body = raw if raw is not None else json.dumps(payload).encode()
-    headers = {"Authorization": "Bearer " + token} if token else {}
-    return A.accounting_post(path, headers, body, ap, db, NOW), db
+    try:
+        return A.accounting_post(path, {}, body, db, NOW), db
+    except TypeError as e:
+        raise AssertionError("signature must be accounting_post(path, headers, body, db, now): " + str(e))
 
 
 ENTRY = {"kind": "cost", "date": "2026-10-20", "amount_cents": 1234, "category": "software"}
-
-
-def test_denied_without_admin_never_touches_the_store(tmp_path):
-    (code, obj), db = post(tmp_path, ENTRY, admin=False)
-    assert (code, obj) == (403, {"error": "admin disabled"})
-    (code, obj), db = post(tmp_path, ENTRY, token="wrong")
-    assert (code, obj) == (401, {"error": "unauthorized"})
-    assert db.execute("SELECT name FROM sqlite_master WHERE name = 'acct_entries'").fetchone() is None
 
 
 def test_add_entry_created(tmp_path):

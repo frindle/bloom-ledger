@@ -179,7 +179,7 @@ class Handler(BaseHTTPRequestHandler):
                 if self.path in ("/v1/settings/machines/profile", "/v1/settings/machines/remove"):
                     code, obj = MP.profile_post(self.path, body, self.server.db, MACHINES_PATH, time.time())
                 else:
-                    code, obj = BS.admin_post(self.path, self.headers, body, None, MACHINES_PATH, time.time())
+                    code, obj = BS.admin_post(self.path, self.headers, body, MACHINES_PATH, time.time())
             self.reply(code, obj)
         elif self.path.startswith("/v1/accounting/"):
             denied = LAN.write_guard(self.client_address[0], self.headers)
@@ -199,7 +199,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
             body = self.rfile.read(n)
             with DB_LOCK:
-                code, obj = AA.accounting_post(self.path, self.headers, body, None, self.server.db, time.time())
+                code, obj = AA.accounting_post(self.path, self.headers, body, self.server.db, time.time())
             self.reply(code, obj)
         else:
             self.reply(404, {"error": "not found"})

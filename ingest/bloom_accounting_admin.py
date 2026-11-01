@@ -8,11 +8,8 @@ import bloom_accounting_config as AC
 import bloom_settings as BS
 
 
-def accounting_post(path, headers, body, admin_path, db, now):
+def accounting_post(path, headers, body, db, now):
     """Handle POST /v1/accounting/*; returns (status, json-able object)."""
-    denied = BS.admin_check(headers, admin_path)
-    if denied is not None:
-        return denied
     try:
         data = json.loads(body)
     except ValueError:

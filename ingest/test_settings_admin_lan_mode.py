@@ -20,5 +20,5 @@ def test_real_path_still_enforced_when_none_is_allowed(tmp_path):
 def test_admin_post_works_in_lan_mode(tmp_path):
     import json
     mp = tmp_path / "machines.json"
-    code, obj = S.admin_post("/v1/settings/machines", {}, json.dumps({"id": "m1"}).encode(), None, str(mp), 1.0)
+    code, obj = S.admin_post("/v1/settings/machines", {}, json.dumps({"id": "m1"}).encode(), str(mp), 1.0)
     assert code == 201 and obj["token"]

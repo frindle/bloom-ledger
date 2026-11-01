@@ -6,7 +6,6 @@ import os
 import bloom_ingest as I
 import bloom_settings as S
 
-ADMIN = "fixture-admin-token-0123456789abcdef"
 NOW = 1793300000.0
 
 
@@ -14,31 +13,24 @@ def sha(text):
     return hashlib.sha256(text.encode()).hexdigest()
 
 
-def env(tmp_path, admin=True):
-    ap = tmp_path / "bloom_admin"
-    if admin:
-        ap.write_text(ADMIN + "\n")
-    return str(ap), str(tmp_path / "machines.json")
-
-
-def post(tmp_path, path, payload, token=ADMIN, admin=True, raw=None):
-    ap, mp = env(tmp_path, admin)
-    headers = {"Authorization": "Bearer " + token} if token is not None else {}
+def post(tmp_path, path, payload, headers=None, raw=None):
     body = raw if raw is not None else json.dumps(payload).encode()
-    return S.admin_post(path, headers, body, ap, mp, NOW)
+    try:
+        return S.admin_post(path, headers or {}, body, str(tmp_path / "machines.json"), NOW)
+    except TypeError as e:
+        raise AssertionError("signature must be admin_post(path, headers, body, machines_path, now): " + str(e))
 
 
 def tokens(tmp_path):
     return I.load_tokens(str(tmp_path / "absent"), str(tmp_path / "machines.json"))
 
 
-def test_admin_disabled_and_unauthorized_never_touch_the_store(tmp_path):
-    code, obj = post(tmp_path, "/v1/settings/machines", {"id": "m1"}, admin=False)
-    assert (code, obj) == (403, {"error": "admin disabled"})
-    for tok in (None, "wrong", ""):
-        code, obj = post(tmp_path, "/v1/settings/machines", {"id": "m1"}, token=tok)
-        assert (code, obj) == (401, {"error": "unauthorized"})
-    assert not os.path.exists(tmp_path / "machines.json")
+def test_no_key_or_header_is_needed_and_a_stray_header_is_ignored(tmp_path):
+    code, obj = post(tmp_path, "/v1/settings/machines", {"id": "m1"})
+    assert code == 201 and obj["token"]
+    code, obj = post(tmp_path, "/v1/settings/machines", {"id": "m2"}, headers={"Authorization": "Bearer nonsense"})
+    assert code == 201 and obj["token"]
+    assert sorted(S.read_machines(str(tmp_path / "machines.json"))["machines"]) == ["m1", "m2"]
 
 
 def test_add_returns_the_token_once(tmp_path):
