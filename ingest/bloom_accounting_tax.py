@@ -13,7 +13,6 @@ import bloom_accounting_entries as AE
 import bloom_accounting_fixed as FX
 import bloom_accounting_index as AX
 import bloom_accounting_report as RP
-import bloom_accounting_taxpage as TP
 
 
 def month_shares(year, day_rows):
@@ -127,28 +126,3 @@ def tax_csv(report):
     w.writerow(["TOTAL"] + ["" if report["totals"].get(c, "") is None else report["totals"].get(c, "") for c in cols[1:]])
     w.writerow([report["disclaimer"]])
     return buf.getvalue()
-
-
-def tax_response(db, path):
-    """Answer GET `path` for the tax routes with (status, content_type, body_bytes).
-
-    /tax[?year=YYYY] -> the HTML page (year defaults to the current year); /v1/accounting/tax?year=YYYY&view=business|hobby&format=json|csv
-    -> the report (view defaults to business, format to json). A year outside 2000..2100, a non-integer year or an unknown view/format
-    -> 400 JSON {"error": "bad request"}; any other path -> 404 JSON {"error": "not found"}."""
-    parts = urllib.parse.urlsplit(path)
-    q = {k: v[0] for k, v in urllib.parse.parse_qs(parts.query).items()}
-    bad = (400, "application/json", b'{"error": "bad request"}')
-    if parts.path not in ("/tax", "/v1/accounting/tax"):
-        return (404, "application/json", b'{"error": "not found"}')
-    try:
-        year = int(q["year"]) if "year" in q else dt.date.today().year
-    except ValueError:
-        return bad
-    if not 2000 <= year <= 2100 or q.get("view", "business") not in ("business", "hobby") or q.get("format", "json") not in ("json", "csv"):
-        return bad
-    if parts.path == "/tax":
-        return (200, "text/html; charset=utf-8", TP.tax_page(year).encode())
-    report = build_tax(db, year, q.get("view", "business"))
-    if q.get("format") == "csv":
-        return (200, "text/csv; charset=utf-8", tax_csv(report).encode())
-    return (200, "application/json", json.dumps(report, sort_keys=True).encode())
