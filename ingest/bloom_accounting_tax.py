@@ -13,6 +13,7 @@ import bloom_accounting_entries as AE
 import bloom_accounting_fixed as FX
 import bloom_accounting_index as AX
 import bloom_accounting_report as RP
+import bloom_accounting_taxpage as TP
 
 
 def month_shares(year, day_rows):
@@ -126,3 +127,28 @@ def tax_csv(report):
     w.writerow(["TOTAL"] + ["" if report["totals"].get(c, "") is None else report["totals"].get(c, "") for c in cols[1:]])
     w.writerow([report["disclaimer"]])
     return buf.getvalue()
+
+
+def tax_response(db, path):
+    parsed = urllib.parse.urlsplit(path)
+    if parsed.path not in ("/tax", "/v1/accounting/tax"):
+        return (404, "application/json", b'{"error": "not found"}')
+    q = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
+    try:
+        year = int(q["year"][0]) if "year" in q else dt.date.today().year
+    except (KeyError, ValueError, IndexError):
+        return (400, "application/json", b'{"error": "bad request"}')
+    if year < 2000 or year > 2100:
+        return (400, "application/json", b'{"error": "bad request"}')
+    view = q.get("view", ["business"])[0]
+    if view not in ("business", "hobby"):
+        return (400, "application/json", b'{"error": "bad request"}')
+    fmt = q.get("format", ["json"])[0]
+    if fmt not in ("json", "csv"):
+        return (400, "application/json", b'{"error": "bad request"}')
+    if parsed.path == "/tax":
+        return (200, "text/html; charset=utf-8", TP.tax_page(year).encode())
+    report = build_tax(db, year, view)
+    if fmt == "csv":
+        return (200, "text/csv; charset=utf-8", tax_csv(report).encode())
+    return (200, "application/json", json.dumps(report, sort_keys=True).encode())

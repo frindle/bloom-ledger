@@ -35,42 +35,25 @@ load();
 
 
 def tax_page(year):
+    """Full HTML document of the /tax page for calendar `year` (int; ValueError if not an int). Inline style with a print stylesheet, inline script."""
     if isinstance(year, bool) or not isinstance(year, int):
-        raise ValueError(f"year must be an int, got {type(year).__name__}")
-    title = f"Tax year {year}"
-    # Build year options: year-5 to year+1
-    opts = []
-    for y in range(year - 5, year + 2):
-        sel = ' selected' if y == year else ''
-        opts.append(f'<option value="{y}"{sel}>{y}</option>')
-    year_opts = "\n".join(opts)
-    # View options
-    view_opts = '<option value="business" selected>Business</option><option value="hobby">Hobby (income only)</option>'
-    html = f"""<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{title}</title>
+        raise ValueError("bad year")
+    years = "".join('<option value="%d"%s>%d</option>' % (y, " selected" if y == year else "", y) for y in range(year - 5, year + 2))
+    return """<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tax year %d</title>
 <style>
-@media print {{ .noprint {{ display: none; }} }}
-</style>
-</head>
-<body>
-<h1>{title}</h1>
-<p id="disclaimer"><strong>Bookkeeping, not tax advice</strong> Confirm figures with your CPA.</p>
-<p class="noprint">
-<label>Year <select id="year">{year_opts}</select></label>
-<label>View <select id="view">{view_opts}</select></label>
-<a id="csv" href="#">CSV</a>
-<a id="json" href="#">JSON</a>
-<button id="print" type="button">Print</button>
-</p>
-<table id="months">
-<thead><tr><th>Month</th><th>Income</th><th>Business share</th><th>Power</th><th>Depreciation</th><th>Lease</th><th>Expenses</th><th>Net</th></tr></thead>
-<tbody id="rows"></tbody>
-</table>
-<script>{tax_page_script()}</script>
-</body>
-</html>"""
-    return html
+body { font-family: system-ui, sans-serif; margin: 1.5rem; }
+th, td { padding: .25rem .6rem; text-align: right; } th:first-child, td:first-child { text-align: left; }
+@media print { .noprint { display: none; } body { margin: 0; } }
+</style></head><body>
+<h1>Tax year %d</h1>
+<p id="disclaimer"><strong>Bookkeeping, not tax advice.</strong> Confirm figures with your CPA.</p>
+<p class="noprint"><label for="year">Year</label> <select id="year">%s</select>
+<label for="view">View</label> <select id="view"><option value="business" selected>Business</option><option value="hobby">Hobby (income only)</option></select>
+<a id="csv" href="#">CSV</a> <a id="json" href="#">JSON</a> <button id="print" type="button">Print</button></p>
+<table id="months"><thead><tr><th>Month</th><th>Income</th><th>Business share</th><th>Power</th><th>Depreciation</th><th>Lease</th><th>Expenses</th><th>Net</th></tr></thead>
+<tbody id="rows"></tbody></table>
+<script>%s</script>
+</body></html>
+""" % (year, year, years, tax_page_script())
