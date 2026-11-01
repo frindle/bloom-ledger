@@ -31,10 +31,10 @@ def build(db, today, period, machine=None):
     net = None if t["cost_micro"] is None or None in parts else t["earned_micro"] - t["cost_micro"] - (lease + depr_biz) * 10000
     net_missing = [k for k, v in (("lease", lease), ("depreciation", depr_biz)) if v is None]
     machines = machine_breakdown(settings, AE.current_entries(db), start, end)
-    return {"lease_cents": lease, "depreciation_cents": depr, "depreciation_business_cents": depr_biz, "net_micro": net,
+    return {"machines": machines, "lease_cents": lease, "depreciation_cents": depr, "depreciation_business_cents": depr_biz, "net_micro": net,
             "net_missing": net_missing, "period": period, "start": start, "end": end, "machine": machine, "days": rows, "totals": t, "entries": entries,
             "power": {"basis": "metered" if t["minutes"] else "none", "estimated": False, "note": GRID_NOTE},
-            "machines": machines, "not_set": not_set}
+            "not_set": not_set}
 
 
 def machine_breakdown(settings, entries, start, end):
