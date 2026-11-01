@@ -80,6 +80,62 @@ def validate_machine(m):
         if not _date_ok(m.get("lease_start")):
             errors["lease_start"] = "lease_start must be a valid date like YYYY-MM-DD"
 
+    # class: when not None, must equal "5-year"
+    cl = m.get("class")
+    if cl is not None:
+        if cl != "5-year":
+            errors["class"] = "class must be \"5-year\""
+
+    # convention: when not None, must equal "half_year"
+    conv = m.get("convention")
+    if conv is not None:
+        if conv != "half_year":
+            errors["convention"] = "convention must be \"half_year\""
+
+    # section179_cents and bonus_bp: when not None, must be int (bool excluded) >= 0;
+    #   bonus_bp must also be <= 10000
+    s179 = m.get("section179_cents")
+    if s179 is not None:
+        if isinstance(s179, bool) or not isinstance(s179, int):
+            errors["section179_cents"] = "section179_cents must be a non-negative integer"
+        elif s179 < 0:
+            errors["section179_cents"] = "section179_cents must be a non-negative integer"
+
+    bbp = m.get("bonus_bp")
+    if bbp is not None:
+        if isinstance(bbp, bool) or not isinstance(bbp, int):
+            errors["bonus_bp"] = "bonus_bp must be an integer between 0 and 10000"
+        elif bbp < 0 or bbp > 10000:
+            errors["bonus_bp"] = "bonus_bp must be an integer between 0 and 10000"
+
+    # business_use_bp: when not None, must be a dict whose every key matches r"\\d{4}"
+    #   and every value is int (bool excluded) from 0 to 10000 inclusive
+    bubp = m.get("business_use_bp")
+    if bubp is not None:
+        bad_key = False
+        bad_val = False
+        if isinstance(bubp, dict):
+            for k, v in bubp.items():
+                if not re.fullmatch(r"\d{4}", str(k)):
+                    bad_key = True
+                if isinstance(v, bool) or not isinstance(v, int):
+                    bad_val = True
+                elif v < 0 or v > 10000:
+                    bad_val = True
+        else:
+            bad_key = True
+            bad_val = True
+        if bad_key or bad_val:
+            errors["business_use_bp"] = "business_use_bp must be a dict of 4-digit years to integers 0-10000"
+
+    # lease_months: when not None, must be int (bool excluded) > 0
+    lm = m.get("lease_months")
+    if lm is not None:
+        if isinstance(lm, bool) or not isinstance(lm, int):
+            errors["lease_months"] = "lease_months must be a positive integer"
+        elif lm <= 0:
+            errors["lease_months"] = "lease_months must be a positive integer"
+
     # watts: optional (None ok); when present must be int/float, not bool, 0 < watts <= 5000
     w = m.get("watts")
     if w is not None:
