@@ -33,24 +33,28 @@ def month_shares(year, day_rows):
 
 
 def month_rows(year, shares, fixed):
+    """The 12 monthly business-view rows of `year` from month_shares output and per-month fixed costs.
+
+    fixed is {"YYYY-MM": {"depreciation_business_cents", "lease_business_cents"}} (cents at business share, None = input not set).
+    Row keys: month, income_micro, bp, power_business_micro (power * bp // 10000), depreciation_business_micro, lease_business_micro
+    (cents * 10000), expenses_micro and net_micro (income - expenses). Any None input makes that part, expenses_micro and net_micro None."""
     rows = []
     for key in sorted(shares):
-        s = shares[key]
-        income_micro = s["income_micro"]
-        bp = s.get("bp")
-        power_micro = s.get("power_micro")
-        power_business_micro = None if power_micro is None else power_micro * (bp or 0) // 10000
-        fm = fixed.get(key, {})
-        dep_cents = fm.get("depreciation_business_cents")
-        lease_cents = fm.get("lease_business_cents")
-        depreciation_business_micro = None if dep_cents is None else dep_cents * 10000
-        lease_business_micro = None if lease_cents is None else lease_cents * 10000
-        parts = [power_business_micro, depreciation_business_micro, lease_business_micro]
-        expenses_micro = None if None in parts else sum(parts)
-        net_micro = None if expenses_micro is None else income_micro - expenses_micro
-        rows.append({"month": key, "income_micro": income_micro, "bp": bp,
-                     "power_business_micro": power_business_micro,
-                     "depreciation_business_micro": depreciation_business_micro,
-                     "lease_business_micro": lease_business_micro,
-                     "expenses_micro": expenses_micro, "net_micro": net_micro})
+        s, f = shares[key], fixed.get(key, {})
+        power = None if s["power_micro"] is None else s["power_micro"] * (s["bp"] or 0) // 10000
+        dep, lease = (None if f.get(k) is None else f[k] * 10000 for k in ("depreciation_business_cents", "lease_business_cents"))
+        parts = (power, dep, lease)
+        exp = None if None in parts else sum(parts)
+        rows.append({"month": key, "income_micro": s["income_micro"], "bp": s["bp"], "power_business_micro": power,
+                     "depreciation_business_micro": dep, "lease_business_micro": lease, "expenses_micro": exp,
+                     "net_micro": None if exp is None else s["income_micro"] - exp})
     return rows
+
+
+def tax_totals(rows):
+    keys = ("income_micro", "power_business_micro", "depreciation_business_micro", "lease_business_micro", "expenses_micro", "net_micro")
+    out = {}
+    for k in keys:
+        vals = [r[k] for r in rows]
+        out[k] = 0 if not vals else (sum(v for v in vals) if None not in vals else None)
+    return out
