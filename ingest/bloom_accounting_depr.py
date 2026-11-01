@@ -95,23 +95,28 @@ def asset_depreciation_cents(asset, start, end):
 
 
 def asset_business_cents(asset, start, end, default_bp=None):
-    """Depreciation (cents) for one asset, reduced by yearly business-use percent."""
-    from_date = dt.date.fromisoformat(start)
-    to_date = dt.date.fromisoformat(end)
+    """Business-use part (cents) of asset_depreciation_cents for start..end, applying the asset's yearly business-use percent.
+
+    asset["business_use_bp"] maps a year string to basis points; a year not listed uses default_bp, else 10000 (all business)."""
+    shares = asset.get("business_use_bp", {})
+    s, e = dt.date.fromisoformat(start), dt.date.fromisoformat(end)
     total = 0
-    year_start = from_date
-    while year_start <= to_date:
-        year = year_start.year
-        year_end = dt.date(year, 12, 31)
-        slice_end = min(year_end, to_date)
-        dep = asset_depreciation_cents(asset, year_start.isoformat(), slice_end.isoformat())
-        bu = asset.get("business_use_bp", {})
-        if str(year) in bu:
-            bp = bu[str(year)]
-        elif default_bp is not None:
-            bp = default_bp
-        else:
-            bp = 10000
-        total += business_cents(dep, bp)
-        year_start = dt.date(year + 1, 1, 1)
+    for year in range(s.year, e.year + 1):
+        lo, hi = max(s, dt.date(year, 1, 1)), min(e, dt.date(year, 12, 31))
+        bp = shares.get(str(year), 10000 if default_bp is None else default_bp)
+        total += business_cents(asset_depreciation_cents(asset, lo.isoformat(), hi.isoformat()), bp)
     return total
+
+
+def new_asset_defaults():
+    return {
+        "method": "macrs5",
+        "class": "5-year",
+        "convention": "half_year",
+        "life_months": 60,
+        "section179_cents": 0,
+        "bonus_bp": 0,
+        "business_use_bp": {},
+        "cpa_flag": "confirm with CPA",
+    }
+
