@@ -50,40 +50,49 @@ document.getElementById("acct-form").addEventListener("submit", function (ev) {
 
 
 def settings_form_rows():
-    L = "<"
-    R = ">"
-    Q = chr(34)
-    fields = [
-        ("dep_method", "Depreciation method", "text", "select"),
-        ("dep_life_months", "Straight-line life (months)", "int", "input"),
-        ("m4_in_service_date", "Placed in service (YYYY-MM-DD)", "text", "input"),
-        ("rate_schedule", "Electricity rate schedule (JSON)", "json", "textarea"),
-        ("rate_adder_usd_per_kwh", "Rate adder (USD per kWh)", "text", "input"),
-        ("universal_charge_usd_per_kwh", "Universal charge (USD per kWh)", "text", "input"),
-        ("county_fee_pct", "County fee (percent)", "text", "input"),
-        ("m5_lease_monthly_cents", "Lease payment per month (cents)", "int", "input"),
-        ("m5_lease_months", "Lease term (months)", "int", "input"),
-        ("m5_lease_start", "Lease start (YYYY-MM-DD)", "text", "input"),
-        ("machines", "Machine records, owned or leased (JSON list)", "json", "textarea"),
-    ]
+    """HTML for the accounting setting fields: one <p> per field with a label and a data-key control, joined by newlines."""
+    fields = [("dep_method", "Depreciation method", "text", "select"), ("dep_life_months", "Straight-line life (months)", "int", "input"),
+              ("m4_in_service_date", "Placed in service (YYYY-MM-DD)", "text", "input"),
+              ("rate_schedule", "Electricity rate schedule (JSON)", "json", "textarea"),
+              ("rate_adder_usd_per_kwh", "Rate adder (USD per kWh)", "text", "input"),
+              ("universal_charge_usd_per_kwh", "Universal charge (USD per kWh)", "text", "input"),
+              ("county_fee_pct", "County fee (percent)", "text", "input"),
+              ("m5_lease_monthly_cents", "Lease payment per month (cents)", "int", "input"), ("m5_lease_months", "Lease term (months)", "int", "input"),
+              ("m5_lease_start", "Lease start (YYYY-MM-DD)", "text", "input"),
+              ("machines", "Machine records, owned or leased (JSON list)", "json", "textarea")]
     rows = []
-    for key, label, dtype, widget in fields:
-        rid = "f-" + key
-        p_open = L + "p" + R
-        p_close = L + "/p" + R
-        lbl = L + "label for=" + Q + rid + Q + ">" + label + L + "/label" + R
-        ctl = ""
-        if widget == "input":
-            ctl = L + "input id=" + Q + rid + Q + " data-key=" + Q + key + Q + " data-type=" + Q + dtype + Q + R
-            rows.append(p_open + lbl + ctl + p_close)
-        elif widget == "textarea":
-            ctl = L + "textarea id=" + Q + rid + Q + " data-key=" + Q + key + Q + " data-type=" + Q + dtype + Q + ">" + L + "/textarea" + R
-            rows.append(p_open + lbl + ctl + p_close)
-        elif widget == "select":
-            opt = (L + "option value=" + Q + Q + ">" + "(leave unchanged)" + L + "/option" + R +
-                   L + "option value=" + Q + "macrs5" + Q + ">" + "5-year MACRS" + L + "/option" + R +
-                   L + "option value=" + Q + "straight_line" + Q + ">" + "Straight line" + L + "/option" + R +
-                   L + "option value=" + Q + "section179" + Q + ">" + "Section 179" + L + "/option" + R)
-            ctl = L + "select id=" + Q + rid + Q + " data-key=" + Q + key + Q + " data-type=" + Q + dtype + Q + ">" + opt + L + "/select" + R
-            rows.append(p_open + lbl + ctl + p_close)
+    for key, label, kind, widget in fields:
+        attrs = 'id="f-%s" data-key="%s" data-type="%s"' % (key, key, kind)
+        if widget == "select":
+            ctl = "<select %s>%s</select>" % (attrs, '<option value="">(leave unchanged)</option><option value="macrs5">5-year MACRS</option>'
+                                              '<option value="straight_line">Straight line</option><option value="section179">Section 179</option>')
+        else:
+            ctl = "<%s %s></%s>" % (widget, attrs, widget) if widget == "textarea" else "<input %s>" % attrs
+        rows.append('<p><label for="f-%s">%s</label> %s</p>' % (key, label, ctl))
     return "\n".join(rows)
+
+
+def settings_form_page():
+    return """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Accounting settings</title>
+<style>
+body { font-family: sans-serif; max-width: 40em; margin: 2em auto; }
+label { display: block; margin-top: 0.5em; }
+input, select, textarea { margin-top: 0.25em; }
+</style>
+</head>
+<body>
+<h1>Accounting settings</h1>
+<p><strong>Bookkeeping, not tax advice.</strong> Confirm with CPA: depreciation method, elections and business-use figures.</p>
+<form id="acct-form">
+<p><label for="effective-from">Effective from (YYYY-MM-DD)</label> <input id="effective-from" required></p>
+""" + settings_form_rows() + """<p><button type="submit">Save changed fields</button> <span id="status" role="status"></span></p>
+</form>
+<p>Blank fields are left unchanged. Each save adds a new dated row; earlier rows are kept.</p>
+<script>""" + settings_form_script() + settings_form_wiring() + """</script>
+</body>
+</html>"""
