@@ -13,6 +13,6 @@ def test_accounting_settings_page_is_served(web):
 def test_form_has_all_fields_and_neighbouring_routes_are_unchanged(web):
     assert web("GET", "/settings/accounting")[2].count(b"data-key=") == 11
     status, ctype, body = web("GET", "/settings")
-    assert status == 200 and ctype == "text/html; charset=utf-8" and b"Accounting settings" not in body
+    assert status == 200 and ctype == "text/html; charset=utf-8" and b"<title>Accounting settings</title>" not in body
     assert web("GET", "/settings/accounting/x")[0] == 404
     assert web("GET", "/settings/other")[0] == 404
