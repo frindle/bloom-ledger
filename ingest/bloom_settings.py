@@ -193,7 +193,6 @@ def machine_rows(db, root, now, extra_ids):
     import bloom_ingest_ledger
     import bloom_ledger
     import bloom_machine_profiles
-    from pathlib import Path
     profiles = bloom_machine_profiles.list_profiles(db)
     rows = []
     for mid, cnt, last in db.execute(
@@ -225,27 +224,15 @@ def machine_rows(db, root, now, extra_ids):
             })
             existing.add(eid)
     for pid, prof in profiles.items():
-        if pid not in existing and prof.get("active"):
-            rows.append({
-                "id": pid,
-                "last_seen": None,
-                "objects": 0,
-                "days_sealed": 0,
-                "status": "not-reporting-yet",
-            })
-            existing.add(pid)
+        if pid not in existing and prof["active"]:
+            rows.append({"id": pid, "last_seen": None, "objects": 0, "days_sealed": 0, "status": "not-reporting-yet"})
     for r in rows:
-        mid = r["id"]
-        if mid in profiles:
-            prof = profiles[mid]
-            r["profile"] = {
-                "display_name": prof["display_name"],
-                "model": prof["model"],
-                "lease_start": prof["lease_start"],
-                "lease_monthly_cents": prof["lease_monthly_cents"],
-            }
-            if not prof.get("active") and mid not in extra_ids:
-                r["status"] = "removed"
+        prof = profiles.get(r["id"])
+        if prof is None:
+            continue
+        r["profile"] = {k: prof[k] for k in ("display_name", "model", "lease_start", "lease_monthly_cents")}
+        if not prof["active"] and r["id"] not in extra_ids:
+            r["status"] = "removed"
     rows.sort(key=lambda r: r["id"])
     return rows
 

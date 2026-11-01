@@ -132,7 +132,6 @@ class Handler(BaseHTTPRequestHandler):
                 now = time.time()
                 ids = sorted(set(I.load_tokens(TOKENS_PATH, MACHINES_PATH).values()))
                 data = {
-                    "admin_enabled": BS.admin_check({}, ADMIN_PATH)[0] != 403,
                     "machines": BS.machine_rows(self.server.db, ROOT, now, ids),
                     "health": BS.ledger_health(self.server.db, ROOT, now, self.server_version),
                 }
@@ -159,6 +158,10 @@ class Handler(BaseHTTPRequestHandler):
                 code, obj = I.handle_post(self.headers, body, tokens, ROOT, self.server.db, time.time())
             self.reply(code, obj)
         elif self.path.startswith("/v1/settings/"):
+            denied = LAN.write_guard(self.client_address[0], self.headers)
+            if denied:
+                self.reply(*denied)
+                return
             try:
                 n = int(self.headers.get("Content-Length") or "-1")
             except ValueError:
@@ -171,8 +174,12 @@ class Handler(BaseHTTPRequestHandler):
                 self.close_connection = True
                 return
             body = self.rfile.read(n)
+            import bloom_machine_profiles as MP
             with DB_LOCK:
-                code, obj = BS.admin_post(self.path, self.headers, body, ADMIN_PATH, MACHINES_PATH, time.time())
+                if self.path in ("/v1/settings/machines/profile", "/v1/settings/machines/remove"):
+                    code, obj = MP.profile_post(self.path, body, self.server.db, MACHINES_PATH, time.time())
+                else:
+                    code, obj = BS.admin_post(self.path, self.headers, body, None, MACHINES_PATH, time.time())
             self.reply(code, obj)
         elif self.path.startswith("/v1/accounting/"):
             denied = LAN.write_guard(self.client_address[0], self.headers)
