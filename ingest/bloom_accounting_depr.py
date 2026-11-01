@@ -71,41 +71,47 @@ def business_cents(amount_cents, pct_bp):
 
 
 def asset_depreciation_cents(asset, start, end):
-    basis = asset.get("basis_cents", 0)
-    placed_in_service = asset.get("placed_in_service", "")
-    method = asset.get("method", "macrs5")
-    life_months = asset.get("life_months", 60)
-    section179_cents_val = asset.get("section179_cents", 0)
-    bonus_bp = asset.get("bonus_bp", 0)
+    """Depreciation (cents) of one asset record for the inclusive range start..end (ISO dates), elections first.
 
-    # Validation
+    Section 179 and bonus amounts are expensed whole on the placed_in_service day; the rest follows asset["method"]."""
+    basis, ins = asset["basis_cents"], asset["placed_in_service"]
+    method = asset.get("method", "macrs5")
     if method not in ("macrs5", "straight_line", "section179"):
         raise ValueError(f"unknown method: {method}")
-    if method == "macrs5":
-        if asset.get("class") is not None and asset["class"] != "5-year":
-            raise ValueError("macrs5 requires class='5-year'")
-        if asset.get("convention") is not None and asset["convention"] != "half_year":
-            raise ValueError("macrs5 requires convention='half_year'")
+    if method == "macrs5" and (asset.get("class", "5-year") != "5-year" or asset.get("convention", "half_year") != "half_year"):
+        raise ValueError("unsupported class or convention")
+    bonus_bp = asset.get("bonus_bp", 0)
     if not isinstance(bonus_bp, int) or isinstance(bonus_bp, bool) or bonus_bp < 0 or bonus_bp > 10000:
         raise ValueError("bad bonus_bp")
-
-    a = dt.date.fromisoformat(placed_in_service)
-    s = dt.date.fromisoformat(start)
-    e = dt.date.fromisoformat(end)
-
-    # Calculate the elected part
-    if method == "section179":
-        first = basis
-    else:
-        first = min(section179_cents_val, basis)
-        first += (basis - first) * bonus_bp // 10000
-
+    first = basis if method == "section179" else min(asset.get("section179_cents", 0), basis)
+    first += (basis - first) * bonus_bp // 10000
     rest = basis - first
+    total = section179_cents(first, ins, start, end)
+    if method == "straight_line":
+        total += straight_line_cents(rest, asset.get("life_months", 60), ins, start, end)
+    elif method == "macrs5":
+        total += macrs5_cents(rest, ins, start, end)
+    return total
 
-    # Depreciate the remaining basis
-    if method == "macrs5":
-        return section179_cents(first, a.isoformat(), s.isoformat(), e.isoformat()) + macrs5_cents(rest, a.isoformat(), s.isoformat(), e.isoformat())
-    elif method == "straight_line":
-        return section179_cents(first, a.isoformat(), s.isoformat(), e.isoformat()) + straight_line_cents(rest, life_months, a.isoformat(), s.isoformat(), e.isoformat())
-    else:
-        return section179_cents(first, a.isoformat(), s.isoformat(), e.isoformat())
+
+def asset_business_cents(asset, start, end, default_bp=None):
+    """Depreciation (cents) for one asset, reduced by yearly business-use percent."""
+    from_date = dt.date.fromisoformat(start)
+    to_date = dt.date.fromisoformat(end)
+    total = 0
+    year_start = from_date
+    while year_start <= to_date:
+        year = year_start.year
+        year_end = dt.date(year, 12, 31)
+        slice_end = min(year_end, to_date)
+        dep = asset_depreciation_cents(asset, year_start.isoformat(), slice_end.isoformat())
+        bu = asset.get("business_use_bp", {})
+        if str(year) in bu:
+            bp = bu[str(year)]
+        elif default_bp is not None:
+            bp = default_bp
+        else:
+            bp = 10000
+        total += business_cents(dep, bp)
+        year_start = dt.date(year + 1, 1, 1)
+    return total
