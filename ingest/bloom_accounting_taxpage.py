@@ -13,6 +13,7 @@ function load() {
   var q = "/v1/accounting/tax?year=" + document.getElementById("year").value + "&view=" + document.getElementById("view").value;
   document.getElementById("csv").href = q + "&format=csv";
   document.getElementById("json").href = q;
+  document.getElementById("packet").href = "/tax/packet?year=" + document.getElementById("year").value;
   fetch(q).then(function (r) { return r.json(); }).then(function (rep) {
     var body = document.getElementById("rows");
     body.textContent = "";
@@ -51,7 +52,7 @@ th, td { padding: .25rem .6rem; text-align: right; } th:first-child, td:first-ch
 <p id="disclaimer"><strong>Bookkeeping, not tax advice.</strong> Confirm figures with your CPA.</p>
 <p class="noprint"><label for="year">Year</label> <select id="year">%s</select>
 <label for="view">View</label> <select id="view"><option value="business" selected>Business</option><option value="hobby">Hobby (income only)</option></select>
-<a id="csv" href="#">CSV</a> <a id="json" href="#">JSON</a> <button id="print" type="button">Print</button></p>
+<a id="csv" href="#">CSV</a> <a id="json" href="#">JSON</a> <a id="packet" href="#">Year-end packet</a> <button id="print" type="button">Print</button></p>
 <table id="months"><thead><tr><th>Month</th><th>Income</th><th>Business share</th><th>Power</th><th>Depreciation</th><th>Lease</th><th>Expenses</th><th>Net</th></tr></thead>
 <tbody id="rows"></tbody></table>
 <script>%s</script>

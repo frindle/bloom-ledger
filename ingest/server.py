@@ -108,7 +108,7 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/v1/summary":
             with DB_LOCK:
                 self.reply(200, SM.summary(self.server.db, ROOT, time.time()))
-        elif self.path.split("?", 1)[0] in ("/tax", "/v1/accounting/tax"):
+        elif self.path.split("?", 1)[0] in ("/tax", "/tax/packet", "/v1/accounting/tax"):
             with DB_LOCK:
                 AX.create_schema(self.server.db)
                 code, ctype, data = AT.tax_response(self.server.db, self.path)
