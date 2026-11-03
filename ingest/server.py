@@ -28,6 +28,7 @@ import bloom_accounting_index as AX  # noqa: E402
 import bloom_accounting_admin as AA  # noqa: E402
 import bloom_accounting_entries as AE  # noqa: E402
 import bloom_accounting_page as PG  # noqa: E402
+import bloom_accounting_report as RP  # noqa: E402
 import bloom_accounting_summary as AS  # noqa: E402
 import bloom_accounting_tax as AT  # noqa: E402
 import bloom_accounting_settings_form as SF  # noqa: E402
@@ -90,6 +91,19 @@ class Handler(BaseHTTPRequestHandler):
                     self.reply(200, AS.build(self.server.db, today, period, machine))
                 except ValueError:
                     self.reply(400, {"error": "bad period or date"})
+        elif self.path.split("?", 1)[0] == "/v1/accounting/day":
+            q = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+            date = (q.get("date") or [""])[0]
+            machine = (q.get("machine") or [None])[0] or None
+            try:
+                dt.date.fromisoformat(date)
+            except ValueError:
+                self.reply(400, {"error": "date must be YYYY-MM-DD"})
+                return
+            with DB_LOCK:
+                AX.create_schema(self.server.db)
+                settings = ACF.effective_settings(self.server.db, date)["values"]
+                self.reply(200, RP.day_detail(self.server.db, settings["local_timezone"], date, machine, settings))
         elif self.path == "/v1/summary":
             with DB_LOCK:
                 self.reply(200, SM.summary(self.server.db, ROOT, time.time()))
