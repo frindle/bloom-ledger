@@ -13,10 +13,10 @@ def db(tmp_path):
 def test_upsert_creates_then_merges_only_present_keys(db):
     p = MP.upsert_profile(db, "m1", {"display_name": " Desk ", "model": "Test-Model 1"}, 1000.9)
     assert p == {"display_name": "Desk", "model": "Test-Model 1", "lease_start": None, "lease_monthly_cents": None,
-                 "acquisition": "leased", "active": True}
+                 "acquisition": "leased", "in_service": None, "purchase_cents": None, "active": True}
     p = MP.upsert_profile(db, "m1", {"lease_start": "2026-03-01", "lease_monthly_cents": 100}, 2000)
     assert p == {"display_name": "Desk", "model": "Test-Model 1", "lease_start": "2026-03-01",
-                 "lease_monthly_cents": 100, "acquisition": "leased", "active": True}
+                 "lease_monthly_cents": 100, "acquisition": "leased", "in_service": None, "purchase_cents": None, "active": True}
     assert db.execute("SELECT updated_at FROM machine_profiles WHERE machine_id='m1'").fetchone()[0] == 2000
     p = MP.upsert_profile(db, "m1", {"lease_monthly_cents": None}, 3000)
     assert p["lease_monthly_cents"] is None and p["display_name"] == "Desk"

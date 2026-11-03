@@ -19,4 +19,4 @@ def test_purchased_acquisition_is_in_the_row_profile(tmp_path):
 def test_acquisition_defaults_to_leased_in_the_row_profile(tmp_path):
     rows = rows_for(tmp_path, {"m5": {"model": "Test-Model 1"}})
     assert rows["m5"]["profile"]["acquisition"] == "leased"
-    assert sorted(rows["m5"]["profile"]) == ["acquisition", "display_name", "lease_monthly_cents", "lease_start", "model"]
+    assert sorted(rows["m5"]["profile"]) == ["acquisition", "display_name", "in_service", "lease_monthly_cents", "lease_start", "model", "purchase_cents"]

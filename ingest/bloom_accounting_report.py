@@ -36,12 +36,12 @@ def day_rows(db, tz, start, end, machine=None, settings=None):
         row = row_for(d)
         row["earned_micro"] += micro
         row["tokens"] += tokens or 0
-    psql = "SELECT ts, wh, power_ok, tokens_delta, other_work FROM power_minutes WHERE ts >= ? AND ts < ?"
+    psql = "SELECT ts, wh, power_ok, tokens_delta, other_work, sandbox_jobs FROM power_minutes WHERE ts >= ? AND ts < ?"
     pargs = [lo, hi]
     if machine:
         psql += " AND machine_id = ?"
         pargs.append(machine)
-    for ts, wh, ok, tok, other in db.execute(psql, pargs):
+    for ts, wh, ok, tok, other, sbx in db.execute(psql, pargs):
         row = row_for(dt.datetime.fromtimestamp(ts, zone).date().isoformat())
         if ok:
             row["wh"] += wh or 0.0
@@ -49,7 +49,7 @@ def day_rows(db, tz, start, end, machine=None, settings=None):
             if settings and row["cost_micro"] is not None:
                 c = RT.interval_cost(settings, ts, wh or 0.0)
                 row["cost_micro"] = None if c is None else row["cost_micro"] + c["total_micro"]
-            if (tok or 0) > 0 and not other:
+            if ((tok or 0) > 0 or (sbx or 0) > 0) and not other:
                 row["paid_minutes"] += 1
     return [days[d] for d in sorted(days, reverse=True)]
 

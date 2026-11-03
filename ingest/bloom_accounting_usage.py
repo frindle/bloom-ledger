@@ -1,11 +1,13 @@
 """Accounting usage: business share of machine time from per-minute power rows.
 
-ASSUMPTION (flagged): a minute counts as paid Darkbloom work when power was measured, tokens were served and no other work ran. Percentages are integer basis points (10000 = 100%). Not tax advice."""
+ASSUMPTION (flagged): a minute counts as paid Darkbloom work when power was measured, tokens were served or a Sandbox job ran, and no other work ran. Percentages are integer basis points (10000 = 100%). Not tax advice."""
 
 
 def is_paid_minute(row):
-    """True when the minute row shows paid inference: power_ok truthy, tokens_delta > 0 and no other_work."""
-    return bool(row["power_ok"]) and (row["tokens_delta"] or 0) > 0 and not row["other_work"]
+    """True when the minute row shows paid work: power_ok truthy, tokens_delta > 0 or a Darkbloom Sandbox job running
+    (sandbox_jobs > 0, absent counts as 0), and no other_work."""
+    sandbox = (row["sandbox_jobs"] if "sandbox_jobs" in row.keys() else 0) or 0
+    return bool(row["power_ok"]) and ((row["tokens_delta"] or 0) > 0 or sandbox > 0) and not row["other_work"]
 
 
 def m4_business_bp(rows):

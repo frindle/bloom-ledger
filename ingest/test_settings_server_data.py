@@ -31,4 +31,4 @@ def test_settings_data_includes_saved_profiles(web):
     MP.upsert_profile(db, "studio", {"display_name": "Desk", "model": "Test-Model 1"}, 1)
     rows = {m["id"]: m for m in json.loads(web("GET", "/v1/settings")[2])["machines"]}
     assert rows["studio"]["profile"] == {"display_name": "Desk", "model": "Test-Model 1", "lease_start": None,
-                                         "lease_monthly_cents": None, "acquisition": "leased"}
+                                         "lease_monthly_cents": None, "acquisition": "leased", "in_service": None, "purchase_cents": None}

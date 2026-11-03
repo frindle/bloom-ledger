@@ -38,3 +38,11 @@ def test_power_fields_per_day():
 def test_machine_filter_applies_to_power():
     d = RP.day_rows(make(), TZ, "2026-10-20", "2026-10-20", machine="m5")[0]
     assert d["wh"] == 4.0 and d["minutes"] == 1 and d["paid_minutes"] == 0 and d["earned_micro"] == 0
+
+
+def test_sandbox_job_minute_counts_as_paid():
+    db = make()
+    db.execute("INSERT INTO power_minutes (machine_id, ts, wh, interval_s, power_ok, other_work, tokens_delta, sandbox_jobs)"
+               " VALUES ('m4', ?, 2.0, 60, 1, 0, 0, 1)", (utc(2026, 10, 21, 20, 0),))
+    d = RP.day_rows(db, TZ, "2026-10-21", "2026-10-21")[0]
+    assert d["minutes"] == 1 and d["paid_minutes"] == 1

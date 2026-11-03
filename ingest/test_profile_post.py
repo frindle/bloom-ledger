@@ -25,7 +25,7 @@ def post(env, path, payload, raw=None):
 def test_profile_saves_and_returns_the_stored_profile(env):
     code, obj = post(env, PROFILE, {"id": "m1", "display_name": " Desk ", "model": "Test-Model 1"})
     assert code == 200 and obj == {"id": "m1", "profile": {"display_name": "Desk", "model": "Test-Model 1",
-                                                           "lease_start": None, "lease_monthly_cents": None, "acquisition": "leased", "active": True}}
+                                                           "lease_start": None, "lease_monthly_cents": None, "acquisition": "leased", "in_service": None, "purchase_cents": None, "active": True}}
     code, obj = post(env, PROFILE, {"id": "m1", "lease_start": "2026-03-01", "lease_monthly_cents": 100})
     assert code == 200 and obj["profile"]["display_name"] == "Desk" and obj["profile"]["lease_monthly_cents"] == 100
     assert MP.list_profiles(env[0])["m1"] == obj["profile"]

@@ -9,7 +9,7 @@ def test_create_table_is_idempotent_and_has_the_columns(tmp_path):
     MP.create_table(db)
     cols = [r[1] for r in db.execute("PRAGMA table_info(machine_profiles)")]
     assert cols == ["machine_id", "display_name", "model", "lease_start", "lease_monthly_cents", "active", "updated_at",
-                    "acquisition"]
+                    "acquisition", "in_service", "purchase_cents"]
 
 
 def test_create_table_keeps_existing_rows(tmp_path):

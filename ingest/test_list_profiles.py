@@ -19,7 +19,7 @@ def test_rows_map_to_profiles_with_a_bool_active(tmp_path):
     db.commit()
     assert MP.list_profiles(db) == {
         "m1": {"display_name": "Desk", "model": "Test-Model 1", "lease_start": "2026-03-01",
-               "lease_monthly_cents": 100, "acquisition": "leased", "active": True},
-        "m2": {"display_name": None, "model": None, "lease_start": None, "lease_monthly_cents": None, "acquisition": "leased", "active": False},
+               "lease_monthly_cents": 100, "acquisition": "leased", "in_service": None, "purchase_cents": None, "active": True},
+        "m2": {"display_name": None, "model": None, "lease_start": None, "lease_monthly_cents": None, "acquisition": "leased", "in_service": None, "purchase_cents": None, "active": False},
     }
     assert MP.list_profiles(db)["m1"]["active"] is True and MP.list_profiles(db)["m2"]["active"] is False

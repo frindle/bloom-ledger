@@ -10,7 +10,7 @@ TABLES = ("power_minutes", "earnings", "account_totals", "acct_cursor", "acct_pa
 
 _DDL = (
     "CREATE TABLE IF NOT EXISTS power_minutes (machine_id TEXT NOT NULL, ts INTEGER NOT NULL, wh REAL, interval_s REAL,"
-    " power_ok INTEGER, dbk_state TEXT, other_work INTEGER, tokens_delta INTEGER, PRIMARY KEY (machine_id, ts))",
+    " power_ok INTEGER, dbk_state TEXT, other_work INTEGER, tokens_delta INTEGER, sandbox_jobs INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (machine_id, ts))",
     "CREATE TABLE IF NOT EXISTS earnings (ledger_id TEXT PRIMARY KEY, ts INTEGER NOT NULL, micro_usd INTEGER NOT NULL,"
     " kind TEXT, model TEXT, job_id TEXT, completion_tokens INTEGER, source_machine TEXT)",
     "CREATE TABLE IF NOT EXISTS account_totals (at TEXT PRIMARY KEY, count INTEGER, total_micro_usd INTEGER,"
@@ -25,6 +25,8 @@ _DDL = (
 def create_schema(db):
     for ddl in _DDL:
         db.execute(ddl)
+    if "sandbox_jobs" not in [r[1] for r in db.execute("PRAGMA table_info(power_minutes)")]:
+        db.execute("ALTER TABLE power_minutes ADD COLUMN sandbox_jobs INTEGER NOT NULL DEFAULT 0")
     db.commit()
 
 
@@ -144,7 +146,7 @@ def power_columns(first_line):
 
 
 def parse_power_line(line, columns):
-    """One power CSV row -> dict(ts, wh, interval_s, power_ok, dbk_state, other_work, tokens_delta), or None."""
+    """One power CSV row -> dict(ts, wh, interval_s, power_ok, dbk_state, other_work, tokens_delta, sandbox_jobs), or None."""
     vals = next(csv.reader([line.strip()]), [])
     if len(vals) < len(columns) or not line.strip():
         return None
@@ -155,7 +157,8 @@ def parse_power_line(line, columns):
         wh = float(r["wh"] or 0) if ok else 0.0
         return {"ts": ts, "wh": wh, "interval_s": float(r["interval_s"] or 0), "power_ok": ok,
                 "dbk_state": r.get("dbk_state", ""), "other_work": 1 if float(r.get("other_work") or 0) > 0 else 0,
-                "tokens_delta": int(float(r.get("tokens_delta") or 0))}
+                "tokens_delta": int(float(r.get("tokens_delta") or 0)),
+                "sandbox_jobs": max(0, int(float(r.get("sandbox_jobs") or 0)))}
     except (KeyError, ValueError):
         return None
 
@@ -178,9 +181,9 @@ def store_power(db, machine_id, sha, path, offset, payload, since_ts=INGEST_FROM
             bad += 1
         elif r["ts"] >= since_ts:
             cur = db.execute("INSERT OR IGNORE INTO power_minutes (machine_id, ts, wh, interval_s, power_ok, dbk_state,"
-                             " other_work, tokens_delta) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                             " other_work, tokens_delta, sandbox_jobs) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                              (machine_id, r["ts"], r["wh"], r["interval_s"], r["power_ok"], r["dbk_state"],
-                              r["other_work"], r["tokens_delta"]))
+                              r["other_work"], r["tokens_delta"], r["sandbox_jobs"]))
             stored += cur.rowcount
     if bad:
         db.execute("INSERT OR REPLACE INTO acct_parse_errors (machine_id, sha256, n) VALUES (?, ?, ?)", (machine_id, sha, bad))

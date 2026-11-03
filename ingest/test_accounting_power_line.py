@@ -17,7 +17,7 @@ def test_header_detection():
 def test_parse_row():
     r = A.parse_power_line(row(), A.LEGACY_POWER_COLUMNS)
     assert r == {"ts": 1792497600, "wh": 2.5, "interval_s": 60.0, "power_ok": 1, "dbk_state": "serving", "other_work": 0,
-                 "tokens_delta": 40}
+                 "tokens_delta": 40, "sandbox_jobs": 0}
     assert A.parse_power_line(row(other="1", toks="7.0") + "\n", A.LEGACY_POWER_COLUMNS)["other_work"] == 1
 
 
@@ -27,3 +27,10 @@ def test_power_not_ok_and_bad_rows():
     assert A.parse_power_line(row(ok="True", wh=""), A.LEGACY_POWER_COLUMNS)["wh"] == 0.0
     for bad in ("", "a,b", row(ts="garbage"), row(wh="x")):
         assert A.parse_power_line(bad, A.LEGACY_POWER_COLUMNS) is None, bad
+
+
+def test_sandbox_jobs_column():
+    cols = A.LEGACY_POWER_COLUMNS + ["sandbox_jobs"]
+    assert A.parse_power_line(row() + ",2", cols)["sandbox_jobs"] == 2
+    assert A.parse_power_line(row() + ",", cols)["sandbox_jobs"] == 0
+    assert A.parse_power_line(row(), A.LEGACY_POWER_COLUMNS)["sandbox_jobs"] == 0
