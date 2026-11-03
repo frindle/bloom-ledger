@@ -41,12 +41,20 @@ def body_html():
         '      <select id="e-kind"><option value="cost">Expense (write-off)</option><option value="receipt">Other income</option></select>\n'
         '      <label for="e-note">Note</label>\n'
         '      <input id="e-note">\n'
+        '      <label for="e-vendor">Paid to</label>\n'
+        '      <input id="e-vendor" maxlength="200" autocomplete="off">\n'
+        '      <label for="e-purpose">Business purpose</label>\n'
+        '      <input id="e-purpose" maxlength="200" autocomplete="off">\n'
+        '      <label for="e-pct">Business use (%)</label>\n'
+        '      <input id="e-pct" inputmode="numeric" value="100">\n'
+        '      <label for="e-receipt">Receipt (PDF or photo, up to 10 MB)</label>\n'
+        '      <input id="e-receipt" type="file" accept="application/pdf,image/jpeg,image/png,image/heic,image/webp">\n'
         '      <button type="submit" class="add">Add entry</button>\n'
         '    </form>\n'
         '    <p id="entry-msg" class="meta" role="status"></p>\n'
         '    <p class="meta">A voided entry stays listed for the record but no longer counts.</p>\n'
         '    <div class="scroll"><table><caption>Manual entries for the period; voided entries are marked</caption>\n'
-        '      <thead><tr><th scope="col">Date</th><th scope="col">Kind</th><th scope="col">Category</th><th scope="col" class="num">Amount</th><th scope="col">Machine</th><th scope="col">Note</th><th scope="col">Status</th><th scope="col"><span class="sr">Action</span></th></tr></thead>\n'
+        '      <thead><tr><th scope="col">Date</th><th scope="col">Kind</th><th scope="col">Category</th><th scope="col" class="num">Amount</th><th scope="col">Machine</th><th scope="col">Note</th><th scope="col">Paid to</th><th scope="col">Purpose</th><th scope="col" class="num">Business %</th><th scope="col">Receipt</th><th scope="col">Status</th><th scope="col"><span class="sr">Action</span></th></tr></thead>\n'
         '      <tbody id="entry-rows"></tbody></table></div>\n'
         '  </section>\n'
         '  <section class="alerts" aria-labelledby="alerts-h"><h2 id="alerts-h">Alerts</h2><ul id="alerts"></ul></section>\n'
@@ -222,6 +230,19 @@ def script_js():
         tr.appendChild(el("td", "$" + (e.amount_cents / 100).toFixed(2), "num"));
         tr.appendChild(el("td", e.machine_id !== null ? e.machine_id : "All"));
         tr.appendChild(el("td", e.note || ""));
+        tr.appendChild(el("td", e.vendor || ""));
+        tr.appendChild(el("td", e.purpose || ""));
+        tr.appendChild(el("td", (e.business_pct === null || e.business_pct === undefined ? 100 : e.business_pct) + "%", "num"));
+        const rc = el("td");
+        if (e.receipt) {
+          const a = el("a", "View");
+          a.href = "/v1/accounting/entries/" + e.id + "/receipt";
+          a.setAttribute("aria-label", "View the receipt for the " + e.category + " entry from " + e.date);
+          rc.appendChild(a);
+        } else if (e.kind === "cost") {
+          rc.textContent = "Missing";
+        }
+        tr.appendChild(rc);
         tr.appendChild(el("td", e.voided ? "Voided" : "Active"));
         const act = el("td");
         if (!e.voided) {
@@ -420,14 +441,32 @@ def script_js():
     const cents = dollarsToCents($("e-amount").value);
     if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(date)) { msg.textContent = "Pick the date you paid."; return; }
     if (cents === null) { msg.textContent = "Enter the amount in dollars, like 49.99."; return; }
+    const pctText = $("e-pct").value.trim();
+    const pct = pctText === "" ? 100 : (/^\\d{1,3}$/.test(pctText) ? Number(pctText) : 0);
+    if (pct < 1 || pct > 100) { msg.textContent = "Enter the business-use percent as a whole number from 1 to 100."; return; }
+    const file = ($("e-receipt").files || [])[0] || null;
+    if (file && file.size > 10485760) { msg.textContent = "The receipt is over 10 MB. Nothing was added."; return; }
     const note = $("e-note").value.trim();
+    const vendor = $("e-vendor").value.trim();
+    const purpose = $("e-purpose").value.trim();
     const entry = { kind: $("e-kind").value || "cost", date: date, amount_cents: cents, category: $("e-category").value || "other",
-                    machine_id: $("machine").value || null, note: note || null };
+                    machine_id: $("machine").value || null, note: note || null, vendor: vendor || null, purpose: purpose || null,
+                    business_pct: pct };
     let res;
     try { res = await postJson("/v1/accounting/entries", entry); } catch (e) { msg.textContent = "Can't reach the ledger. Nothing was added."; return; }
     if (res.status !== 201) { msg.textContent = await refused(res); return; }
-    msg.textContent = "Added " + usd(cents * 10000) + " for " + entry.category + " on " + date + ".";
-    $("e-amount").value = ""; $("e-note").value = "";
+    let added = "Added " + usd(cents * 10000) + " for " + entry.category + " on " + date;
+    if (file) {
+      const id = (await res.json()).id;
+      let up = null;
+      try {
+        up = await fetch("/v1/accounting/entries/" + id + "/receipt", { method: "POST", headers: { "Content-Type": file.type || "application/octet-stream" }, body: file });
+      } catch (e) { up = null; }
+      if (up && up.status === 201) added += ", with the receipt";
+      else added += ", but the receipt was not saved (" + (up ? (await refused(up)).replace(/^Not saved: /, "").replace(/\\.$/, "") : "can't reach the ledger") + "). Void the entry and add it again with the receipt";
+    }
+    msg.textContent = added + ".";
+    $("e-amount").value = ""; $("e-note").value = ""; $("e-vendor").value = ""; $("e-purpose").value = ""; $("e-pct").value = "100"; $("e-receipt").value = "";
     await load();
   }
   const entryForm = $("entry-form");

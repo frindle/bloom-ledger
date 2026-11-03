@@ -40,7 +40,7 @@ def test_day_rows_newest_first_with_formatted_cells(tmp_path):
 def test_entries_newest_first_and_voided_marked(tmp_path):
     res = run_home(tmp_path, FETCH)
     got = rows(res, "entry-rows")
-    assert got == [["2026-10-20", "receipt", "other", "$5.00", "m4", "", "Voided", ""],
-                   ["2026-10-02", "cost", "software", "$19.99", "All", "tool", "Active", "Void"]]
+    assert got == [["2026-10-20", "receipt", "other", "$5.00", "m4", "", "", "", "100%", "", "Voided", ""],
+                   ["2026-10-02", "cost", "software", "$19.99", "All", "tool", "", "", "100%", "Missing", "Active", "Void"]]
     trs = [n for n in find(res["dom"], "entry-rows")["children"] if n["tag"] == "tr"]
     assert trs[0]["class"] == "voided" and trs[1]["class"] != "voided"

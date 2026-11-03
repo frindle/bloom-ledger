@@ -56,7 +56,8 @@ def test_add_purchase_posts_entry_and_reloads(tmp_path):
     assert len(p) == 1 and p[0]["url"] == "/v1/accounting/entries"
     assert p[0]["headers"]["content-type"] == "application/json"
     assert json.loads(p[0]["body"]) == {"kind": "cost", "date": "2026-11-02", "amount_cents": 124950, "category": "hardware",
-                                        "machine_id": None, "note": "Studio stand"}
+                                        "machine_id": None, "note": "Studio stand",
+                                        "vendor": None, "purpose": None, "business_pct": 100}
     assert [f["url"] for f in res["fetches"]].count(URL) == 2, "summary reloads after the add"
     m = msg(res)
     assert m.startswith("Added $1") and "124950" not in m and "hardware" in m and "2026-11-02" in m

@@ -1,6 +1,7 @@
 // Test support (frozen): runs the inline <script> of an HTML page against a tiny fake DOM and prints JSON.
 // usage: node dom_harness.js PAGE.html SCENARIO.json
-// scenario: {"fetch": {"<path>": {"status": 200, "body": {...}}}, "steps": [{"do": "submit|click|input", "id": "...", "values": {"<id>": "<value>"}}]}
+// scenario: {"fetch": {"<path>": {"status": 200, "body": {...}}}, "steps": [{"do": "submit|click|input", "id": "...", "values": {"<id>": "<value>"},
+//            "files": {"<id>": [{"name": "r.pdf", "type": "application/pdf", "body": "...", "size": 3}]}}]}  (a file's String() is its body)
 // The page may only use: document.getElementById/createElement/createTextNode/querySelector(All)(#id|.class|tag only),
 // element.append/appendChild/replaceChildren/remove/setAttribute/getAttribute/removeAttribute/addEventListener/focus/
 // select/closest/classList/dataset/hidden/disabled/value/textContent/type/title/href/id/className, fetch, sessionStorage,
@@ -97,6 +98,7 @@ const ser = e => ({ tag: e.tag, id: e.id, class: e.className, attrs: e.attrs, hi
     try {
       if (st.do === "call") { if (typeof sandbox[st.fn] !== "function") out.errors.push("no function window." + st.fn); else await sandbox[st.fn](); await flush(); continue; }
       for (const [id, v] of Object.entries(st.values || {})) { const el = byId.get(id); if (el) el.value = v; }
+      for (const [id, list] of Object.entries(st.files || {})) { const el = byId.get(id); if (el) el.files = list.map(f => ({ name: f.name, type: f.type, size: f.size !== undefined ? f.size : f.body.length, toString: () => f.body })); }
       const el = byId.get(st.id) || (st.sel ? body.querySelector(st.sel) : null);
       if (!el) { out.errors.push("no element " + (st.id || st.sel)); continue; }
       const ev = { type: st.do, target: el, currentTarget: el, key: st.key, preventDefault() {}, stopPropagation() {} };
