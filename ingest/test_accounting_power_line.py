@@ -17,7 +17,7 @@ def test_header_detection():
 def test_parse_row():
     r = A.parse_power_line(row(), A.LEGACY_POWER_COLUMNS)
     assert r == {"ts": 1792497600, "wh": 2.5, "interval_s": 60.0, "power_ok": 1, "dbk_state": "serving", "other_work": 0,
-                 "tokens_delta": 40, "sandbox_jobs": 0,
+                 "tokens_delta": 40, "sandbox_jobs": 0, "active_frac": 0.5,
                  **{c: None for c in A.NET_COLUMNS}}
     assert A.parse_power_line(row(other="1", toks="7.0") + "\n", A.LEGACY_POWER_COLUMNS)["other_work"] == 1
 

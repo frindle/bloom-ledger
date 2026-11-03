@@ -12,7 +12,7 @@ _DDL = (
     "CREATE TABLE IF NOT EXISTS power_minutes (machine_id TEXT NOT NULL, ts INTEGER NOT NULL, wh REAL, interval_s REAL,"
     " power_ok INTEGER, dbk_state TEXT, other_work INTEGER, tokens_delta INTEGER, sandbox_jobs INTEGER NOT NULL DEFAULT 0,"
     " gpu_bytes_in INTEGER, gpu_bytes_out INTEGER, sandbox_bytes_in INTEGER, sandbox_bytes_out INTEGER,"
-    " total_bytes_in INTEGER, total_bytes_out INTEGER, PRIMARY KEY (machine_id, ts))",
+    " total_bytes_in INTEGER, total_bytes_out INTEGER, active_frac REAL, PRIMARY KEY (machine_id, ts))",
     "CREATE TABLE IF NOT EXISTS sandbox_bridge (machine_id TEXT NOT NULL, ts INTEGER NOT NULL, jobs INTEGER NOT NULL,"
     " PRIMARY KEY (machine_id, ts))",
     "CREATE TABLE IF NOT EXISTS net_bridge (machine_id TEXT NOT NULL, ts INTEGER NOT NULL, gpu_bytes_in INTEGER,"
@@ -29,7 +29,7 @@ _DDL = (
 )
 
 
-INDEX_VERSION = "4"  # bump to rebuild every derived table from the stored raw objects on next start
+INDEX_VERSION = "5"  # bump to rebuild every derived table from the stored raw objects on next start
 
 
 def create_schema(db):
@@ -211,6 +211,15 @@ def net_bytes(r, col):
     return n if n >= 0 else None
 
 
+def active_frac(r):
+    """The sampler's inference_active_frac clamped to 0..1, or None when the column is absent, blank or not a number."""
+    try:
+        f = float((r.get("inference_active_frac") or "").strip())
+    except ValueError:
+        return None
+    return None if f != f else min(1.0, max(0.0, f))
+
+
 def parse_power_line(line, columns):
     """One power CSV row -> dict(ts, wh, interval_s, power_ok, dbk_state, other_work, tokens_delta, sandbox_jobs), or None."""
     vals = next(csv.reader([line.strip()]), [])
@@ -224,7 +233,7 @@ def parse_power_line(line, columns):
         return {"ts": ts, "wh": wh, "interval_s": float(r["interval_s"] or 0), "power_ok": ok,
                 "dbk_state": r.get("dbk_state", ""), "other_work": other_work_flag(ts, r),
                 "tokens_delta": int(float(r.get("tokens_delta") or 0)),
-                "sandbox_jobs": max(0, int(float(r.get("sandbox_jobs") or 0))),
+                "sandbox_jobs": max(0, int(float(r.get("sandbox_jobs") or 0))), "active_frac": active_frac(r),
                 **{c: net_bytes(r, c) for c in NET_COLUMNS}}
     except (KeyError, ValueError):
         return None
@@ -248,10 +257,10 @@ def store_power(db, machine_id, sha, path, offset, payload, since_ts=INGEST_FROM
             bad += 1
         elif r["ts"] >= since_ts:
             cur = db.execute("INSERT OR IGNORE INTO power_minutes (machine_id, ts, wh, interval_s, power_ok, dbk_state,"
-                             " other_work, tokens_delta, sandbox_jobs, " + ", ".join(NET_COLUMNS) + ") VALUES ("
-                             + ", ".join("?" * (9 + len(NET_COLUMNS))) + ")",
+                             " other_work, tokens_delta, sandbox_jobs, active_frac, " + ", ".join(NET_COLUMNS) + ") VALUES ("
+                             + ", ".join("?" * (10 + len(NET_COLUMNS))) + ")",
                              (machine_id, r["ts"], r["wh"], r["interval_s"], r["power_ok"], r["dbk_state"],
-                              r["other_work"], r["tokens_delta"], r["sandbox_jobs"], *[r[c] for c in NET_COLUMNS]))
+                              r["other_work"], r["tokens_delta"], r["sandbox_jobs"], r["active_frac"], *[r[c] for c in NET_COLUMNS]))
             stored += cur.rowcount
     if bad:
         db.execute("INSERT OR REPLACE INTO acct_parse_errors (machine_id, sha256, n) VALUES (?, ?, ?)", (machine_id, sha, bad))
