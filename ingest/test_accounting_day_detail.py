@@ -13,8 +13,8 @@ def _db():
     AX.create_schema(db)
     rows = [(T0, 0, 1, 0), (T0 + 60, 50, 0, 0), (T0 + 120, 0, 0, 1), (T0 + 180, 0, 0, 0)]  # (ts, tokens, sbx, other)
     for ts, tok, sbx, other in rows:
-        db.execute("INSERT INTO power_minutes VALUES ('m', ?, 2.0, 60, 1, 'serving', ?, ?, ?)", (ts, other, tok, sbx))
-    db.execute("INSERT INTO power_minutes VALUES ('m', ?, 0, 60, 0, '', 0, 0, 0)", (T0 + 240,))
+        db.execute("INSERT INTO power_minutes (machine_id, ts, wh, interval_s, power_ok, dbk_state, other_work, tokens_delta, sandbox_jobs) VALUES ('m', ?, 2.0, 60, 1, 'serving', ?, ?, ?)", (ts, other, tok, sbx))
+    db.execute("INSERT INTO power_minutes (machine_id, ts, wh, interval_s, power_ok, dbk_state, other_work, tokens_delta, sandbox_jobs) VALUES ('m', ?, 0, 60, 0, '', 0, 0, 0)", (T0 + 240,))
     for lid, ts, micro, kind, model in (("a", T0 + 5, 1000, "sandbox", "sandbox:linux"), ("b", T0 + 65, 300, "job", "gemma"),
                                         ("c", T0 + 3700, 200, "base", "base_reward")):
         db.execute("INSERT INTO earnings VALUES (?, ?, ?, ?, ?, ?, ?, 'm')", (lid, ts, micro, kind, model, "j-" + lid, 7))

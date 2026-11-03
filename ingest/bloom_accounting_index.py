@@ -6,13 +6,18 @@ import datetime as dt
 import json
 import re
 
-TABLES = ("power_minutes", "sandbox_bridge", "earnings", "account_totals", "acct_cursor", "acct_parse_errors")
+TABLES = ("power_minutes", "sandbox_bridge", "net_bridge", "earnings", "account_totals", "acct_cursor", "acct_parse_errors")
 
 _DDL = (
     "CREATE TABLE IF NOT EXISTS power_minutes (machine_id TEXT NOT NULL, ts INTEGER NOT NULL, wh REAL, interval_s REAL,"
-    " power_ok INTEGER, dbk_state TEXT, other_work INTEGER, tokens_delta INTEGER, sandbox_jobs INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (machine_id, ts))",
+    " power_ok INTEGER, dbk_state TEXT, other_work INTEGER, tokens_delta INTEGER, sandbox_jobs INTEGER NOT NULL DEFAULT 0,"
+    " gpu_bytes_in INTEGER, gpu_bytes_out INTEGER, sandbox_bytes_in INTEGER, sandbox_bytes_out INTEGER,"
+    " total_bytes_in INTEGER, total_bytes_out INTEGER, PRIMARY KEY (machine_id, ts))",
     "CREATE TABLE IF NOT EXISTS sandbox_bridge (machine_id TEXT NOT NULL, ts INTEGER NOT NULL, jobs INTEGER NOT NULL,"
     " PRIMARY KEY (machine_id, ts))",
+    "CREATE TABLE IF NOT EXISTS net_bridge (machine_id TEXT NOT NULL, ts INTEGER NOT NULL, gpu_bytes_in INTEGER,"
+    " gpu_bytes_out INTEGER, sandbox_bytes_in INTEGER, sandbox_bytes_out INTEGER, total_bytes_in INTEGER,"
+    " total_bytes_out INTEGER, PRIMARY KEY (machine_id, ts))",
     "CREATE TABLE IF NOT EXISTS earnings (ledger_id TEXT PRIMARY KEY, ts INTEGER NOT NULL, micro_usd INTEGER NOT NULL,"
     " kind TEXT, model TEXT, job_id TEXT, completion_tokens INTEGER, source_machine TEXT)",
     "CREATE TABLE IF NOT EXISTS account_totals (at TEXT PRIMARY KEY, count INTEGER, total_micro_usd INTEGER,"
@@ -24,7 +29,7 @@ _DDL = (
 )
 
 
-INDEX_VERSION = "3"  # bump to rebuild every derived table from the stored raw objects on next start
+INDEX_VERSION = "4"  # bump to rebuild every derived table from the stored raw objects on next start
 
 
 def create_schema(db):
@@ -50,6 +55,7 @@ def reset(db):
 _ROUTES = (
     (re.compile(r"^power/power-log-\d{4}-\d{2}\.csv\Z"), "power"),
     (re.compile(r"^power/sandbox-jobs-[a-z]*-?\d{4}-\d{2}\.csv\Z"), "sandbox"),
+    (re.compile(r"^power/net-bytes-\d{4}-\d{2}\.csv\Z"), "net"),
     (re.compile(r"^earnings-archive/totals\.jsonl\Z"), "totals"),
     (re.compile(r"^earnings-archive/[^/]+\.jsonl\Z"), "earnings"),
 )
@@ -192,6 +198,19 @@ def other_work_flag(ts, r):
     return VM_ONLY if left == {VM_ENTRY} else 1
 
 
+# Network bytes moved in each minute (in = received, out = sent), from the sampler. None = not measured, 0 = nothing moved.
+NET_COLUMNS = ("gpu_bytes_in", "gpu_bytes_out", "sandbox_bytes_in", "sandbox_bytes_out", "total_bytes_in", "total_bytes_out")
+
+
+def net_bytes(r, col):
+    """A byte count from a sampler row: None when the column is absent, blank (not measured) or not a whole number >= 0."""
+    try:
+        n = int((r.get(col) or "").strip())
+    except ValueError:
+        return None
+    return n if n >= 0 else None
+
+
 def parse_power_line(line, columns):
     """One power CSV row -> dict(ts, wh, interval_s, power_ok, dbk_state, other_work, tokens_delta, sandbox_jobs), or None."""
     vals = next(csv.reader([line.strip()]), [])
@@ -205,7 +224,8 @@ def parse_power_line(line, columns):
         return {"ts": ts, "wh": wh, "interval_s": float(r["interval_s"] or 0), "power_ok": ok,
                 "dbk_state": r.get("dbk_state", ""), "other_work": other_work_flag(ts, r),
                 "tokens_delta": int(float(r.get("tokens_delta") or 0)),
-                "sandbox_jobs": max(0, int(float(r.get("sandbox_jobs") or 0)))}
+                "sandbox_jobs": max(0, int(float(r.get("sandbox_jobs") or 0))),
+                **{c: net_bytes(r, c) for c in NET_COLUMNS}}
     except (KeyError, ValueError):
         return None
 
@@ -228,9 +248,10 @@ def store_power(db, machine_id, sha, path, offset, payload, since_ts=INGEST_FROM
             bad += 1
         elif r["ts"] >= since_ts:
             cur = db.execute("INSERT OR IGNORE INTO power_minutes (machine_id, ts, wh, interval_s, power_ok, dbk_state,"
-                             " other_work, tokens_delta, sandbox_jobs) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                             " other_work, tokens_delta, sandbox_jobs, " + ", ".join(NET_COLUMNS) + ") VALUES ("
+                             + ", ".join("?" * (9 + len(NET_COLUMNS))) + ")",
                              (machine_id, r["ts"], r["wh"], r["interval_s"], r["power_ok"], r["dbk_state"],
-                              r["other_work"], r["tokens_delta"], r["sandbox_jobs"]))
+                              r["other_work"], r["tokens_delta"], r["sandbox_jobs"], *[r[c] for c in NET_COLUMNS]))
             stored += cur.rowcount
     if bad:
         db.execute("INSERT OR REPLACE INTO acct_parse_errors (machine_id, sha256, n) VALUES (?, ?, ?)", (machine_id, sha, bad))
@@ -262,6 +283,31 @@ def apply_sandbox_bridge(db):
     db.commit()
 
 
+def store_net(db, machine_id, payload):
+    """Net-bytes sidecar rows -> net_bridge (by header name; a headerless increment uses the sidecar order), then power_minutes."""
+    cols = ["ts_utc", *NET_COLUMNS]
+    for vals in csv.reader(payload.splitlines()):
+        if vals and vals[0] == "ts_utc":
+            cols = vals
+            continue
+        r = dict(zip(cols, vals))
+        try:
+            ts = int(dt.datetime.fromisoformat((r.get("ts_utc") or "").replace("Z", "+00:00")).timestamp())
+        except ValueError:
+            continue
+        db.execute("INSERT OR REPLACE INTO net_bridge (machine_id, ts, " + ", ".join(NET_COLUMNS) + ") VALUES (?, ?"
+                   + ", ?" * len(NET_COLUMNS) + ")", (machine_id, ts, *[net_bytes(r, c) for c in NET_COLUMNS]))
+    apply_net_bridge(db)
+
+
+def apply_net_bridge(db):
+    """Fill power_minutes byte columns that are still NULL from net_bridge (same machine and minute)."""
+    for c in NET_COLUMNS:
+        db.execute(f"UPDATE power_minutes SET {c} = (SELECT b.{c} FROM net_bridge b WHERE b.machine_id = power_minutes.machine_id"
+                   f" AND b.ts = power_minutes.ts) WHERE {c} IS NULL")
+    db.commit()
+
+
 def index_new(db, root):
     """Parse every not-yet-parsed `log` object into the derived tables; returns the number of objects handled."""
     n = 0
@@ -287,8 +333,11 @@ def index_new(db, root):
         elif kind == "power":
             store_power(db, machine_id, sha, path, offset, text)
             apply_sandbox_bridge(db)
+            apply_net_bridge(db)
         elif kind == "sandbox":
             store_sandbox(db, machine_id, text)
+        elif kind == "net":
+            store_net(db, machine_id, text)
         mark_parsed(db, machine_id, sha)
         n += 1
     return n
