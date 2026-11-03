@@ -101,6 +101,21 @@
 </div>
 </section>
 
+<section aria-labelledby="dbk-heading">
+<h2 id="dbk-heading">Darkbloom API key</h2>
+<p class="note">Lets the ledger page show live Darkbloom and Sandbox status. The key stays on this server and is never shown again. Watts still come from the Mac.</p>
+<form id="dbk-form" class="row-form">
+<div>
+<label for="dbk-key">API key</label>
+<input id="dbk-key" type="password" autocomplete="off" spellcheck="false">
+</div>
+<button type="submit" class="primary" id="dbk-save">Save key</button>
+<button type="button" id="dbk-clear">Remove key</button>
+</form>
+<p class="note" id="dbk-status" role="status"></p>
+<p class="error" id="dbk-error" role="alert" hidden></p>
+</section>
+
 <section aria-labelledby="health-heading">
 <h2 id="health-heading">Ledger health</h2>
 <dl id="health"></dl>
@@ -352,6 +367,7 @@
       const data = await resp.json();
       const health = data.health || {};
       renderHealth(health);
+      if (!keyPosted) renderKey(data.darkbloom_key);
       if (!editing) renderMachines(data.machines || [], health.time || Date.now() / 1000);
       showError(pageError, "");
     } catch (e) {
@@ -383,6 +399,47 @@
   document.getElementById("token-dismiss").addEventListener("click", () => {
     tokenBox.hidden = true; tokenValue.textContent = "";
   });
+
+  const dbkStatus = document.getElementById("dbk-status");
+  const dbkError = document.getElementById("dbk-error");
+  const dbkInput = document.getElementById("dbk-key");
+
+  function probeText(code) {
+    if (code === 200) return "works";
+    if (code === 401 || code === 403) return "key not accepted";
+    if (code === 404) return "not available";
+    if (!code) return "unreachable";
+    return "answered " + code;
+  }
+
+  function renderKey(st) {
+    if (!st || !st.set) { dbkStatus.textContent = "No key saved."; return; }
+    let t = "Key saved.";
+    if (st.probe) t += " Darkbloom status: " + probeText(st.probe.darkbloom) + ". Sandbox status: " + probeText(st.probe.sandbox) + ".";
+    if (st.checked_at) t += " Checked " + formatServerTime(st.checked_at) + ".";
+    dbkStatus.textContent = t;
+  }
+
+  let keyPosted = false;  // a save's reply is newer than any settings poll in flight; never let a poll overwrite it
+
+  async function sendKey(key) {
+    showError(dbkError, "");
+    keyPosted = true;
+    try {
+      const res = await post("/v1/settings/darkbloom-key", { key: key });
+      dbkInput.value = "";
+      if (res.ok) renderKey(res.body);
+      else showError(dbkError, res.status === 400 && res.body && res.body.error ? res.body.error : explain(res));
+    } catch (err) { showError(dbkError, "Can't reach the ledger."); }
+  }
+
+  document.getElementById("dbk-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const k = (dbkInput.value || "").trim();
+    if (!k) { showError(dbkError, "Paste a key first."); return; }
+    sendKey(k);
+  });
+  document.getElementById("dbk-clear").addEventListener("click", () => sendKey(null));
 
   fetchSettings();
   setInterval(fetchSettings, 60000);

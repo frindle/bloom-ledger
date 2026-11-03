@@ -25,6 +25,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import bloom_accounting_index as AX  # noqa: E402
+import bloom_accounting_live as LV  # noqa: E402
 import bloom_accounting_admin as AA  # noqa: E402
 import bloom_accounting_entries as AE  # noqa: E402
 import bloom_accounting_page as PG  # noqa: E402
@@ -127,6 +128,14 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/v1/alerts":
             with DB_LOCK:
                 self.reply(200, AL.evaluate_alerts(self.server.db, time.time()))
+        elif self.path == "/v1/live":
+            now = time.time()
+            with DB_LOCK:
+                AX.create_schema(self.server.db)
+                mac = LV.mac_view(self.server.db, now)
+            self.reply(200, LV.live(ROOT, mac, now))
+        elif self.path == "/v1/settings/darkbloom-key":
+            self.reply(200, LV.key_status(ROOT))
         elif self.path == "/settings/accounting":
             data = SF.settings_form_page().encode()
             self.send_response(200)
@@ -148,6 +157,7 @@ class Handler(BaseHTTPRequestHandler):
                 data = {
                     "machines": BS.machine_rows(self.server.db, ROOT, now, ids),
                     "health": BS.ledger_health(self.server.db, ROOT, now, self.server_version),
+                    "darkbloom_key": LV.key_status(ROOT),
                 }
                 self.reply(200, data)
         elif RC.entry_id_from_path(self.path):
@@ -196,6 +206,9 @@ class Handler(BaseHTTPRequestHandler):
                 self.close_connection = True
                 return
             body = self.rfile.read(n)
+            if self.path == "/v1/settings/darkbloom-key":
+                self.reply(*LV.key_post(ROOT, body, time.time()))
+                return
             import bloom_machine_profiles as MP
             with DB_LOCK:
                 if self.path in ("/v1/settings/machines/profile", "/v1/settings/machines/remove"):

@@ -12,6 +12,10 @@ def body_html():
         '    <nav aria-label="Pages"><a href="/log">Log</a> <a href="/tax">Tax year</a> <a href="/settings">Settings</a></nav>\n'
         '  </div>\n'
         '  <p id="banner" class="banner" role="alert" hidden>Can\'t reach the ledger. Showing nothing until it answers.</p>\n'
+        '  <section class="live" aria-labelledby="live-h"><h2 id="live-h">Right now</h2>\n'
+        '    <dl id="live" class="live-grid"></dl>\n'
+        '    <p id="live-note" class="meta" role="status"></p>\n'
+        '  </section>\n'
         '  <div class="picker">\n'
         '    <label for="period">Period</label>\n'
         '    <select id="period"><option value="day">Today</option><option value="week">This week</option><option value="month" selected>This month</option><option value="quarter">This quarter</option><option value="ytd">Year to date</option><option value="last_year">Last year</option></select>\n'
@@ -83,6 +87,61 @@ def render_page():
         '</body>\n'
         '</html>'
     )
+
+
+def live_js():
+    """The 'Right now' strip: polls /v1/live every 30 s. Darkbloom and Sandbox come from Darkbloom's API (key saved in
+    Settings); watts and the Mac's own view of Sandbox jobs come from the Mac's newest power minute."""
+    return r"""
+(function () {
+  "use strict";
+  const dl = document.getElementById("live"), note = document.getElementById("live-note");
+  if (!dl) return;
+  function ago(s) { return s < 90 ? Math.round(s) + " s ago" : Math.round(s / 60) + " min ago"; }
+  function line(term, value, bad) {
+    const d = document.createElement("div"); if (bad) d.className = "bad";
+    const dt = document.createElement("dt"); dt.textContent = term;
+    const dd = document.createElement("dd"); dd.textContent = value;
+    d.append(dt, dd); dl.appendChild(d);
+  }
+  function darkbloom(db) {
+    if (!db || db.error) return [(db && db.error) || "unknown", true];
+    return [db.machines.map(m => {
+      let t = m.name + ": " + (m.online ? "online" : "offline");
+      if (m.online && m.routing && m.routing !== "eligible") t += ", not routed (" + m.routing + ")";
+      if (m.pending != null && m.max_concurrency) t += ", " + m.pending + "/" + m.max_concurrency + " requests";
+      if (m.decode_tps != null) t += ", " + m.decode_tps + " tok/s";
+      return t;
+    }).join("; "), db.machines.some(m => !m.online)];
+  }
+  function sandbox(sb, mac) {
+    if (sb && !sb.error) return [sb.hosts.map(h => (h.name || "host") + ": " + (h.online ? h.mode || "online" : "offline") +
+      ", " + (h.running || 0) + " running").join("; "), sb.hosts.some(h => !h.online)];
+    const jobs = mac.filter(m => m.sandbox_jobs != null);
+    if (jobs.length) return [jobs.map(m => m.machine_id + ": " + m.sandbox_jobs + " running (from the Mac)").join("; "), false];
+    return [(sb && sb.error) || "unknown", true];
+  }
+  async function tick() {
+    let d;
+    try {
+      const r = await fetch("/v1/live", { cache: "no-store" });
+      if (!r.ok) throw new Error("http");
+      d = await r.json();
+    } catch (e) { note.textContent = "Live status unavailable."; return; }
+    const mac = d.mac || [];
+    dl.replaceChildren();
+    const [dbt, dbBad] = darkbloom(d.darkbloom); line("Darkbloom", dbt, dbBad);
+    const [sbt, sbBad] = sandbox(d.sandbox, mac); line("Sandbox", sbt, sbBad);
+    if (mac.length) for (const m of mac) line(mac.length > 1 ? "Power, " + m.machine_id : "Power",
+      (m.watts == null ? "not measured" : m.watts + " W") + ", " + ago(m.age_s) + (m.stale ? " (the Mac has stopped reporting)" : ""), m.stale);
+    else line("Power", "no reports from the Mac yet", true);
+    const keyless = d.darkbloom && d.darkbloom.error === "no API key saved";
+    note.textContent = keyless ? "Save a Darkbloom API key in Settings to see Darkbloom and Sandbox status here." : "";
+  }
+  tick();
+  setInterval(tick, 30000);
+})();
+""".strip() + '\n'
 
 
 def tokens_format_js():
@@ -615,7 +674,7 @@ def script_js():
     await loadAlerts();
   }, 60000);
 })();
-""".strip() + '\n'
+""".strip() + '\n' + live_js()
 
 
 def style_block():
@@ -689,6 +748,9 @@ def style_block():
         '  .legend { display: flex; flex-wrap: wrap; gap: .25rem 1.25rem; list-style: none; margin: .5rem 0 0; padding: 0; font-size: .9rem; }\n'
         '  .key { display: inline-block; width: .9rem; height: .9rem; margin-right: .4rem; vertical-align: -.1em; border: 1px solid var(--ink); }\n'
         '  .alerts ul { margin: 0; padding-left: 1.2rem; color: var(--muted); }\n'
+        '  .live { margin-top: 1.5rem; } .live-grid { margin: 0; background: var(--card); border-left: 6px solid var(--ink); padding: .6rem 1.25rem; max-width: 52rem; }\n'
+        '  .live-grid div { display: grid; grid-template-columns: 7rem 1fr; gap: 1rem; padding: .2rem 0; }\n'
+        '  .live-grid dt { color: var(--muted); } .live-grid dd { margin: 0; } .live-grid .bad dd { color: var(--bad); }\n'
         '  .notset { color: var(--bad); }\n'
         '  .entry-form { display: grid; grid-template-columns: auto 1fr; gap: .5rem 1rem; padding: 1rem 1.25rem; background: var(--card); border-left: 6px solid var(--ink); max-width: 34rem; margin-bottom: .75rem; }\n'
         '  .entry-form label { font-size: .85rem; color: var(--muted); grid-column: 1; }\n'
