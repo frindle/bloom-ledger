@@ -48,6 +48,12 @@
   dl { display: grid; grid-template-columns: max-content 1fr; gap: .15rem 1rem; margin: 0; }
   dt { color: var(--muted); }
   dd { margin: 0; overflow-wrap: anywhere; }
+  select { font: inherit; padding: .3rem .4rem; border: 1px solid var(--rule); border-radius: 4px; background: #fff; color: var(--ink); }
+  .wo-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: .9rem 1.25rem; margin: .75rem 0; }
+  .wo-grid select, .wo-grid input { width: 100%; }
+  fieldset { border: 1px solid var(--rule); border-radius: 6px; margin: .75rem 0 0; padding: .75rem 1rem 1rem; }
+  legend { font-weight: 600; padding: 0 .3rem; }
+  ul.wo-summary { margin: .6rem 0 0; padding-left: 1.2rem; color: var(--muted); }
 </style>
 </head>
 <body>
@@ -89,13 +95,24 @@
 <label for="new-id">Machine id</label>
 <input id="new-id" name="id" autocomplete="off" spellcheck="false" required>
 </div>
+<div>
+<label for="new-dbk">Darkbloom API key for this Mac (optional)</label>
+<input id="new-dbk" type="password" autocomplete="off" spellcheck="false">
+</div>
 <button type="submit" class="primary">Add machine</button>
 </form>
+<p class="note" style="margin-top:.5rem">Add the machine here, then paste the install command it shows into Terminal on that Mac. The key is only needed when this Mac uses a different Darkbloom account from the one saved below.</p>
 <p class="error" id="form-error" role="alert" hidden></p>
 <div class="token-box" id="token-box" hidden>
 <strong id="token-title"></strong>
 <code id="token-value"></code>
-<p class="note">Shown once. Put it in that machine's ingest config now; the server keeps only a hash.</p>
+<div id="pair-box" hidden>
+<p>On that Mac, paste this into Terminal (works once, for <span id="pair-ttl"></span>):</p>
+<code id="pair-cmd"></code>
+<button type="button" id="pair-copy" class="primary">Copy install command</button>
+<p class="note" id="pair-note"></p>
+</div>
+<p class="note">The token is shown once; the installer sets it up for you. To set a Mac up by hand, put it in that machine's Keychain now; the server keeps only a hash.</p>
 <button type="button" id="token-copy">Copy token</button>
 <button type="button" id="token-dismiss">Done</button>
 </div>
@@ -114,6 +131,52 @@
 </form>
 <p class="note" id="dbk-status" role="status"></p>
 <p class="error" id="dbk-error" role="alert" hidden></p>
+</section>
+
+<section aria-labelledby="wo-heading">
+<h2 id="wo-heading">Write-off rules</h2>
+<p class="note">Choose what counts as business use and how power, depreciation and the lease are deducted. Rules apply from the date you pick, so earlier years keep the rules they were filed with. Rates, mileage and other numbers are in <a href="/settings/accounting">Accounting settings</a>. These are bookkeeping choices, not tax advice: confirm them with your tax preparer.</p>
+<form id="wo-form">
+<fieldset>
+<legend>Time that counts as business use</legend>
+<div class="wo-grid">
+<div><label for="wo-darkbloom">Darkbloom inference</label>
+<select id="wo-darkbloom"><option value="yes">Business use</option><option value="no">Not counted</option></select></div>
+<div><label for="wo-sandbox">Darkbloom Sandbox jobs</label>
+<select id="wo-sandbox"><option value="yes">Business use</option><option value="no">Not counted</option></select></div>
+<div><label for="wo-own">Your own local work (models and jobs you run yourself)</label>
+<select id="wo-own"><option value="yes">Business use</option><option value="no">Not counted</option></select></div>
+<div><label for="wo-idle">Idle time while Darkbloom is online</label>
+<select id="wo-idle"><option value="yes">Business use</option><option value="no">Not counted</option></select></div>
+</div>
+</fieldset>
+<fieldset>
+<legend>How it is deducted</legend>
+<div class="wo-grid">
+<div><label for="wo-power">Deductible power</label>
+<select id="wo-power">
+<option value="work_minutes">Metered cost of business-use minutes</option>
+<option value="share_of_total">Whole power bill times the business share</option>
+<option value="all">All metered power</option>
+<option value="none">No power</option>
+</select></div>
+<div><label for="wo-share">Business share (used for depreciation)</label>
+<select id="wo-share"><option value="measured">Measured from logged minutes</option><option value="fixed">A fixed percent</option></select></div>
+<div><label for="wo-fixed">Fixed business share, percent</label>
+<input id="wo-fixed" type="number" min="0" max="100" step="0.1"></div>
+<div><label for="wo-lease">Lease deducted, percent</label>
+<input id="wo-lease" type="number" min="0" max="100" step="0.1"></div>
+<div><label for="wo-from">Rules apply from</label>
+<input id="wo-from" type="date"></div>
+</div>
+</fieldset>
+<div class="row-form" style="margin-top:.9rem">
+<button type="submit" class="primary" id="wo-save">Save write-off rules</button>
+<span class="note" id="wo-status" role="status"></span>
+</div>
+<p class="error" id="wo-error" role="alert" hidden></p>
+<ul class="wo-summary" id="wo-summary"></ul>
+</form>
 </section>
 
 <section aria-labelledby="health-heading">
@@ -192,9 +255,27 @@
     return "The server refused that change.";
   }
 
-  function showToken(title, token) {
+  const pairBox = document.getElementById("pair-box");
+  const pairCmd = document.getElementById("pair-cmd");
+
+  function isLanHost(h) {
+    return /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.)/.test(h) || /\.local$/.test(h);
+  }
+
+  function showToken(title, token, reply) {
     tokenTitle.textContent = title;
     tokenValue.textContent = token;
+    const code = reply && reply.pair_code;
+    pairBox.hidden = !code;
+    if (code) {
+      pairCmd.textContent = "curl -fsSL " + location.origin + "/install.sh | sh -s -- --pair " + code;
+      document.getElementById("pair-ttl").textContent = Math.round((reply.pair_ttl_s || 1800) / 60) + " minutes";
+      const host = new URL(location.origin).hostname;
+      let note = "Add --earnings to also archive this Mac's Darkbloom earnings (one Mac per account). ";
+      note += reply.darkbloom_key_saved ? "This Mac's Darkbloom key is saved." : "Live status uses the account key below.";
+      if (!isLanHost(host)) note = "This page is open through " + host + ": run the command with the ledger's local network address instead. " + note;
+      document.getElementById("pair-note").textContent = note;
+    }
     tokenBox.hidden = false;
   }
 
@@ -327,7 +408,7 @@
         }
         try {
           const res = await post("/v1/settings/machines/rotate", { id: m.id });
-          if (res.ok) showToken("New token for " + m.id + " (the old one stopped working)", res.body.token);
+          if (res.ok) showToken("New token for " + m.id + " (the old one stopped working)", res.body.token, res.body);
           else showError(rowErr, explain(res));
         } catch (e) { showError(rowErr, "Can't reach the ledger."); }
         delete rotate.dataset.armed; rotate.textContent = "New token";
@@ -368,6 +449,7 @@
       const health = data.health || {};
       renderHealth(health);
       if (!keyPosted) renderKey(data.darkbloom_key);
+      if (!woDirty) renderWriteOff(data.write_off);
       if (!editing) renderMachines(data.machines || [], health.time || Date.now() / 1000);
       showError(pageError, "");
     } catch (e) {
@@ -383,21 +465,30 @@
       showError(formError, "Machine id must be 1 to 64 letters, digits, dots, dashes or underscores, starting with a letter or digit.");
       return;
     }
+    const dbkNew = document.getElementById("new-dbk");
+    const body = { id: newId };
+    const newKey = (dbkNew.value || "").trim();
+    if (newKey) body.darkbloom_key = newKey;
     try {
-      const res = await post("/v1/settings/machines", { id: newId });
+      const res = await post("/v1/settings/machines", body);
+      dbkNew.value = "";
       if (res.ok) {
         document.getElementById("new-id").value = "";
-        showToken("Token for " + newId, res.body.token);
+        showToken("Token for " + newId, res.body.token, res.body);
         editing = false; fetchSettings();
       } else showError(formError, explain(res));
     } catch (err) { showError(formError, "Can't reach the ledger."); }
+  });
+
+  document.getElementById("pair-copy").addEventListener("click", () => {
+    if (navigator.clipboard) navigator.clipboard.writeText(pairCmd.textContent);
   });
 
   document.getElementById("token-copy").addEventListener("click", () => {
     if (navigator.clipboard) navigator.clipboard.writeText(tokenValue.textContent);
   });
   document.getElementById("token-dismiss").addEventListener("click", () => {
-    tokenBox.hidden = true; tokenValue.textContent = "";
+    tokenBox.hidden = true; tokenValue.textContent = ""; pairCmd.textContent = ""; pairBox.hidden = true;
   });
 
   const dbkStatus = document.getElementById("dbk-status");
@@ -440,6 +531,77 @@
     sendKey(k);
   });
   document.getElementById("dbk-clear").addEventListener("click", () => sendKey(null));
+
+  const woForm = document.getElementById("wo-form");
+  const woIds = ["wo-darkbloom", "wo-sandbox", "wo-own", "wo-idle", "wo-power", "wo-share", "wo-fixed", "wo-lease", "wo-from"];
+  const wo = {};
+  for (const id of woIds) wo[id.slice(3)] = document.getElementById(id);
+  const woStatus = document.getElementById("wo-status");
+  const woError = document.getElementById("wo-error");
+  let woDirty = false;
+  wo.from.value = new Date().getFullYear() + "-01-01";
+
+  function syncShare() { wo.fixed.disabled = wo.share.value !== "fixed"; }
+
+  function woSummary(r) {
+    const names = { darkbloom: "Darkbloom inference", sandbox: "Sandbox jobs", own: "your own local work", idle: "idle time while online" };
+    const on = Object.keys(names).filter(k => r.count[k]).map(k => names[k]);
+    const power = { work_minutes: "the metered cost of business-use minutes", share_of_total: "the whole power cost times the business share",
+                    all: "all metered power", none: "no power" }[r.power];
+    return ["Business use: " + (on.length ? on.join(", ") : "nothing") + ".",
+            "Deductible power: " + power + ".",
+            "Business share: " + (r.share === "fixed" ? r.fixed_pct + "% (fixed)" : "measured") + ".",
+            "Lease deducted at " + r.lease_pct + "%."];
+  }
+
+  function renderWriteOff(r) {
+    if (!r || !r.count) return;
+    for (const k of ["darkbloom", "sandbox", "own", "idle"]) wo[k].value = r.count[k] ? "yes" : "no";
+    wo.power.value = r.power;
+    wo.share.value = r.share;
+    wo.fixed.value = r.fixed_pct == null ? "" : String(r.fixed_pct);
+    wo.lease.value = String(r.lease_pct);
+    syncShare();
+    const ul = document.getElementById("wo-summary");
+    ul.replaceChildren();
+    for (const line of woSummary(r)) { const li = document.createElement("li"); li.textContent = line; ul.appendChild(li); }
+  }
+
+  function readPct(input, label) {
+    const t = (input.value || "").trim();
+    if (t === "") return { value: null };
+    const n = Number(t);
+    if (!(n >= 0 && n <= 100)) return { error: label + " must be between 0 and 100." };
+    return { value: n };
+  }
+
+  for (const id of woIds) {
+    const el = document.getElementById(id);
+    const mark = () => { woDirty = true; woStatus.textContent = ""; syncShare(); };
+    el.addEventListener("input", mark);
+    el.addEventListener("change", mark);
+  }
+
+  woForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    showError(woError, ""); woStatus.textContent = "";
+    const fixed = readPct(wo.fixed, "Fixed business share");
+    const lease = readPct(wo.lease, "Lease deducted");
+    if (fixed.error || lease.error) { showError(woError, fixed.error || lease.error); return; }
+    if (wo.share.value === "fixed" && fixed.value === null) { showError(woError, "Enter the fixed business share, or choose Measured."); return; }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(wo.from.value || "")) { showError(woError, "Pick the date these rules apply from."); return; }
+    const value = {
+      count: { darkbloom: wo.darkbloom.value === "yes", sandbox: wo.sandbox.value === "yes", own: wo.own.value === "yes", idle: wo.idle.value === "yes" },
+      power: wo.power.value, share: wo.share.value,
+      fixed_pct: wo.share.value === "fixed" ? fixed.value : null,
+      lease_pct: lease.value === null ? 100 : lease.value
+    };
+    try {
+      const res = await post("/v1/accounting/settings", { key: "write_off", value: value, effective_from: wo.from.value });
+      if (res.ok) { woDirty = false; renderWriteOff(value); woStatus.textContent = "Saved. Applies from " + wo.from.value + "."; }
+      else showError(woError, res.status === 400 && res.body && res.body.error ? res.body.error : explain(res));
+    } catch (err) { showError(woError, "Can't reach the ledger."); }
+  });
 
   fetchSettings();
   setInterval(fetchSettings, 60000);

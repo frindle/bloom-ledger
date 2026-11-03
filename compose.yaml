@@ -1,41 +1,37 @@
-# bloom-ledger on Unraid (Compose Manager). Build context is this folder.
-# Data: /mnt/user/data/bloom-ledger (objects, ledger manifests, index.sqlite) -- keep it on the array
-# and inside the Unraid backup. Secrets are files under /mnt/user/appdata/bloom-ledger/secrets (chmod 600, owner
-# 99:100); they are NOT in this repo. README.md has the deploy steps.
+# bloom-ledger with Docker Compose. Build context is this folder. ./update.sh builds and (re)starts it.
+# Paths come from .env (update.sh writes one on first run; on Unraid it points at /mnt/user/... ):
+#   BLOOM_DATA_DIR      data (objects, ledger manifests, index.sqlite) and saved keys (default ./data) -- back this up
+#   BLOOM_SECRETS_DIR   optional legacy files: bloom_tokens, darkbloom_token  (default ./secrets)
+#   BLOOM_UID/BLOOM_GID the owner of those folders (default 99:100, Unraid's nobody:users)
+# Machines are added in the web UI (Settings > Add a machine); no secret files are needed to start.
 services:
   bloom-ledger:
     build: .
     image: bloom-ledger:latest
     container_name: bloom-ledger
     restart: unless-stopped
+    user: "${BLOOM_UID:-99}:${BLOOM_GID:-100}"
     ports:
-      - "8787:8787"
+      - "${BLOOM_PORT:-8787}:8787"
     environment:
       ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}
       BLOOM_ACCESS_TEAM_DOMAIN: ${BLOOM_ACCESS_TEAM_DOMAIN:-}
       BLOOM_ACCESS_AUD: ${BLOOM_ACCESS_AUD:-}
     volumes:
-      - /mnt/user/data/bloom-ledger:/data
-    secrets:
-      - bloom_tokens
+      - ${BLOOM_DATA_DIR:-./data}:/data
+      - ${BLOOM_SECRETS_DIR:-./secrets}:/run/secrets:ro
 
-  # Optional: run the Darkbloom earnings archiver here instead of on the Mac. Enable with
+  # Optional: run the Darkbloom earnings archiver here instead of on a Mac. Needs <secrets>/darkbloom_token.
   #   docker compose --profile earnings up -d
-  # and only after the Mac LaunchAgent that runs bloom-earnings-archive is unloaded (one poller per account).
+  # Only one earnings poller per Darkbloom account (don't also install a Mac with --earnings).
   bloom-earnings:
     profiles: ["earnings"]
     build: .
     image: bloom-ledger:latest
     container_name: bloom-earnings
     restart: unless-stopped
+    user: "${BLOOM_UID:-99}:${BLOOM_GID:-100}"
     command: ["/app/earnings-loop.sh"]
     volumes:
-      - /mnt/user/data/bloom-ledger/earnings:/state
-    secrets:
-      - darkbloom_token
-
-secrets:
-  bloom_tokens:
-    file: /mnt/user/appdata/bloom-ledger/secrets/bloom_tokens
-  darkbloom_token:
-    file: /mnt/user/appdata/bloom-ledger/secrets/darkbloom_token
+      - ${BLOOM_EARNINGS_DIR:-./data/earnings}:/state
+      - ${BLOOM_SECRETS_DIR:-./secrets}:/run/secrets:ro

@@ -10,6 +10,7 @@ import bloom_accounting_depr as DP
 import bloom_accounting_entries as AE
 import bloom_accounting_fixed as FX
 import bloom_accounting_report as RP
+import bloom_accounting_writeoff as WO
 import bloom_accounting_tax as TX
 
 LINES = (("1", "Gross receipts (Darkbloom pay)"), ("6", "Other income"), ("13", "Depreciation (Form 4562)"), ("16b", "Interest (machine loan)"),
@@ -131,7 +132,7 @@ def packet_data(db, year, today=None):
     return {"year": year, "prepared": today, "lines": packet_lines(report["totals"], rows),
             "expenses_micro": report["totals"]["expenses_micro"], "net_micro": report["totals"]["net_micro"], "entries": rows,
             "assets": asset_rows(settings, AE.current_entries(db), year, today),
-            "use": {"business_bp": use["business_bp"], "minutes": use["minutes"], "kwh": use["kwh"]},
+            "use": {"business_bp": WO.share_bp(WO.rules(settings), use["business_bp"]), "minutes": use["minutes"], "kwh": use["kwh"]},
             "flags": eff["flags"], "disclaimer": DISCLAIMER}
 
 

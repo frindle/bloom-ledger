@@ -8,6 +8,7 @@ import bloom_accounting_fixed as FX
 import bloom_accounting_periods as PR
 import bloom_accounting_report as RP
 import bloom_accounting_tax as TX
+import bloom_accounting_writeoff as WO
 
 GRID_NOTE = "grid rates, solar credit not applied"
 RATE_KEYS = ("rate_schedule", "rate_adder_usd_per_kwh", "universal_charge_usd_per_kwh", "county_fee_pct")
@@ -26,11 +27,12 @@ def build(db, today, period, machine=None):
     lease = FX.lease_cents(settings, start, end) if leased else 0
     owned = machine is None or machine != settings.get("m5_machine_id")
     depr = FX.owned_depreciation_cents(settings, AE.current_entries(db), start, end, machine) if owned else 0
-    bp = t["business_bp"]
+    rules = WO.rules(settings)
+    bp = WO.share_bp(rules, t["business_bp"])
     depr_biz = depr if not depr else (None if bp is None else DP.business_cents(depr, bp))
-    lease_biz = lease  # a lease is assumed all business; documented personal use goes on the machine record
-    # Deductible power: only the metered cost of minutes a Darkbloom GPU or Sandbox job was running.
-    power_biz = None if t["cost_micro"] is None else (t.get("gpu_cost_micro") or 0) + (t.get("sandbox_cost_micro") or 0)
+    lease_biz = WO.lease_business_cents(rules, lease)  # documented personal use can also go on the machine record
+    # Deductible power follows the write-off rules (default: metered cost of paid Darkbloom/Sandbox minutes).
+    power_biz = WO.power_business_micro(rules, t)
     live = [e for e in AE.current_entries(db) if machine is None or e["machine_id"] in (None, machine)]
     amt = TX.entry_amounts_micro(live, start, end, bp)
     pre = TX.pre_tracking_micro(db, start, end, settings.get("m4_in_service_date")) if machine is None else 0
@@ -41,7 +43,7 @@ def build(db, today, period, machine=None):
     return {"machines": machines, "lease_cents": lease, "depreciation_cents": depr, "depreciation_business_cents": depr_biz, "net_micro": net,
             "net_missing": net_missing, "period": period, "start": start, "end": end, "machine": machine, "days": rows, "totals": t, "entries": entries,
             "power": {"basis": "metered" if t["minutes"] else "none", "estimated": False, "note": GRID_NOTE},
-            "not_set": not_set, "lease_business_cents": lease_biz, "power_business_micro": power_biz,
+            "not_set": not_set, "lease_business_cents": lease_biz, "write_off": WO.describe(rules), "power_business_micro": power_biz,
             "pre_tracking_micro": pre, "receipts_micro": amt["receipts_micro"],
             "entries_business_micro": amt["expensed_micro"], "electricity_entries_micro": amt["electricity_micro"]}
 

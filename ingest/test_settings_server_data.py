@@ -11,8 +11,9 @@ def test_settings_data_shape_has_no_admin_state(web):
     status, ctype, body = web("GET", "/v1/settings")
     assert status == 200 and ctype == "application/json"
     data = json.loads(body)
-    assert sorted(data) == ["darkbloom_key", "health", "machines"], "no admin_enabled key: there is no admin key any more"
+    assert sorted(data) == ["darkbloom_key", "health", "machines", "write_off"], "no admin_enabled key: there is no admin key any more"
     assert data["darkbloom_key"] == {"set": False, "checked_at": None, "probe": None}
+    assert data["write_off"]["count"] == {"darkbloom": True, "sandbox": True, "own": False, "idle": False}
     assert [m["id"] for m in data["machines"]] == ["studio"] and data["machines"][0]["status"] == "not-reporting-yet"
     assert sorted(data["health"]) == ["data_bytes", "objects", "time", "version"]
     assert data["health"]["version"] == SV.Handler.server_version

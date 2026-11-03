@@ -15,5 +15,5 @@ def test_sums_and_derived_figures():
 def test_unset_cost_and_no_minutes():
     t = RP.totals([row("a", 1, 0, 0.0, 0, 0, None), row("b", 1, 0, 0.0, 0, 0, 5)])
     assert t["cost_micro"] is None and t["business_bp"] is None and t["earned_micro"] == 2
-    assert RP.totals([]) == {"earned_micro": 0, "gpu_micro": 0, "gpu_cost_micro": 0, "gpu_minutes": 0, "other_minutes": 0, "sandbox_micro": 0, "sandbox_cost_micro": 0, "sandbox_minutes": 0, "tokens": 0, "wh": 0.0, "minutes": 0, "paid_minutes": 0, "business_minutes": 0.0, "gpu_bytes_in": 0, "gpu_bytes_out": 0, "sandbox_bytes_in": 0, "sandbox_bytes_out": 0, "total_bytes_in": 0, "total_bytes_out": 0, "net_minutes": 0, "cost_micro": 0,
+    assert RP.totals([]) == {"earned_micro": 0, "gpu_micro": 0, "gpu_cost_micro": 0, "gpu_minutes": 0, "other_minutes": 0, "sandbox_micro": 0, "sandbox_cost_micro": 0, "sandbox_minutes": 0, "tokens": 0, "wh": 0.0, "minutes": 0, "paid_minutes": 0, "business_minutes": 0.0, "business_cost_micro": 0, "gpu_bytes_in": 0, "gpu_bytes_out": 0, "sandbox_bytes_in": 0, "sandbox_bytes_out": 0, "total_bytes_in": 0, "total_bytes_out": 0, "net_minutes": 0, "cost_micro": 0,
                              "kwh": 0.0, "total_hours": 0.0, "paid_hours": 0.0, "business_bp": None}

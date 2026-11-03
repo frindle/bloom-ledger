@@ -5,6 +5,7 @@ import datetime as dt
 from zoneinfo import ZoneInfo
 
 import bloom_accounting_rates as RT
+import bloom_accounting_writeoff as WO
 from bloom_accounting_index import NET_COLUMNS
 
 
@@ -56,7 +57,7 @@ def add_net_bytes(row, net):
 def _blank_row(d, settings):
     return {"date": d, "earned_micro": 0, "gpu_micro": 0, "sandbox_micro": 0,
             "gpu_cost_micro": 0, "sandbox_cost_micro": 0, "gpu_minutes": 0, "sandbox_minutes": 0, "other_minutes": 0,
-            "tokens": 0, "wh": 0.0, "minutes": 0, "paid_minutes": 0, "business_minutes": 0.0, "cost_micro": 0 if settings else None,
+            "tokens": 0, "wh": 0.0, "minutes": 0, "paid_minutes": 0, "business_minutes": 0.0, "business_cost_micro": 0, "cost_micro": 0 if settings else None,
             **{c: 0 for c in NET_COLUMNS}, "net_minutes": 0}
 
 
@@ -73,6 +74,7 @@ def day_rows(db, tz, start, end, machine=None, settings=None):
         args.append(machine)
     days = {}
     zone = ZoneInfo(tz)
+    rules = WO.rules(settings)
 
     def row_for(d):
         return days.setdefault(d, _blank_row(d, settings))
@@ -99,7 +101,10 @@ def day_rows(db, tz, start, end, machine=None, settings=None):
             c = RT.interval_cost(settings, ts, wh or 0.0)
             row["cost_micro"] = None if c is None else row["cost_micro"] + c["total_micro"]
         st = minute_stream(ok, tok, other, sbx)
-        row["business_minutes"] += business_share(st, state, frac)
+        biz = WO.minute_counts(rules, st, state)
+        row["business_minutes"] += 1.0 if biz else 0.0
+        if biz and c is not None:
+            row["business_cost_micro"] += c["total_micro"]
         if st == "other":
             row["other_minutes"] += 1
         elif st in ("gpu", "sandbox"):
@@ -164,6 +169,7 @@ def totals(rows):
     earned_micro = 0
     split = {k: 0 for k in ("gpu_micro", "sandbox_micro", "gpu_cost_micro", "sandbox_cost_micro", "gpu_minutes",
                             "sandbox_minutes", "other_minutes", *NET_COLUMNS, "net_minutes")}
+    business_cost = 0
     tokens = 0
     wh = 0.0
     minutes = 0
@@ -180,6 +186,7 @@ def totals(rows):
         minutes += r["minutes"]
         paid_minutes += r["paid_minutes"]
         business_minutes += r.get("business_minutes", r["paid_minutes"])
+        business_cost += r.get("business_cost_micro", r.get("gpu_cost_micro", 0) + r.get("sandbox_cost_micro", 0))
         c = r["cost_micro"]
         if c is None:
             cost_none = True
@@ -199,6 +206,7 @@ def totals(rows):
         "minutes": minutes,
         "paid_minutes": paid_minutes,
         "business_minutes": round(business_minutes, 3),
+        "business_cost_micro": business_cost,
         "cost_micro": cost_micro,
         "kwh": kwh,
         "total_hours": total_hours,

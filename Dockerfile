@@ -1,5 +1,5 @@
-# bloom-ledger: Darkbloom tax-record ingest (+ optional earnings archiver) for Unraid (amd64).
-# Build context = this folder (Dockerfile, ingest/, lib/).
+# bloom-ledger: Darkbloom tax-record ingest (+ optional earnings archiver). Runs on any Docker host.
+# Build context = this folder (Dockerfile, ingest/, lib/, client/).
 FROM python:3.12-slim
 
 # No runtime deps beyond the Python standard library.
@@ -8,6 +8,7 @@ RUN useradd --uid 99 --gid 100 --no-create-home --home-dir /state bloom 2>/dev/n
 WORKDIR /app
 COPY lib/ /app/
 COPY ingest/server.py ingest/bloom_*.py ingest/dashboard.html ingest/settings.html /app/
+COPY client/ /app/client/
 COPY earnings-loop.sh /app/earnings-loop.sh
 RUN chmod 0755 /app/earnings-loop.sh
 

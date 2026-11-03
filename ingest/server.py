@@ -25,7 +25,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import bloom_accounting_index as AX  # noqa: E402
-import bloom_accounting_live as LV  # noqa: E402
+import bloom_accounting_live as LV
+import bloom_accounting_writeoff as WO
+import bloom_pairing as PA  # noqa: E402
 import bloom_accounting_admin as AA  # noqa: E402
 import bloom_accounting_entries as AE  # noqa: E402
 import bloom_accounting_page as PG  # noqa: E402
@@ -71,6 +73,14 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def send_bytes(self, ctype, data):
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(data)
 
@@ -143,6 +153,16 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
             self.wfile.write(data)
+        elif self.path == "/v1/hello":
+            self.reply(200, {"service": "bloom-ledger", "server_id": PA.server_id(ROOT), "client_version": PA.client_version()})
+        elif self.path == "/install.sh":
+            script = PA.install_script(self.headers.get("Host"))
+            if script is None:
+                self.reply(400, {"error": "bad Host header"})
+            else:
+                self.send_bytes("text/x-shellscript; charset=utf-8", script.encode())
+        elif self.path == "/client.tar.gz":
+            self.send_bytes("application/gzip", PA.client_bundle())
         elif self.path == "/settings":
             data = SETTINGS.read_bytes()
             self.send_response(200)
@@ -158,6 +178,7 @@ class Handler(BaseHTTPRequestHandler):
                     "machines": BS.machine_rows(self.server.db, ROOT, now, ids),
                     "health": BS.ledger_health(self.server.db, ROOT, now, self.server_version),
                     "darkbloom_key": LV.key_status(ROOT),
+                    "write_off": WO.rules(ACF.effective_settings(self.server.db, dt.date.today().isoformat())["values"]),
                 }
                 self.reply(200, data)
         elif RC.entry_id_from_path(self.path):
@@ -172,6 +193,21 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(404, {"error": "not found"})
 
     def do_POST(self):
+        if self.path == "/v1/pair":
+            # curl on the new Mac sends no Origin, so this is LAN-only without the same-origin rule; the code is the secret.
+            if not LAN.is_private_ip(self.client_address[0]) or not LAN.forwarded_ok(self.headers):
+                self.reply(403, {"error": "local network only"})
+                return
+            try:
+                n = int(self.headers.get("Content-Length") or "-1")
+            except ValueError:
+                n = -1
+            if n < 0 or n > 1024:
+                self.reply(413 if n > 1024 else 411, {"error": "bad length"})
+                self.close_connection = True
+                return
+            self.reply(*PA.redeem(self.rfile.read(n), time.time(), PA.server_id(ROOT)))
+            return
         if self.path == "/v1/objects":
             try:
                 n = int(self.headers.get("Content-Length") or "-1")
@@ -210,12 +246,16 @@ class Handler(BaseHTTPRequestHandler):
                 self.reply(*LV.key_post(ROOT, body, time.time()))
                 return
             import bloom_machine_profiles as MP
+            dbkey = PA.requested_key(self.path, body)
+            if dbkey is not None and not LV.valid_key(dbkey):
+                self.reply(400, {"error": "that doesn't look like a Darkbloom API key"})
+                return
             with DB_LOCK:
                 if self.path in ("/v1/settings/machines/profile", "/v1/settings/machines/remove"):
                     code, obj = MP.profile_post(self.path, body, self.server.db, MACHINES_PATH, time.time())
                 else:
                     code, obj = BS.admin_post(self.path, self.headers, body, MACHINES_PATH, time.time())
-            self.reply(code, obj)
+            self.reply(code, PA.after_machine_change(self.path, code, obj, body, dbkey, ROOT, time.time()))
         elif self.path.startswith("/v1/accounting/"):
             denied = LAN.write_guard(self.client_address[0], self.headers)
             if denied:

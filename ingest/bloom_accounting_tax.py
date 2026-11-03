@@ -14,6 +14,7 @@ import bloom_accounting_fixed as FX
 import bloom_accounting_index as AX
 import bloom_accounting_report as RP
 import bloom_accounting_taxpage as TP
+import bloom_accounting_writeoff as WO
 
 
 
@@ -96,7 +97,7 @@ def pre_tracking_micro(db, start, end, from_date):
     ).fetchone()[0]
     return max(total - seen, 0)
 
-def month_shares(year, day_rows):
+def month_shares(year, day_rows, settings=None):
     """Per-month income, metered power cost and business-use share for the 12 months of `year`.
 
     Returns {"YYYY-MM": {"income_micro", "power_micro" (None when any day's cost is None), "minutes", "paid_minutes",
@@ -111,11 +112,18 @@ def month_shares(year, day_rows):
         paid = sum(r["paid_minutes"] for r in rows)
         biz = sum(r.get("business_minutes", r["paid_minutes"]) for r in rows)
         costs = [r["cost_micro"] for r in rows]
-        job = None if None in costs else sum(r.get("gpu_cost_micro", 0) + r.get("sandbox_cost_micro", 0) for r in rows)
+        bp = min(10000, int(biz * 10000 / minutes + 1e-9)) if minutes else None
+        if settings is None:
+            job = None if None in costs else sum(r.get("gpu_cost_micro", 0) + r.get("sandbox_cost_micro", 0) for r in rows)
+        else:  # the write-off rules decide what counts and how power is deducted
+            rules = WO.rules(settings)
+            job = WO.power_business_micro(rules, {"cost_micro": None if None in costs else sum(costs), "business_bp": bp,
+                                                  "business_cost_micro": sum(r.get("business_cost_micro", 0) for r in rows)})
+            bp = WO.share_bp(rules, bp) if minutes or rules["share"] == "fixed" else bp
         out[key] = {"income_micro": sum(r["earned_micro"] for r in rows), "power_micro": None if None in costs else sum(costs),
                     "job_power_micro": job,
                     "minutes": minutes, "paid_minutes": paid, "business_minutes": round(biz, 3),
-                    "bp": min(10000, int(biz * 10000 / minutes + 1e-9)) if minutes else None}
+                    "bp": bp}
     return out
 
 
@@ -185,7 +193,8 @@ def fixed_by_month(settings, entries, year, shares, through=None):
         else:
             dep, lease = FX.owned_depreciation_cents(settings, entries, start, end), FX.lease_cents(settings, start, end)
             dep = None if dep is None else DP.business_cents(dep, bp)  # lease: assumed all business (see FX.machine_fixed_cents)
-        out[key] = {"depreciation_business_cents": dep, "lease_business_cents": lease}
+        out[key] = {"depreciation_business_cents": dep,
+                    "lease_business_cents": WO.lease_business_cents(WO.rules(settings), lease)}
     return out
 
 
@@ -212,7 +221,7 @@ def build_tax(db, year, view="business"):
     Keys: year, view, months (month_rows), totals (tax_totals), disclaimer."""
     settings = CF.effective_settings(db, "%d-12-31" % year)["values"]
     start, end = "%d-01-01" % year, "%d-12-31" % year
-    shares = month_shares(year, RP.day_rows(db, settings["local_timezone"], start, end, None, settings))
+    shares = month_shares(year, RP.day_rows(db, settings["local_timezone"], start, end, None, settings), settings)
     entries = AE.current_entries(db)
     fixed = fixed_by_month(settings, entries, year, shares, dt.date.today().isoformat())
     extras = {}
@@ -222,7 +231,8 @@ def build_tax(db, year, view="business"):
         amt = entry_amounts_micro(entries, a, b, s["bp"])
         extras[key] = {"other_income_micro": amt["receipts_micro"], "entries_business_micro": amt["expensed_micro"]}
     months = month_rows(year, shares, fixed, extras)
-    report = {"year": year, "view": "business", "months": months, "totals": tax_totals(months), "disclaimer": "Bookkeeping, not tax advice"}
+    report = {"year": year, "view": "business", "months": months, "totals": tax_totals(months), "disclaimer": "Bookkeeping, not tax advice",
+              "write_off": WO.describe(WO.rules(settings))}
     return apply_view(report, view)
 
 

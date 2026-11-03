@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-shot update for the bloom-ledger container on Unraid.
+# One-shot install/update for the bloom-ledger container (Unraid or any Docker host).
 #
 # Usage:  ./update.sh
 #         ./update.sh --no-cache    # rebuild from scratch (slower)
@@ -18,13 +18,25 @@ else
   DC="docker-compose"
 fi
 
-# compose mounts these as secrets and refuses to start if a file is missing.
-# bloom_tokens holds the machine tokens and is created by hand (see README);
-SECRETS=/mnt/user/appdata/bloom-ledger/secrets
-if [ ! -f "$SECRETS/bloom_tokens" ]; then
-  echo "missing $SECRETS/bloom_tokens: create it first (see README)" >&2
-  exit 1
+# Make sure .env names this host's paths (kept across updates; edit it to move things). Only missing keys are added,
+# so an existing .env (e.g. with the Cloudflare Access settings) keeps its values.
+if [ -d /mnt/user ]; then
+  DEF_DATA=/mnt/user/data/bloom-ledger DEF_SECRETS=/mnt/user/appdata/bloom-ledger/secrets
+  DEF_EARN=/mnt/user/data/bloom-ledger/earnings DEF_UID=99 DEF_GID=100
+else
+  DEF_DATA=./data DEF_SECRETS=./secrets DEF_EARN=./data/earnings DEF_UID=$(id -u) DEF_GID=$(id -g)
 fi
+touch .env
+for kv in "BLOOM_DATA_DIR=$DEF_DATA" "BLOOM_SECRETS_DIR=$DEF_SECRETS" "BLOOM_EARNINGS_DIR=$DEF_EARN" \
+          "BLOOM_UID=$DEF_UID" "BLOOM_GID=$DEF_GID"; do
+  if ! grep -q "^${kv%%=*}=" .env; then
+    [ -z "$(tail -c1 .env)" ] || echo >> .env
+    echo "$kv" >> .env
+    echo "added to .env: $kv"
+  fi
+done
+set -a; . ./.env; set +a
+mkdir -p "${BLOOM_DATA_DIR:-./data}" "${BLOOM_SECRETS_DIR:-./secrets}"
 
 # Hard-reset to origin/main: this deploy clone has no local commits, and a
 # plain pull fails on divergent history.

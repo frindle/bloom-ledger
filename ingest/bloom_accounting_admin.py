@@ -35,6 +35,11 @@ def accounting_post(path, headers, body, db, now):
         effective_from = data.get("effective_from")
         if not isinstance(effective_from, str) or len(effective_from) != 10:
             return (400, {"error": "bad effective_from"})
+        if key == "write_off":
+            import bloom_accounting_writeoff as WO
+            errs = WO.validate(data.get("value"))
+            if errs:
+                return (400, {"error": "; ".join(errs)})
         AC.set_setting(db, key, data.get("value"), effective_from, int(now))
         return (200, {"ok": True})
     return (404, {"error": "not found"})

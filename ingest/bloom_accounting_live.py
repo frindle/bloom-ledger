@@ -4,6 +4,7 @@
 The key is stored at <data>/secrets/darkbloom_api_key (mode 0600). It is never returned, logged or sent anywhere but
 the allowlisted Darkbloom hosts over https. GET /v1/settings/darkbloom-key reports only whether it is set and what the
 last check found."""
+import hashlib
 import json
 import os
 import time
@@ -153,8 +154,46 @@ def mac_view(db, now):
     return out
 
 
+def machine_keys_path(root):
+    return os.path.join(str(root), "secrets", "darkbloom_machine_keys.json")
+
+
+def read_machine_keys(root):
+    """{machine_id: key} entered when each Mac was added ({} when none or unreadable)."""
+    try:
+        with open(machine_keys_path(root)) as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return {}
+    return {m: k for m, k in data.items() if isinstance(m, str) and valid_key(k)} if isinstance(data, dict) else {}
+
+
+def set_machine_key(root, machine_id, key):
+    """Save (or with key None, forget) the Darkbloom API key for one machine. ValueError for a bad key."""
+    if key is not None and not valid_key(key):
+        raise ValueError("that doesn't look like an API key")
+    keys = read_machine_keys(root)
+    if key is None:
+        if keys.pop(machine_id, None) is None:
+            return
+    else:
+        keys[machine_id] = key
+    _write_private(machine_keys_path(root), json.dumps(keys, sort_keys=True))
+    _cache.clear()
+
+
+def all_keys(root):
+    """Every distinct saved key: the account key first, then each machine's key."""
+    out = []
+    for k in [read_key(root)] + [v for _, v in sorted(read_machine_keys(root).items())]:
+        if k and k not in out:
+            out.append(k)
+    return out
+
+
 def _remote(name, url, view, key, now, get):
-    hit = _cache.get(name)
+    ck = (name, hashlib.sha256(key.encode()).hexdigest())
+    hit = _cache.get(ck)
     if hit and now - hit[0] < CACHE_S:
         return hit[1]
     code, j = get(url, key)
@@ -162,19 +201,39 @@ def _remote(name, url, view, key, now, get):
         res = view(j)
     else:
         res = {"error": ("Darkbloom answered %s" % code) if code else "Darkbloom unreachable"}
-    _cache[name] = (now, res)
+    _cache[ck] = (now, res)
     return res
+
+
+def _merge(results, list_key):
+    """One view from several keys' views: rows merged by name; an error only when no key worked."""
+    ok = [r for r in results if "error" not in r]
+    if not ok:
+        return results[0]
+    rows, seen = [], set()
+    for r in ok:
+        for row in r.get(list_key, []):
+            if row.get("name") not in seen:
+                seen.add(row.get("name"))
+                rows.append(row)
+    out = {list_key: rows}
+    failed = [r["error"] for r in results if "error" in r]
+    if failed:
+        out["partial"] = failed
+    return out
 
 
 def live(root, mac, now=None, get=http_get_json):
     """mac is mac_view()'s rows, read under the DB lock; the Darkbloom calls here run outside it."""
     now = time.time() if now is None else now
-    key = read_key(root)
+    keys = all_keys(root)
     res = {"at": now, "mac": mac}
-    if key is None:
+    if not keys:
         res["darkbloom"] = {"error": "no API key saved"}
         res["sandbox"] = {"error": "no API key saved"}
     else:
-        res["darkbloom"] = _remote("darkbloom", PROVIDERS_URL, darkbloom_view, key, now, get)
-        res["sandbox"] = _remote("sandbox", SANDBOX_HOSTS_URL, sandbox_view, key, now, get)
+        dbk = [_remote("darkbloom", PROVIDERS_URL, darkbloom_view, k, now, get) for k in keys]
+        sbx = [_remote("sandbox", SANDBOX_HOSTS_URL, sandbox_view, k, now, get) for k in keys]
+        res["darkbloom"] = _merge(dbk, "machines") if len(keys) > 1 or "error" not in dbk[0] else dbk[0]
+        res["sandbox"] = _merge(sbx, "hosts") if len(keys) > 1 or "error" not in sbx[0] else sbx[0]
     return res

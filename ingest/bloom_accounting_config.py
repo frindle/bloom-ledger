@@ -24,6 +24,7 @@ DEFAULTS = {
     "dep_life_months": 60,
     "machines": None,
     "entry_machine_links": None,
+    "write_off": None,
 }
 FLAGGED = {
     "m4_in_service_date": "ASSUMED 2026-09-28 (Darkbloom start); confirm the real placed-in-service date",
