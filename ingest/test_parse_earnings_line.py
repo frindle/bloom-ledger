@@ -39,3 +39,15 @@ def test_ordinary_job_stays_job_and_bad_lines_rejected():
 
 TESTS = [test_sandbox_by_model_prefix, test_sandbox_by_job_id_prefix, test_base_reward_stays_base,
          test_ordinary_job_stays_job_and_bad_lines_rejected]
+
+
+if __name__ == "__main__":
+    _bad = 0
+    for _t in TESTS:
+        try:
+            _t()
+            print(f"RESULT {_t.__name__} PASS")
+        except Exception as _e:
+            _bad += 1
+            print(f"RESULT {_t.__name__} FAIL {type(_e).__name__}: {_e}")
+    sys.exit(1 if _bad else 0)
