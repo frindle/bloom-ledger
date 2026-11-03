@@ -5,7 +5,7 @@ import datetime as dt
 
 
 KINDS = ("cost", "receipt")
-CATEGORIES = ("hardware", "software", "internet", "electricity", "supplies", "other")
+CATEGORIES = ("hardware", "software", "internet", "electricity", "supplies", "interest", "other")
 
 RECORD_COLUMNS = (("vendor", "TEXT"), ("purpose", "TEXT"), ("business_pct", "INTEGER NOT NULL DEFAULT 100"), ("receipt", "TEXT"))
 ENTRY_KEYS = ("id", "kind", "date", "amount_cents", "category", "machine_id", "note", "vendor", "purpose", "business_pct", "receipt")

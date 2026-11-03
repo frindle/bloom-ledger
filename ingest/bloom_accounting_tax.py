@@ -28,6 +28,8 @@ def entry_amounts_micro(entries, start, end, bp):
         already counts that electricity, so it is NOT expensed).
       - category "internet": amount_cents * (bp or 0) // 10000 * 10000 into expensed_micro
         (business share in basis points, rounded down to the cent; bp None counts as 0).
+      - category "interest" (interest on a loan that financed the machine): same as internet, at the entry's
+        business_pct and the machine's business share; principal is never entered (the price is the hardware entry).
       - category "hardware": skipped (it is depreciated elsewhere).
       - any other category (software, supplies, other): amount_cents * 10000 into expensed_micro.
     - All three keys are always present (0 when nothing counts).
@@ -50,7 +52,7 @@ def entry_amounts_micro(entries, start, end, bp):
                 pct = 100
             if cat == "electricity":
                 electricity_micro += cents * 10000
-            elif cat == "internet":
+            elif cat in ("internet", "interest"):
                 share = bp or 0
                 expensed_micro += cents * pct // 100 * share // 10000 * 10000
             elif cat != "hardware":

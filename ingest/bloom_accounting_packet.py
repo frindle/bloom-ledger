@@ -12,11 +12,11 @@ import bloom_accounting_fixed as FX
 import bloom_accounting_report as RP
 import bloom_accounting_tax as TX
 
-LINES = (("1", "Gross receipts (Darkbloom pay)"), ("6", "Other income"), ("13", "Depreciation (Form 4562)"),
+LINES = (("1", "Gross receipts (Darkbloom pay)"), ("6", "Other income"), ("13", "Depreciation (Form 4562)"), ("16b", "Interest (machine loan)"),
          ("18", "Office expense (software)"), ("20a", "Rent or lease of equipment"), ("22", "Supplies"),
          ("25", "Utilities (metered electricity, internet)"), ("27a", "Other expenses"))
 METHOD_LABEL = {"macrs5": "5-year MACRS, half-year", "straight_line": "Straight line", "section179": "Section 179"}
-CATEGORY_LINE = {"hardware": "13", "software": "18", "supplies": "22", "electricity": "25", "internet": "25", "other": "27a"}
+CATEGORY_LINE = {"hardware": "13", "software": "18", "supplies": "22", "electricity": "25", "internet": "25", "interest": "16b", "other": "27a"}
 DISCLAIMER = "Bookkeeping, not tax advice. Line numbers are suggestions for your tax preparer."
 
 # Page shell; packet_html fills the %-slots in order: year, year, prepared, disclaimer, lines rows, use paragraph, year,
@@ -79,14 +79,14 @@ def packet_lines(totals, rows):
     """Suggested Schedule C lines [{"line", "label", "micro"}] in LINES order from tax totals and entry_row rows.
 
     "1", "6", "13", "20a" are totals income_micro, other_income_micro, depreciation_business_micro, lease_business_micro.
-    "18", "22", "27a" sum `deduct_micro or 0` of the rows with kind "cost" on that line. "25" is None when power_business_micro
+    "16b", "18", "22", "27a" sum `deduct_micro or 0` of the rows with kind "cost" on that line. "25" is None when power_business_micro
     is None, else power_business_micro plus that sum over the line "25" cost rows whose category is "internet"."""
     def cost_sum(line, cats=None):
         return sum(r["deduct_micro"] or 0 for r in rows
                    if r["kind"] == "cost" and r["line"] == line and (cats is None or r["category"] in cats))
     power = totals["power_business_micro"]
     vals = {"1": totals["income_micro"], "6": totals["other_income_micro"], "13": totals["depreciation_business_micro"],
-            "18": cost_sum("18"), "20a": totals["lease_business_micro"], "22": cost_sum("22"),
+            "16b": cost_sum("16b"), "18": cost_sum("18"), "20a": totals["lease_business_micro"], "22": cost_sum("22"),
             "25": None if power is None else power + cost_sum("25", ("internet",)), "27a": cost_sum("27a")}
     return [{"line": n, "label": label, "micro": vals[n]} for n, label in LINES]
 

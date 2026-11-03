@@ -61,7 +61,7 @@ def test_form_fields_are_labelled():
     for i in ("e-date", "e-amount", "e-category", "e-kind", "e-note"):
         assert '<label for="%s">' % i in h, i
     cats = re.findall(r'<option value="([^"]*)"', h[h.index('id="e-category"'):h.index('id="e-kind"')])
-    assert sorted(cats) == ["electricity", "hardware", "internet", "other", "software", "supplies"]
+    assert sorted(cats) == ["electricity", "hardware", "interest", "internet", "other", "software", "supplies"]
     kinds = re.findall(r'<option value="([^"]*)"', h[h.index('id="e-kind"'):h.index('id="e-note"')])
     assert kinds == ["cost", "receipt"]
     assert 'role="status"' in h and '<button type="submit"' in h

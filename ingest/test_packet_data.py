@@ -94,13 +94,13 @@ def test_lines_agree_with_tax_report():
     db = make()
     d = P.packet_data(db, 2025, "2026-02-01")
     t = TX.build_tax(db, 2025)["totals"]
-    assert [l["line"] for l in d["lines"]] == ["1", "6", "13", "18", "20a", "22", "25", "27a"]
+    assert [l["line"] for l in d["lines"]] == ["1", "6", "13", "16b", "18", "20a", "22", "25", "27a"]
     v = {l["line"]: l["micro"] for l in d["lines"]}
     assert v["1"] == t["income_micro"] == 2000000 and v["6"] == t["other_income_micro"] == 30000000
     assert v["13"] == t["depreciation_business_micro"] and v["20a"] == t["lease_business_micro"]
     assert v["18"] == 12000000 and v["22"] == 0 and v["27a"] == 15000000
     assert v["25"] == t["power_business_micro"] + 8000 * 3333 // 10000 * 10000
-    assert sum(v[k] for k in ("13", "18", "20a", "22", "25", "27a")) == t["expenses_micro"] == d["expenses_micro"]
+    assert sum(v[k] for k in ("13", "16b", "18", "20a", "22", "25", "27a")) == t["expenses_micro"] == d["expenses_micro"]
     assert d["net_micro"] == t["net_micro"] and d["year"] == 2025 and d["prepared"] == "2026-02-01"
     none = P.packet_lines(dict(t, power_business_micro=None, lease_business_micro=None), d["entries"])
     nv = {l["line"]: l["micro"] for l in none}
