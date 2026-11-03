@@ -31,7 +31,8 @@ def test_current_entries_ordering_and_fields(tmp_path):
     rows = E.current_entries(db)
     assert [r["id"] for r in rows] == [a, c, b]
     assert rows[0] == {"id": a, "kind": "cost", "date": "2026-10-20", "amount_cents": 5, "category": "other",
-                       "machine_id": "m1", "note": "x"}
+                       "machine_id": "m1", "note": "x", "vendor": None, "purpose": None, "business_pct": 100,
+                       "receipt": None}
 
 
 def test_inclusive_date_bounds(tmp_path):

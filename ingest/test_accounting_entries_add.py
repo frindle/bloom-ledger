@@ -38,4 +38,4 @@ def test_create_table_is_idempotent(tmp_path):
     E.create_entries_table(db)
     E.create_entries_table(db)
     cols = [r[1] for r in db.execute("PRAGMA table_info(acct_entries)")]
-    assert cols == ["id", "kind", "date", "amount_cents", "category", "machine_id", "note", "created_at", "voided_at"]
+    assert cols == ["id", "kind", "date", "amount_cents", "category", "machine_id", "note", "created_at", "voided_at", "vendor", "purpose", "business_pct", "receipt"]
