@@ -81,7 +81,8 @@ def machine_fixed_cents(machine, entries, links, start, end, default_bp=None):
 
     Returns {"depreciation_cents", "depreciation_business_cents", "lease_cents", "lease_business_cents"}; depreciation is None
     when an owned machine has no basis. default_bp (basis points, None = 10000) is the business share for years the machine
-    record gives no business_use_bp."""
+    record gives no business_use_bp. default_bp applies to owned depreciation only; a lease is 100% business unless the record's
+    business_use_bp lists that year."""
     bp = 10000 if default_bp is None else default_bp
     dep = dep_biz = None
     lease = 0
@@ -97,6 +98,8 @@ def machine_fixed_cents(machine, entries, links, start, end, default_bp=None):
         b, s, e = (dt.date.fromisoformat(x) for x in (machine["lease_start"], start, end))
         months = machine.get("lease_months") or 1200
         lease = _cum_lease(machine["lease_monthly_cents"], months, b, e) - _cum_lease(machine["lease_monthly_cents"], months, b, s - dt.timedelta(days=1))
-        lease_biz = DP.business_cents(lease, bp)
+        # A leased machine is assumed all business. Documented personal use is recorded on the machine record as
+        # business_use_bp[year] (e.g. 9500 after logging 5% personal use) and lowers that year's deductible lease.
+        lease_biz = DP.business_cents(lease, (machine.get("business_use_bp") or {}).get(start[:4], 10000))
         dep = dep_biz = 0
     return {"depreciation_cents": dep, "depreciation_business_cents": dep_biz, "lease_cents": lease, "lease_business_cents": lease_biz}

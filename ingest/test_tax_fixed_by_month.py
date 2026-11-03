@@ -12,8 +12,8 @@ def test_machine_records_are_summed_at_each_months_share():
     s = {"machines": [LEASED, OWNED], "entry_machine_links": None}
     r = T.fixed_by_month(s, [], 2026, SHARES)
     assert list(r) == ["2026-10", "2026-11", "2026-12"]
-    assert r["2026-10"]["lease_business_cents"] == 36500 * 12 * 31 // 365 // 2
-    assert r["2026-11"]["lease_business_cents"] == 0 and r["2026-11"]["depreciation_business_cents"] == 0
+    assert r["2026-10"]["lease_business_cents"] == 36500 * 12 * 31 // 365
+    assert r["2026-11"]["lease_business_cents"] == 36500 * 12 * 30 // 365 and r["2026-11"]["depreciation_business_cents"] == 0
     want = FX.machine_fixed_cents(OWNED, [], None, "2026-12-01", "2026-12-31", 10000)["depreciation_business_cents"]
     assert r["2026-12"]["depreciation_business_cents"] == want > 0
 
@@ -28,7 +28,7 @@ def test_legacy_settings_used_when_no_machines():
     s = {"machines": None, "m4_in_service_date": "2026-10-01", "dep_method": "straight_line", "dep_life_months": 60,
          "m5_lease_monthly_cents": 10000, "m5_lease_months": 36, "m5_lease_start": "2026-10-01"}
     r = T.fixed_by_month(s, [HW], 2026, SHARES)
-    assert r["2026-10"] == {"depreciation_business_cents": 182600 * 31 // 1826 // 2, "lease_business_cents": 10000 * 12 * 31 // 365 // 2}
-    assert r["2026-11"] == {"depreciation_business_cents": 0, "lease_business_cents": 0}
+    assert r["2026-10"] == {"depreciation_business_cents": 182600 * 31 // 1826 // 2, "lease_business_cents": 10000 * 12 * 31 // 365}
+    assert r["2026-11"] == {"depreciation_business_cents": 0, "lease_business_cents": 10000 * 12 * 30 // 365}
     none = T.fixed_by_month({"machines": [], "m4_in_service_date": "2026-10-01"}, [], 2026, SHARES)
     assert none["2026-10"] == {"depreciation_business_cents": None, "lease_business_cents": None}

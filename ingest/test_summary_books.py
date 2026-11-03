@@ -41,7 +41,7 @@ def make():
 
 def test_net_matches_the_tax_method():
     s = SM.build(make(), "2026-10-31", "month")
-    lease_biz, depr_biz = DP.business_cents(s["lease_cents"], 5000), DP.business_cents(s["depreciation_cents"], 5000)
+    lease_biz, depr_biz = s["lease_cents"], DP.business_cents(s["depreciation_cents"], 5000)
     assert s["lease_business_cents"] == lease_biz and s["depreciation_business_cents"] == depr_biz
     assert s["power_business_micro"] == 100000 and s["pre_tracking_micro"] == 16515444 and s["receipts_micro"] == 5000000
     assert s["entries_business_micro"] == 1200 * 10000 + 2000 * 10000 and s["electricity_entries_micro"] == 90000000

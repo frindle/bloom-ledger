@@ -45,9 +45,11 @@ def test_business_year_report():
     assert oct_["income_micro"] == 2000000 and oct_["bp"] == 3333
     assert oct_["power_business_micro"] == 100000, "only the paid-job minute's metered power"
     assert oct_["depreciation_business_micro"] == 18260 * 31 // 1826 * 3333 // 10000 * 10000
-    assert oct_["lease_business_micro"] == 1000 * 12 * 31 // 365 * 3333 // 10000 * 10000
-    assert r["months"][10]["expenses_micro"] == 0 and r["months"][10]["net_micro"] == 0
-    assert r["totals"]["income_micro"] == 2000000 and r["totals"]["net_micro"] == 2000000 - oct_["expenses_micro"]
+    assert oct_["lease_business_micro"] == 1000 * 12 * 31 // 365 * 10000, "lease is all business"
+    nov = r["months"][10]
+    assert nov["expenses_micro"] == nov["lease_business_micro"] > 0 and nov["net_micro"] == -nov["expenses_micro"], "lease accrues without paid time"
+    assert r["totals"]["income_micro"] == 2000000
+    assert r["totals"]["net_micro"] == 2000000 - sum(m["expenses_micro"] for m in r["months"])
 
 
 def test_hobby_view_is_income_only_and_bad_view_raises():

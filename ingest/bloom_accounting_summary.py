@@ -28,7 +28,7 @@ def build(db, today, period, machine=None):
     depr = FX.owned_depreciation_cents(settings, AE.current_entries(db), start, end, machine) if owned else 0
     bp = t["business_bp"]
     depr_biz = depr if not depr else (None if bp is None else DP.business_cents(depr, bp))
-    lease_biz = lease if not lease else (None if bp is None else DP.business_cents(lease, bp))
+    lease_biz = lease  # a lease is assumed all business; documented personal use goes on the machine record
     # Deductible power: only the metered cost of minutes a Darkbloom GPU or Sandbox job was running.
     power_biz = None if t["cost_micro"] is None else (t.get("gpu_cost_micro") or 0) + (t.get("sandbox_cost_micro") or 0)
     live = [e for e in AE.current_entries(db) if machine is None or e["machine_id"] in (None, machine)]

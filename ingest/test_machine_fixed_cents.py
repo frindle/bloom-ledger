@@ -22,9 +22,13 @@ def test_machine_record_elections_and_yearly_business_use_apply():
     assert r2["depreciation_cents"] == 19200 and r2["depreciation_business_cents"] == 19200 * 9000 // 10000
 
 
-def test_leased_machine_accrues_daily_at_business_share():
+def test_leased_machine_accrues_daily_all_business_unless_personal_use_is_recorded():
     r = F.machine_fixed_cents(LEASED, [], None, "2026-01-01", "2026-01-31", 5000)
-    assert r["lease_cents"] == 36500 * 12 * 31 // 365 and r["lease_business_cents"] == r["lease_cents"] // 2
+    assert r["lease_cents"] == 36500 * 12 * 31 // 365 and r["lease_business_cents"] == r["lease_cents"], "paid-time share ignored"
+    p = F.machine_fixed_cents(dict(LEASED, business_use_bp={"2026": 9500}), [], None, "2026-01-01", "2026-01-31", 5000)
+    assert p["lease_business_cents"] == r["lease_cents"] * 9500 // 10000, "documented personal use lowers that year"
+    q = F.machine_fixed_cents(dict(LEASED, business_use_bp={"2025": 9500}), [], None, "2026-01-01", "2026-01-31", 5000)
+    assert q["lease_business_cents"] == r["lease_cents"]
     assert r["depreciation_cents"] == 0 and r["depreciation_business_cents"] == 0
     assert F.machine_fixed_cents(dict(LEASED, lease_months=1), [], None, "2026-01-01", "2026-12-31")["lease_cents"] == 36500
     assert F.machine_fixed_cents(LEASED, [], None, "2025-01-01", "2025-12-31")["lease_cents"] == 0

@@ -41,7 +41,8 @@ def test_net_all_machines():
     assert s["lease_cents"] == 10000 * 12 * 31 // 365
     assert s["depreciation_cents"] == 182600 * 31 // 1826 and s["depreciation_business_cents"] == s["depreciation_cents"] // 2
     assert s["net_missing"] == []
-    assert s["lease_business_cents"] == DP.business_cents(s["lease_cents"], 5000) and s["power_business_micro"] == 100000
+    assert s["lease_business_cents"] == s["lease_cents"], "lease is all business" 
+    assert s["power_business_micro"] == 100000
     assert s["net_micro"] == 2000000 - 100000 - (s["lease_business_cents"] + s["depreciation_business_cents"]) * 10000
 
 

@@ -184,7 +184,7 @@ def fixed_by_month(settings, entries, year, shares, through=None):
             dep, lease = (None if None in v else sum(v) for v in (dep, lease))
         else:
             dep, lease = FX.owned_depreciation_cents(settings, entries, start, end), FX.lease_cents(settings, start, end)
-            dep, lease = (None if v is None else DP.business_cents(v, bp) for v in (dep, lease))
+            dep = None if dep is None else DP.business_cents(dep, bp)  # lease: assumed all business (see FX.machine_fixed_cents)
         out[key] = {"depreciation_business_cents": dep, "lease_business_cents": lease}
     return out
 
