@@ -32,7 +32,7 @@ def test_power_fields_per_day():
     d = rows[1]
     assert d["earned_micro"] == 10 and d["tokens"] == 4
     assert d["wh"] == 8.0 and d["minutes"] == 3 and d["paid_minutes"] == 1
-    assert rows[0] == {"date": "2026-10-22", "earned_micro": 0, "tokens": 0, "wh": 1.0, "minutes": 1, "paid_minutes": 1, "cost_micro": None}
+    assert rows[0] == {"date": "2026-10-22", "earned_micro": 0, "sandbox_micro": 0, "tokens": 0, "wh": 1.0, "minutes": 1, "paid_minutes": 1, "cost_micro": None}
 
 
 def test_machine_filter_applies_to_power():
@@ -46,3 +46,10 @@ def test_sandbox_job_minute_counts_as_paid():
                " VALUES ('m4', ?, 2.0, 60, 1, 0, 0, 1)", (utc(2026, 10, 21, 20, 0),))
     d = RP.day_rows(db, TZ, "2026-10-21", "2026-10-21")[0]
     assert d["minutes"] == 1 and d["paid_minutes"] == 1
+
+
+def test_sandbox_income_split_out():
+    import sqlite3, bloom_accounting_index as AX
+    db = sqlite3.connect(":memory:"); AX.create_schema(db)
+    cols = [r[1] for r in db.execute("PRAGMA table_info(earnings)")]
+    assert "kind" in cols

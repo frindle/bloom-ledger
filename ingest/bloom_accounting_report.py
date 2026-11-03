@@ -20,7 +20,7 @@ def day_rows(db, tz, start, end, machine=None, settings=None):
 
     `machine` (optional) limits to earnings whose source_machine matches."""
     lo, hi = ts_bounds(tz, start, end)
-    sql = "SELECT ts, micro_usd, completion_tokens FROM earnings WHERE ts >= ? AND ts < ?"
+    sql = "SELECT ts, micro_usd, completion_tokens, kind FROM earnings WHERE ts >= ? AND ts < ?"
     args = [lo, hi]
     if machine:
         sql += " AND source_machine = ?"
@@ -29,12 +29,14 @@ def day_rows(db, tz, start, end, machine=None, settings=None):
     zone = ZoneInfo(tz)
 
     def row_for(d):
-        return days.setdefault(d, {"date": d, "earned_micro": 0, "tokens": 0, "wh": 0.0, "minutes": 0, "paid_minutes": 0,
+        return days.setdefault(d, {"date": d, "earned_micro": 0, "sandbox_micro": 0, "tokens": 0, "wh": 0.0, "minutes": 0, "paid_minutes": 0,
                                   "cost_micro": 0 if settings else None})
-    for ts, micro, tokens in db.execute(sql, args):
+    for ts, micro, tokens, kind in db.execute(sql, args):
         d = dt.datetime.fromtimestamp(ts, zone).date().isoformat()
         row = row_for(d)
         row["earned_micro"] += micro
+        if kind == "sandbox":
+            row["sandbox_micro"] += micro
         row["tokens"] += tokens or 0
     psql = "SELECT ts, wh, power_ok, tokens_delta, other_work, sandbox_jobs FROM power_minutes WHERE ts >= ? AND ts < ?"
     pargs = [lo, hi]
@@ -57,6 +59,7 @@ def day_rows(db, tz, start, end, machine=None, settings=None):
 def totals(rows):
     """Aggregate day_rows into period figures."""
     earned_micro = 0
+    sandbox_micro = 0
     tokens = 0
     wh = 0.0
     minutes = 0
@@ -65,6 +68,7 @@ def totals(rows):
     cost_none = False
     for r in rows:
         earned_micro += r["earned_micro"]
+        sandbox_micro += r.get("sandbox_micro", 0)
         tokens += r["tokens"]
         wh += r["wh"]
         minutes += r["minutes"]
@@ -82,6 +86,7 @@ def totals(rows):
     business_bp = None if minutes == 0 else paid_minutes * 10000 // minutes
     return {
         "earned_micro": earned_micro,
+        "sandbox_micro": sandbox_micro,
         "tokens": tokens,
         "wh": wh,
         "minutes": minutes,

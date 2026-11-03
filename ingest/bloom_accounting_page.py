@@ -126,6 +126,7 @@ def script_js():
     const net_val = s.net_micro !== null ? "$" + (s.net_micro / 1e6).toFixed(2) : null;
     dl.replaceChildren(
       figure("Earned from jobs", earned),
+      figure("of which Sandbox", "$" + ((t.sandbox_micro || 0) / 1e6).toFixed(2), "GPU $" + ((t.earned_micro - (t.sandbox_micro || 0)) / 1e6).toFixed(2)),
       figure("Power", power_val, power_note),
       figure("Paid hours", paid_val, paid_note),
       figure("Tokens", tokens_val, null, fmtTokensFull(t.tokens)),
