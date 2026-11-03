@@ -29,19 +29,46 @@
   button.danger { border-color: var(--missing); color: var(--missing); }
   input { font: inherit; padding: .3rem .5rem; border: 1px solid var(--rule); border-radius: 4px; background: #fff; color: var(--ink); max-width: 100%; }
   label { display: block; color: var(--muted); font-size: .9rem; margin-bottom: .15rem; }
-  .table-wrap { overflow-x: auto; }
+  .table-wrap { overflow: visible; }
   table { width: 100%; border-collapse: collapse; }
-  th, td { text-align: left; padding: .5rem .4rem; border-bottom: 1px solid var(--rule); vertical-align: bottom; }
+  th, td { text-align: left; padding: .5rem .6rem; border-bottom: 1px solid var(--rule); vertical-align: bottom; }
   th { color: var(--muted); font-weight: 600; font-size: .9rem; }
   caption { text-align: left; caption-side: top; padding-bottom: .5rem; }
-  td.id { font-family: var(--mono); }
   input, select { box-sizing: border-box; height: 2.15rem; }
-  td input, td select { width: 100%; min-width: 6rem; }
-  td input[type=date] { min-width: 8.75rem; }
-  td input[type=number] { min-width: 5.5rem; }
   td select { font: inherit; padding: .3rem .4rem; border: 1px solid var(--rule); border-radius: 4px; background: #fff; color: var(--ink); }
-  td.actions { min-width: 10rem; }
-  td.actions button { margin: .35rem .35rem 0 0; }
+  /* Machines: each row is a card. The column headers stay for screen readers; each cell labels itself. */
+  #machines, #machines tbody { display: block; }
+  #machines thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  #machines caption { display: block; }
+  #machines tbody tr {
+    display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: .9rem 1.1rem; align-items: end;
+    grid-template-areas: "id status seen sealed ." "name model acq start amt" "actions actions actions actions actions";
+    background: #fff; border: 1px solid var(--rule); border-radius: 8px; padding: 1rem 1.1rem; margin-bottom: .9rem;
+  }
+  #machines td { display: block; padding: 0; border: 0; min-width: 0; }
+  #machines td[colspan] { grid-column: 1 / -1; }
+  #machines td input, #machines td select { width: 100%; min-width: 0; }
+  #machines td > span.note { display: block; font-size: .85rem; margin-bottom: .2rem; }
+  #machines td > br { display: none; }
+  #machines td:nth-child(1) { grid-area: id; font-family: var(--mono); font-size: 1.15rem; font-weight: 600; align-self: center; }
+  #machines td:nth-child(2) { grid-area: name; } #machines td:nth-child(3) { grid-area: model; }
+  #machines td:nth-child(4) { grid-area: acq; } #machines td:nth-child(5) { grid-area: start; }
+  #machines td:nth-child(6) { grid-area: amt; } #machines td:nth-child(7) { grid-area: seen; }
+  #machines td:nth-child(8) { grid-area: sealed; } #machines td:nth-child(9) { grid-area: status; }
+  #machines td:nth-child(10) { grid-area: actions; display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: .5rem;
+                               border-top: 1px solid var(--rule); padding-top: .8rem; }
+  #machines td:nth-child(10) .note, #machines td:nth-child(10) .error { margin-right: auto; order: -1; }
+  #machines td:nth-child(n+2):nth-child(-n+4)::before, #machines td:nth-child(n+7):nth-child(-n+9)::before {
+    display: block; color: var(--muted); font-size: .85rem; font-weight: 400; margin-bottom: .2rem;
+  }
+  #machines td:nth-child(2)::before { content: "Display name"; } #machines td:nth-child(3)::before { content: "Model"; }
+  #machines td:nth-child(4)::before { content: "Acquired"; } #machines td:nth-child(7)::before { content: "Last seen"; }
+  #machines td:nth-child(8)::before { content: "Days sealed"; } #machines td:nth-child(9)::before { content: "Status"; }
+  #machines td[colspan]::before { content: none; }
+  @media (max-width: 760px) {
+    #machines tbody tr { grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-areas: "id status" "seen sealed" "name model" "acq start" "amt amt" "actions actions"; }
+  }
   .status-ok { color: var(--sealed); font-weight: 600; }
   .status-wait { color: var(--waiting); font-weight: 600; }
   .row-form { display: flex; gap: .75rem; align-items: flex-end; flex-wrap: wrap; }
