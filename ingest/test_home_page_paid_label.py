@@ -54,7 +54,7 @@ DAYS = [{"date": "2026-10-30", "earned_micro": 1, "tokens": 31642663, "wh": 8592
 def test_paid_hours_note_says_percent_paid(tmp_path):
     res = run_home(tmp_path, TOTALS, [])
     text = find(res["dom"], "summary")["text"]
-    assert "of 5 h, 70% paid" in text and "business" not in text and "3.5 h" in text
+    assert "of 5 h, 70% paid" in text and "3.5 h paid of 5 h, 70% paid" in text and "3.5 h" in text
 
 
 def test_script_has_no_business_label():

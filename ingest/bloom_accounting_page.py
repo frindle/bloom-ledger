@@ -22,7 +22,7 @@ def body_html():
         '    <div id="streams" class="streams"></div>\n'
         '    <p class="meta">Power while working is the metered cost of the minutes that stream was running a job. Idle minutes and your own work are counted below, in the whole machine.</p>\n'
         '  </section>\n'
-        '  <section aria-labelledby="sum-h"><h2 id="sum-h">Whole machine</h2><dl id="summary" class="figures"></dl><p id="power-note" class="meta"></p></section>\n'
+        '  <section aria-labelledby="sum-h"><h2 id="sum-h">Whole machine</h2><div id="summary" class="ledger"></div><p id="power-note" class="meta"></p></section>\n'
         '  <section aria-labelledby="days-h"><h2 id="days-h">Days</h2>\n'
         '    <div class="scroll"><table class="days"><caption>Newest first. Open a day to see its minutes and every payment.</caption>\n'
         '      <thead><tr><th scope="col">Date</th><th scope="col" class="num">GPU</th><th scope="col" class="num">Sandbox</th><th scope="col" class="num">Power</th><th scope="col" class="num">Energy (kWh)</th><th scope="col" class="num">Paid h</th><th scope="col" class="num">Hours</th><th scope="col" class="num">Tokens</th></tr></thead>\n'
@@ -98,7 +98,11 @@ def script_js():
     return (micro < 0 ? "\\u2212$" : "$") + v.toFixed(2);
   }
   function usdFine(micro) {
-    if (micro !== 0 && Math.abs(micro) < 10000) return "$" + (micro / 1e6).toFixed(6).replace(/(\\.\\d{4}\\d*?)0+$/, "$1");
+    if (micro !== 0 && Math.abs(micro) < 10000) {
+      const v = Math.abs(micro) / 1e6;
+      const sign = micro < 0 ? "\\u2212$" : "$";
+      return sign + v.toFixed(6).replace(/(\\.\\d{4}\\d*?)0+$/, "$1");
+    }
     return usd(micro);
   }
   function el(tag, text, cls) {
@@ -145,8 +149,8 @@ def script_js():
     art.appendChild(el("h3", NAMES[key]));
     const dl = el("dl", null, "sum");
     dl.appendChild(sumLine("Earned", usd(earned)));
-    dl.appendChild(sumLine("Power while working", costKnown ? usd(-cost) : null));
-    dl.appendChild(sumLine("Margin over power", costKnown ? usd(earned - cost) : null, "line total"));
+    dl.appendChild(sumLine("Power while working", costKnown ? usdFine(-cost) : null));
+    dl.appendChild(sumLine("Margin over power", costKnown ? usdFine(earned - cost) : null, "line total"));
     art.appendChild(dl);
     const h = (minutes / 60).toFixed(minutes < 600 ? 2 : 1);
     art.appendChild(el("p", minutes + " paid minutes (" + h + " h)" + (extra ? ", " + extra : ""), "meta"));
@@ -164,22 +168,32 @@ def script_js():
         stream("sandbox", t.sandbox_micro || 0, t.sandbox_cost_micro || 0, t.sandbox_minutes || 0, null, costKnown)
       );
     }
-    const cost = costKnown ? usd(t.cost_micro) : null;
-    const power_note = "cost " + (cost || "not set");
-    const power_val = t.minutes ? fmtKwh(t.kwh) + " kWh" : null;
-    const paid_note = "of " + t.total_hours + " h, " + (t.business_bp !== null ? (t.business_bp / 100) + "% paid" : "not set");
-    const paid_val = t.minutes ? t.paid_hours + " h" : null;
-    const net_val = s.net_micro !== null ? usd(s.net_micro) : null;
-    const own = t.other_minutes ? (t.other_minutes / 60).toFixed(1) + " h your own work" : null;
-    const net = figure("Net", net_val, "after all power, lease and depreciation");
-    net.className = "net";
-    $("summary").replaceChildren(
-      figure("Earned", usd(t.earned_micro)),
-      figure("Power", power_val, power_note),
-      figure("Paid hours", paid_val, own ? paid_note + "; " + own : paid_note),
-      figure("Tokens", fmtTokensCompact(t.tokens), null, fmtTokensFull(t.tokens)),
-      net
-    );
+    const gpu = t.gpu_micro || 0;
+    const gpuCost = t.gpu_cost_micro || 0;
+    const sbx = t.sandbox_micro || 0;
+    const sbxCost = t.sandbox_cost_micro || 0;
+    const sumDl = document.createElement("dl");
+    sumDl.className = "sum";
+    const marginKnown = costKnown;
+    sumDl.appendChild(sumLine("Darkbloom GPU margin", marginKnown ? usdFine(gpu - gpuCost) : null));
+    sumDl.appendChild(sumLine("Sandbox margin", marginKnown ? usdFine(sbx - sbxCost) : null));
+    sumDl.appendChild(sumLine("Power while idle or doing your own work", marginKnown ? usdFine(-(t.cost_micro - gpuCost - sbxCost)) : null));
+    sumDl.appendChild(sumLine("Lease", usd(-(s.lease_cents || 0) * 10000)));
+    if (s.depreciation_business_cents === null) {
+      sumDl.appendChild(sumLine("Depreciation (business share)", null));
+    } else {
+      sumDl.appendChild(sumLine("Depreciation (business share)", usd(-(s.depreciation_business_cents || 0) * 10000)));
+    }
+    const netVal = s.net_micro !== null ? usd(s.net_micro) : null;
+    sumDl.appendChild(sumLine("Net", netVal, "line total"));
+    const metaText = fmtKwh(t.kwh) + " kWh metered" + (t.minutes ? ", " + t.paid_hours + " h paid of " + t.total_hours + " h, " + (t.business_bp !== null ? (t.business_bp / 100) + "% paid" : "not set") : "") + (t.other_minutes ? ", " + (t.other_minutes / 60).toFixed(1) + " h your own work" : "");
+    const metaP = document.createElement("p");
+    metaP.className = "meta";
+    metaP.appendChild(document.createTextNode(metaText));
+    const tokenSpan = el("span", fmtTokensCompact(t.tokens) + " tokens");
+    tokenSpan.setAttribute("title", fmtTokensFull(t.tokens));
+    metaP.appendChild(tokenSpan);
+    $("summary").replaceChildren(sumDl, metaP);
     drawDays();
     const entryRows = $("entry-rows");
     if (entryRows) {
@@ -475,7 +489,9 @@ def style_block():
         '  dl.figures { display: grid; grid-template-columns: repeat(auto-fit, minmax(10.5rem, 1fr)); gap: .75rem; margin: 0; }\n'
         '  dl.figures div { background: var(--card); padding: .6rem .9rem; border-top: 3px solid var(--ink); }\n'
         '  dl.figures dt { color: var(--muted); font-size: .85rem; } dl.figures dd { margin: 0; font-size: 1.3rem; font-variant-numeric: tabular-nums; }\n'
+        '  .ledger { background: var(--card); padding: 1rem 1.25rem 1.1rem 1.4rem; border-left: 6px solid var(--ink); max-width: 34rem; }\n'
         '  dl.figures .net dd { display: inline-block; font-weight: 600; border-bottom: 4px double var(--ink); }\n'
+        '  .scroll { overflow-x: auto; }\n'
         '  .scroll { overflow-x: auto; }\n'
         '  table { width: 100%; border-collapse: collapse; background: var(--card); font-variant-numeric: tabular-nums; }\n'
         '  caption { text-align: left; padding: .5rem .75rem; color: var(--muted); font-size: .9rem; }\n'

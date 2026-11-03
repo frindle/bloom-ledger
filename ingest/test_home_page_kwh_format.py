@@ -63,6 +63,7 @@ def test_formatter_is_shipped_in_the_page_script():
 
 def test_power_card_and_day_table_use_one_decimal(tmp_path):
     res = run_home(tmp_path, TOTALS, DAYS)
-    assert card(res, "Power")["text"] == "8.6 kWh"
+    meta = find(res["dom"], "summary")["children"][-1]
+    assert meta["tag"] == "p" and "8.6 kWh metered" in meta["text"]
     assert [r[4] for r in day_cells(res)] == ["8.6", "1.5"]
 

@@ -37,7 +37,7 @@ def test_figures_render_with_values(tmp_path):
     assert res["errors"] == [] and res["inner_html_writes"] == 0
     assert [f["url"] for f in res["fetches"] if f["url"].startswith("/v1/accounting/")][0] == URL
     text = summary_text(res)
-    for want in ("$12.34", "1.5 kWh", "cost $0.25", "3.5 h", "of 5 h, 70% paid", "4,200", "$9.00"):
+    for want in ("$9.00", "1.5 kWh metered", "3.5 h paid of 5 h, 70% paid", "4,200"):
         assert want in text, want
     assert "not set" not in text and find(res["dom"], "banner")["hidden"]
 
@@ -47,5 +47,5 @@ def test_missing_inputs_say_not_set_with_settings_link(tmp_path):
     res = run_home(tmp_path, {URL: {"status": 200, "body": body}})
     assert res["errors"] == []
     links = [n for n in walk(find(res["dom"], "summary")) if n["tag"] == "a"]
-    assert len(links) == 3 and all(n["attrs"]["href"] == "/settings" for n in links)
-    assert summary_text(res).count("not set") >= 3 and "cost not set" in summary_text(res)
+    assert len(links) == 4 and all(n["attrs"]["href"] == "/settings" for n in links)
+    assert summary_text(res).count("Set in Settings") >= 4

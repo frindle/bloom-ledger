@@ -68,12 +68,14 @@ def test_formatters_are_shipped_in_the_page_script():
 
 def test_summary_card_compact_with_full_title_and_day_table_full(tmp_path):
     res = run_home(tmp_path, TOTALS, DAYS)
-    dd = card(res, "Tokens")
-    assert dd["text"] == "31.6M" and dd["attrs"]["title"] == "31,642,663"
+    meta = find(res["dom"], "summary")["children"][-1]
+    spans = [n for n in meta["children"] if n["tag"] == "span"]
+    assert len(spans) == 1 and spans[0]["text"] == "31.6M tokens" and spans[0]["attrs"]["title"] == "31,642,663"
     assert [r[7] for r in day_cells(res)] == ["31,642,663", "999"]
 
 
 def test_summary_card_small_counts(tmp_path):
     res = run_home(tmp_path, dict(TOTALS, tokens=1500), [])
-    dd = card(res, "Tokens")
-    assert dd["text"] == "1,500" and dd["attrs"]["title"] == "1,500"
+    meta = find(res["dom"], "summary")["children"][-1]
+    spans = [n for n in meta["children"] if n["tag"] == "span"]
+    assert len(spans) == 1 and spans[0]["text"] == "1,500 tokens" and spans[0]["attrs"]["title"] == "1,500"
