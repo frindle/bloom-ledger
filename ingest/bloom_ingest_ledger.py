@@ -48,6 +48,8 @@ def manifest_run(root, db, day):
                     break
                 if mday < day:
                     prev = mdict
+        if skip:
+            continue  # the chain already runs past `day`: a manifest for it now would fork the chain
         man = L.make_manifest(day, mid, day_files(db, mid, day), prev)
         st = L.write_manifest(ldir, man)
         out[mid] = st
