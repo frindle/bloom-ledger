@@ -106,9 +106,22 @@ def kwh_format_js():
 """.strip() + '\n'
 
 
+def bytes_format_js():
+    """Return JS source for fmtBytes: decimal units, one decimal above 1000 bytes."""
+    return """function fmtBytes(n) {
+  if (typeof n !== "number" || !isFinite(n) || n < 0) return "0 B";
+  if (n < 1000) return Math.floor(n) + " B";
+  const units = ["KB", "MB", "GB", "TB"];
+  let i = -1;
+  while (n >= 1000 && i < units.length - 1) { n /= 1000; i++; }
+  return n.toFixed(1) + " " + units[i];
+}
+"""
+
+
 def script_js():
     """The inline JavaScript: fetches the summary, draws both streams and the days, and opens a day's logs on request."""
-    return tokens_format_js() + kwh_format_js() + """(() => {
+    return tokens_format_js() + kwh_format_js() + bytes_format_js() + """(() => {
   "use strict";
   const $ = id => document.getElementById(id);
   const NAMES = { gpu: "Darkbloom GPU", sandbox: "Sandbox", other: "Your own work", idle: "Idle", gap: "No reading" };
@@ -180,6 +193,10 @@ def script_js():
     art.appendChild(el("p", minutes + " paid minutes (" + h + " h)" + (extra ? ", " + extra : ""), "meta"));
     return art;
   }
+  function dataText(t, key) {
+    if (!t.net_minutes) return "data not measured";
+    return "data " + fmtBytes(t[key + "_bytes_in"] || 0) + " in, " + fmtBytes(t[key + "_bytes_out"] || 0) + " out";
+  }
   function render(s) {
     last = s;
     const t = s.totals;
@@ -188,8 +205,8 @@ def script_js():
     const box = $("streams");
     if (box) {
       box.replaceChildren(
-        stream("gpu", gpuEarned, t.gpu_cost_micro || 0, t.gpu_minutes || 0, fmtTokensCompact(t.tokens) + " tokens", costKnown),
-        stream("sandbox", t.sandbox_micro || 0, t.sandbox_cost_micro || 0, t.sandbox_minutes || 0, null, costKnown)
+        stream("gpu", gpuEarned, t.gpu_cost_micro || 0, t.gpu_minutes || 0, fmtTokensCompact(t.tokens) + " tokens, " + dataText(t, "gpu"), costKnown),
+        stream("sandbox", t.sandbox_micro || 0, t.sandbox_cost_micro || 0, t.sandbox_minutes || 0, dataText(t, "sandbox"), costKnown)
       );
     }
     const gpu = t.gpu_micro || 0;
@@ -210,7 +227,7 @@ def script_js():
     }
     const netVal = s.net_micro !== null ? usd(s.net_micro) : null;
     sumDl.appendChild(sumLine("Net", netVal, "line total"));
-    const metaText = fmtKwh(t.kwh) + " kWh metered" + (t.minutes ? ", " + t.paid_hours + " h paid of " + t.total_hours + " h, " + (t.business_bp !== null ? (t.business_bp / 100) + "% paid" : "not set") : "") + (t.other_minutes ? ", " + (t.other_minutes / 60).toFixed(1) + " h your own work" : "");
+    const metaText = fmtKwh(t.kwh) + " kWh metered" + (t.minutes ? ", " + t.paid_hours + " h paid of " + t.total_hours + " h, " + (t.business_bp !== null ? (t.business_bp / 100) + "% paid" : "not set") : "") + (t.other_minutes ? ", " + (t.other_minutes / 60).toFixed(1) + " h your own work" : "") + ", " + dataText(t, "total") + ", ";
     const metaP = document.createElement("p");
     metaP.className = "meta";
     metaP.appendChild(document.createTextNode(metaText));
