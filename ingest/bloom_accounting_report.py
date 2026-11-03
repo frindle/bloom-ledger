@@ -5,6 +5,7 @@ import datetime as dt
 from zoneinfo import ZoneInfo
 
 import bloom_accounting_rates as RT
+from bloom_accounting_index import NET_COLUMNS
 
 
 def ts_bounds(tz, start, end):
@@ -28,15 +29,39 @@ def minute_stream(ok, tok, other, sbx):
     return "idle"
 
 
+def business_share(stream, state, frac):
+    """Business-use share (0..1) of one power minute: Darkbloom or Sandbox work counts whole, an idle minute counts whole
+    while Darkbloom is online (dbk_state not "off" or blank: the machine is up and waiting for paid work), an other-work
+    minute counts the share the GPU was serving inference (active_frac), and anything else counts nothing."""
+    if stream in ("gpu", "sandbox"):
+        return 1.0
+    if stream == "idle":
+        return 1.0 if (state or "off") != "off" else 0.0
+    if stream == "other":
+        return frac or 0.0
+    return 0.0
+
+
 def stream_of_kind(kind):
     """Earnings kind -> stream. Base rewards come from serving Darkbloom GPU inference, so they count as GPU."""
     return "sandbox" if kind == "sandbox" else "gpu"
 
 
+def add_net_bytes(row, net):
+    """Add one minute's byte counts (values in NET_COLUMNS order; None = not measured) to the day row.
+
+    Bytes count whether or not the power reading was good. net_minutes counts minutes with a measured total_bytes_in."""
+    for c, n in zip(NET_COLUMNS, net):
+        row[c] += n or 0
+    if net[NET_COLUMNS.index("total_bytes_in")] is not None:
+        row["net_minutes"] += 1
+
+
 def _blank_row(d, settings):
     return {"date": d, "earned_micro": 0, "gpu_micro": 0, "sandbox_micro": 0,
             "gpu_cost_micro": 0, "sandbox_cost_micro": 0, "gpu_minutes": 0, "sandbox_minutes": 0, "other_minutes": 0,
-            "tokens": 0, "wh": 0.0, "minutes": 0, "paid_minutes": 0, "cost_micro": 0 if settings else None}
+            "tokens": 0, "wh": 0.0, "minutes": 0, "paid_minutes": 0, "business_minutes": 0.0, "cost_micro": 0 if settings else None,
+            **{c: 0 for c in NET_COLUMNS}, "net_minutes": 0}
 
 
 def day_rows(db, tz, start, end, machine=None, settings=None):
@@ -60,13 +85,15 @@ def day_rows(db, tz, start, end, machine=None, settings=None):
         row["earned_micro"] += micro
         row[stream_of_kind(kind) + "_micro"] += micro
         row["tokens"] += tokens or 0
-    psql = "SELECT ts, wh, power_ok, tokens_delta, other_work, sandbox_jobs FROM power_minutes WHERE ts >= ? AND ts < ?"
+    psql = ("SELECT ts, wh, power_ok, tokens_delta, other_work, sandbox_jobs, dbk_state, active_frac, " + ", ".join(NET_COLUMNS)
+            + " FROM power_minutes WHERE ts >= ? AND ts < ?")
     pargs = [lo, hi]
     if machine:
         psql += " AND machine_id = ?"
         pargs.append(machine)
-    for ts, wh, ok, tok, other, sbx in db.execute(psql, pargs):
+    for ts, wh, ok, tok, other, sbx, state, frac, *net in db.execute(psql, pargs):
         row = row_for(dt.datetime.fromtimestamp(ts, zone).date().isoformat())
+        add_net_bytes(row, net)
         if not ok:
             continue
         row["wh"] += wh or 0.0
@@ -76,6 +103,7 @@ def day_rows(db, tz, start, end, machine=None, settings=None):
             c = RT.interval_cost(settings, ts, wh or 0.0)
             row["cost_micro"] = None if c is None else row["cost_micro"] + c["total_micro"]
         st = minute_stream(ok, tok, other, sbx)
+        row["business_minutes"] += business_share(st, state, frac)
         if st == "other":
             row["other_minutes"] += 1
         elif st in ("gpu", "sandbox"):
@@ -139,11 +167,12 @@ def totals(rows):
     """Aggregate day_rows into period figures."""
     earned_micro = 0
     split = {k: 0 for k in ("gpu_micro", "sandbox_micro", "gpu_cost_micro", "sandbox_cost_micro", "gpu_minutes",
-                            "sandbox_minutes", "other_minutes")}
+                            "sandbox_minutes", "other_minutes", *NET_COLUMNS, "net_minutes")}
     tokens = 0
     wh = 0.0
     minutes = 0
     paid_minutes = 0
+    business_minutes = 0.0
     cost_micro = 0
     cost_none = False
     for r in rows:
@@ -154,6 +183,7 @@ def totals(rows):
         wh += r["wh"]
         minutes += r["minutes"]
         paid_minutes += r["paid_minutes"]
+        business_minutes += r.get("business_minutes", r["paid_minutes"])
         c = r["cost_micro"]
         if c is None:
             cost_none = True
@@ -164,7 +194,7 @@ def totals(rows):
     kwh = round(wh / 1000, 3)
     total_hours = round(minutes / 60, 2)
     paid_hours = round(paid_minutes / 60, 2)
-    business_bp = None if minutes == 0 else paid_minutes * 10000 // minutes
+    business_bp = None if minutes == 0 else min(10000, int(business_minutes * 10000 / minutes + 1e-9))
     return {
         "earned_micro": earned_micro,
         **split,
@@ -172,6 +202,7 @@ def totals(rows):
         "wh": wh,
         "minutes": minutes,
         "paid_minutes": paid_minutes,
+        "business_minutes": round(business_minutes, 3),
         "cost_micro": cost_micro,
         "kwh": kwh,
         "total_hours": total_hours,
