@@ -1,39 +1,47 @@
+import importlib
+import os
 import sys
+import tempfile
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parent / '..'))
 
-def test_probe():
-    mods = []
-    try:
-        import importlib; mods.append(importlib.import_module('lib.bloom_power_lib'))
-    except BaseException as e:
-        print('PROBE-LOAD lib/bloom_power_lib.py:', type(e).__name__, e)
-    print('PROBE-EXPORTS', sum(1 for m in mods for k in dir(m) if not k.startswith('_')))
-    import inspect
-    def _args(g):
-        try:
-            return [None] * len([q for q in inspect.signature(g).parameters.values() if q.default is q.empty and q.kind in (q.POSITIONAL_ONLY, q.POSITIONAL_OR_KEYWORD)])
-        except (TypeError, ValueError):
-            return []
-    cands = []
-    for m in mods:
-        f = getattr(m, 'summarize_earnings', None)
-        if callable(f):
-            cands.append(f)
-            cands += [c.cell_contents for c in (getattr(f, '__closure__', None) or ()) if callable(c.cell_contents) and getattr(c.cell_contents, '__name__', None) == 'summarize_earnings']  # decorator without functools.wraps
-        for k in dir(m):  # methods of a class defined in the module
-            c = getattr(m, k, None)
-            if isinstance(c, type) and c.__module__ == m.__name__ and callable(getattr(c, 'summarize_earnings', None)):
-                try:
-                    inst = c(*_args(c.__init__)[1:])
-                    cands.append(getattr(inst, 'summarize_earnings'))
-                except BaseException as e:
-                    print('PROBE-CALL summarize_earnings:', type(e).__name__, e)
-    if not cands:
-        print('PROBE-NOCALL summarize_earnings')
-    for f in cands:
-        try:
-            f(*_args(f))
-        except BaseException as e:
-            print('PROBE-CALL summarize_earnings:', type(e).__name__, e)
-    raise AssertionError('probe')
+_tmp = tempfile.mkdtemp()
+for _k in ("BLOOM_POWER_HOME", "BLOOM_QUEUE_STATE", "BLOOM_WORKER_METRICS"):
+    os.environ.setdefault(_k, _tmp)
+sys.path.insert(0, str(Path(__file__).resolve().parent / ".."))
+lib = importlib.import_module("lib.bloom_power_lib")
+
+
+def _e(day, usd_micro, model="gemma", job_id="job_1"):
+    return {"created_at": f"2026-11-0{day}T01:00:00Z", "amount_micro_usd": usd_micro, "model": model, "job_id": job_id}
+
+
+ENTRIES = [
+    _e(2, 1_000_000, model="base_reward", job_id="floor:x"),
+    _e(2, 500_000),
+    _e(2, 2250, model="sandbox:linux-arm64-4cpu-16gb", job_id="sandbox:sbx_1"),
+    _e(3, 2250, model="sandbox:linux-arm64-4cpu-16gb", job_id="sandbox:sbx_2"),
+]
+
+
+def test_totals_and_gross_include_sandbox():
+    r = lib.summarize_earnings(ENTRIES)
+    assert abs(r["sandbox"] - 0.0045) < 1e-9
+    assert abs(r["base"] - 1.0) < 1e-9 and abs(r["job"] - 0.5) < 1e-9
+    assert abs(r["gross"] - (r["base"] + r["job"] + r["sandbox"])) < 1e-9
+    assert r["n"] == 4
+
+
+def test_per_day_buckets():
+    r = lib.summarize_earnings(ENTRIES)
+    d2, d3 = r["by_day"]["2026-11-02"], r["by_day"]["2026-11-03"]
+    assert abs(d2["sandbox"] - 0.00225) < 1e-9 and abs(d2["job"] - 0.5) < 1e-9 and d2["n"] == 3
+    assert abs(d3["sandbox"] - 0.00225) < 1e-9 and d3["base"] == 0.0 and d3["job"] == 0.0
+
+
+def test_without_sandbox_entries_unchanged():
+    r = lib.summarize_earnings(ENTRIES[:2])
+    assert r["sandbox"] == 0.0
+    assert abs(r["gross"] - 1.5) < 1e-9
+
+
+TESTS = [test_totals_and_gross_include_sandbox, test_per_day_buckets, test_without_sandbox_entries_unchanged]
