@@ -18,3 +18,21 @@ def test_route():
 
 def test_backfill_route():
     assert AX.route("power/sandbox-jobs-backfill-2026-11.csv") == "sandbox"
+
+
+def test_wrapper_false_positive_cleared_only_before_fix():
+    base = {"other_work": "1"}
+    assert AX.other_work_flag(AX.WRAPPER_FIX_TS - 60, dict(base, other_procs="pipeline-canary.py")) == 0
+    assert AX.other_work_flag(AX.WRAPPER_FIX_TS - 60, dict(base, other_procs="local-endpoint-client:Python;pipeline-canary.py")) == 1
+    assert AX.other_work_flag(AX.WRAPPER_FIX_TS + 60, dict(base, other_procs="pipeline-canary.py")) == 1
+
+
+def test_version_bump_rebuilds_derived_tables():
+    db = sqlite3.connect(":memory:")
+    AX.create_schema(db)
+    db.execute("INSERT INTO acct_cursor VALUES ('m', 'x')")
+    db.execute("UPDATE acct_meta SET v = '1'")
+    AX.create_schema(db)
+    assert db.execute("SELECT count(*) FROM acct_cursor").fetchone()[0] == 0
+    AX.create_schema(db)
+    assert db.execute("SELECT v FROM acct_meta").fetchone()[0] == AX.INDEX_VERSION

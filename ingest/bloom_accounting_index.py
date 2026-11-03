@@ -24,7 +24,16 @@ _DDL = (
 )
 
 
+INDEX_VERSION = "2"  # bump to rebuild every derived table from the stored raw objects on next start
+
+
 def create_schema(db):
+    db.execute("CREATE TABLE IF NOT EXISTS acct_meta (k TEXT PRIMARY KEY, v TEXT)")
+    row = db.execute("SELECT v FROM acct_meta WHERE k = 'index_version'").fetchone()
+    if row is None or row[0] != INDEX_VERSION:
+        for t in TABLES:
+            db.execute("DROP TABLE IF EXISTS " + t)
+        db.execute("INSERT OR REPLACE INTO acct_meta (k, v) VALUES ('index_version', ?)", (INDEX_VERSION,))
     for ddl in _DDL:
         db.execute(ddl)
     if "sandbox_jobs" not in [r[1] for r in db.execute("PRAGMA table_info(power_minutes)")]:
@@ -148,6 +157,21 @@ def power_columns(first_line):
     return cols if "ts_utc" in cols and "wh" in cols else None
 
 
+# Until the sampler fix at this time, every minute was flagged other_work because agent shell wrappers
+# (`zsh -c "...pipeline-canary.py..."`) only MENTIONED pipeline-canary.py in their command line. For those rows the
+# flag is recomputed from other_procs without that name; later rows are trusted as written.
+WRAPPER_FIX_TS = 1793688120  # 2026-11-03T06:42:00Z
+WRAPPER_FALSE_POSITIVES = {"pipeline-canary.py"}
+
+
+def other_work_flag(ts, r):
+    flagged = float(r.get("other_work") or 0) > 0
+    if not flagged or ts >= WRAPPER_FIX_TS or "other_procs" not in r:
+        return 1 if flagged else 0
+    procs = {p.strip() for p in (r.get("other_procs") or "").split(";") if p.strip()}
+    return 0 if procs and procs <= WRAPPER_FALSE_POSITIVES else 1
+
+
 def parse_power_line(line, columns):
     """One power CSV row -> dict(ts, wh, interval_s, power_ok, dbk_state, other_work, tokens_delta, sandbox_jobs), or None."""
     vals = next(csv.reader([line.strip()]), [])
@@ -159,7 +183,7 @@ def parse_power_line(line, columns):
         ok = 1 if r["power_ok"].strip().lower() in ("1", "true") else 0
         wh = float(r["wh"] or 0) if ok else 0.0
         return {"ts": ts, "wh": wh, "interval_s": float(r["interval_s"] or 0), "power_ok": ok,
-                "dbk_state": r.get("dbk_state", ""), "other_work": 1 if float(r.get("other_work") or 0) > 0 else 0,
+                "dbk_state": r.get("dbk_state", ""), "other_work": other_work_flag(ts, r),
                 "tokens_delta": int(float(r.get("tokens_delta") or 0)),
                 "sandbox_jobs": max(0, int(float(r.get("sandbox_jobs") or 0)))}
     except (KeyError, ValueError):
