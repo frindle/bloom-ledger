@@ -31,3 +31,15 @@ def test_ordinary_and_empty_stay_job():
 
 TESTS = [test_sandbox_by_model_prefix, test_sandbox_by_job_id_prefix, test_base_entries_stay_base,
          test_ordinary_and_empty_stay_job]
+
+
+if __name__ == "__main__":
+    _bad = 0
+    for _t in TESTS:
+        try:
+            _t()
+            print(f"RESULT {_t.__name__} PASS")
+        except Exception as _e:
+            _bad += 1
+            print(f"RESULT {_t.__name__} FAIL {type(_e).__name__}: {_e}")
+    sys.exit(1 if _bad else 0)

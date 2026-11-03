@@ -45,3 +45,15 @@ def test_without_sandbox_entries_unchanged():
 
 
 TESTS = [test_totals_and_gross_include_sandbox, test_per_day_buckets, test_without_sandbox_entries_unchanged]
+
+
+if __name__ == "__main__":
+    _bad = 0
+    for _t in TESTS:
+        try:
+            _t()
+            print(f"RESULT {_t.__name__} PASS")
+        except Exception as _e:
+            _bad += 1
+            print(f"RESULT {_t.__name__} FAIL {type(_e).__name__}: {_e}")
+    sys.exit(1 if _bad else 0)
