@@ -29,7 +29,7 @@ def day_rows(db, tz, start, end, machine=None, settings=None):
     zone = ZoneInfo(tz)
 
     def row_for(d):
-        return days.setdefault(d, {"date": d, "earned_micro": 0, "sandbox_micro": 0, "tokens": 0, "wh": 0.0, "minutes": 0, "paid_minutes": 0,
+        return days.setdefault(d, {"date": d, "earned_micro": 0, "sandbox_micro": 0, "sandbox_cost_micro": 0, "sandbox_minutes": 0, "tokens": 0, "wh": 0.0, "minutes": 0, "paid_minutes": 0,
                                   "cost_micro": 0 if settings else None})
     for ts, micro, tokens, kind in db.execute(sql, args):
         d = dt.datetime.fromtimestamp(ts, zone).date().isoformat()
@@ -51,6 +51,10 @@ def day_rows(db, tz, start, end, machine=None, settings=None):
             if settings and row["cost_micro"] is not None:
                 c = RT.interval_cost(settings, ts, wh or 0.0)
                 row["cost_micro"] = None if c is None else row["cost_micro"] + c["total_micro"]
+                if (sbx or 0) > 0 and not other:
+                    row["sandbox_minutes"] += 1
+                    if c is not None:
+                        row["sandbox_cost_micro"] += c["total_micro"]
             if ((tok or 0) > 0 or (sbx or 0) > 0) and not other:
                 row["paid_minutes"] += 1
     return [days[d] for d in sorted(days, reverse=True)]
@@ -60,6 +64,8 @@ def totals(rows):
     """Aggregate day_rows into period figures."""
     earned_micro = 0
     sandbox_micro = 0
+    sandbox_cost_micro = 0
+    sandbox_minutes = 0
     tokens = 0
     wh = 0.0
     minutes = 0
@@ -69,6 +75,8 @@ def totals(rows):
     for r in rows:
         earned_micro += r["earned_micro"]
         sandbox_micro += r.get("sandbox_micro", 0)
+        sandbox_cost_micro += r.get("sandbox_cost_micro", 0)
+        sandbox_minutes += r.get("sandbox_minutes", 0)
         tokens += r["tokens"]
         wh += r["wh"]
         minutes += r["minutes"]
@@ -87,6 +95,8 @@ def totals(rows):
     return {
         "earned_micro": earned_micro,
         "sandbox_micro": sandbox_micro,
+        "sandbox_cost_micro": sandbox_cost_micro,
+        "sandbox_minutes": sandbox_minutes,
         "tokens": tokens,
         "wh": wh,
         "minutes": minutes,

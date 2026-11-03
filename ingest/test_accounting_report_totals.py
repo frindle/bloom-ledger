@@ -15,5 +15,5 @@ def test_sums_and_derived_figures():
 def test_unset_cost_and_no_minutes():
     t = RP.totals([row("a", 1, 0, 0.0, 0, 0, None), row("b", 1, 0, 0.0, 0, 0, 5)])
     assert t["cost_micro"] is None and t["business_bp"] is None and t["earned_micro"] == 2
-    assert RP.totals([]) == {"earned_micro": 0, "sandbox_micro": 0, "tokens": 0, "wh": 0.0, "minutes": 0, "paid_minutes": 0, "cost_micro": 0,
+    assert RP.totals([]) == {"earned_micro": 0, "sandbox_micro": 0, "sandbox_cost_micro": 0, "sandbox_minutes": 0, "tokens": 0, "wh": 0.0, "minutes": 0, "paid_minutes": 0, "cost_micro": 0,
                              "kwh": 0.0, "total_hours": 0.0, "paid_hours": 0.0, "business_bp": None}

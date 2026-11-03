@@ -64,5 +64,5 @@ def test_formatter_is_shipped_in_the_page_script():
 def test_power_card_and_day_table_use_one_decimal(tmp_path):
     res = run_home(tmp_path, TOTALS, DAYS)
     assert card(res, "Power")["text"] == "8.6 kWh"
-    assert [r[2] for r in day_cells(res)] == ["8.6", "1.5"]
+    assert [r[3] for r in day_cells(res)] == ["8.6", "1.5"]
 

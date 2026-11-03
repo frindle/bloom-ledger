@@ -22,7 +22,7 @@ def body_html():
         '  <section aria-labelledby="sum-h"><h2 id="sum-h">Summary</h2><dl id="summary" class="figures"></dl><p id="power-note" class="meta"></p></section>\n'
         '  <section aria-labelledby="days-h"><h2 id="days-h">Days</h2>\n'
         '    <table><caption>Earnings and power by day, newest first</caption>\n'
-        '      <thead><tr><th scope="col">Date</th><th scope="col" class="num">Earned</th><th scope="col" class="num">Energy (kWh)</th><th scope="col" class="num">Hours</th><th scope="col" class="num">Tokens</th></tr></thead>\n'
+        '      <thead><tr><th scope="col">Date</th><th scope="col" class="num">Earned</th><th scope="col" class="num">Sandbox</th><th scope="col" class="num">Energy (kWh)</th><th scope="col" class="num">Hours</th><th scope="col" class="num">Tokens</th></tr></thead>\n'
         '      <tbody id="day-rows"></tbody></table>\n'
         '  </section>\n'
         '  <section aria-labelledby="entries-h"><h2 id="entries-h">Entries</h2>\n'
@@ -127,6 +127,7 @@ def script_js():
     dl.replaceChildren(
       figure("Earned from jobs", earned),
       figure("of which Sandbox", "$" + ((t.sandbox_micro || 0) / 1e6).toFixed(2), "GPU $" + ((t.earned_micro - (t.sandbox_micro || 0)) / 1e6).toFixed(2)),
+      figure("Sandbox power", "$" + ((t.sandbox_cost_micro || 0) / 1e6).toFixed(2), (t.sandbox_minutes || 0) + " paid min"),
       figure("Power", power_val, power_note),
       figure("Paid hours", paid_val, paid_note),
       figure("Tokens", tokens_val, null, fmtTokensFull(t.tokens)),
@@ -144,6 +145,10 @@ def script_js():
         td1.className = "num";
         td1.textContent = "$" + (d.earned_micro / 1e6).toFixed(2);
         tr.appendChild(td1);
+        const tdS = document.createElement("td");
+        tdS.className = "num";
+        tdS.textContent = "$" + ((d.sandbox_micro || 0) / 1e6).toFixed(2);
+        tr.appendChild(tdS);
         const td2 = document.createElement("td");
         td2.className = "num";
         td2.textContent = fmtKwh(d.wh / 1000);

@@ -70,7 +70,7 @@ def test_summary_card_compact_with_full_title_and_day_table_full(tmp_path):
     res = run_home(tmp_path, TOTALS, DAYS)
     dd = card(res, "Tokens")
     assert dd["text"] == "31.6M" and dd["attrs"]["title"] == "31,642,663"
-    assert [r[4] for r in day_cells(res)] == ["31,642,663", "999"]
+    assert [r[5] for r in day_cells(res)] == ["31,642,663", "999"]
 
 
 def test_summary_card_small_counts(tmp_path):
