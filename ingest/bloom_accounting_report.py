@@ -51,10 +51,12 @@ def day_rows(db, tz, start, end, machine=None, settings=None):
             if settings and row["cost_micro"] is not None:
                 c = RT.interval_cost(settings, ts, wh or 0.0)
                 row["cost_micro"] = None if c is None else row["cost_micro"] + c["total_micro"]
-                if (sbx or 0) > 0 and not other:
-                    row["sandbox_minutes"] += 1
-                    if c is not None:
-                        row["sandbox_cost_micro"] += c["total_micro"]
+            else:
+                c = None
+            if (sbx or 0) > 0 and not other:
+                row["sandbox_minutes"] += 1
+                if c is not None:
+                    row["sandbox_cost_micro"] += c["total_micro"]
             if ((tok or 0) > 0 or (sbx or 0) > 0) and not other:
                 row["paid_minutes"] += 1
     return [days[d] for d in sorted(days, reverse=True)]

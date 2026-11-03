@@ -24,7 +24,7 @@ _DDL = (
 )
 
 
-INDEX_VERSION = "2"  # bump to rebuild every derived table from the stored raw objects on next start
+INDEX_VERSION = "3"  # bump to rebuild every derived table from the stored raw objects on next start
 
 
 def create_schema(db):
@@ -164,12 +164,32 @@ WRAPPER_FIX_TS = 1793688120  # 2026-11-03T06:42:00Z
 WRAPPER_FALSE_POSITIVES = {"pipeline-canary.py"}
 
 
+# macOS housekeeping daemons that spike CPU on their own schedule. They are not Penn's work, so a minute they
+# alone flagged is not other work (the sampler ignores them from 2026-11-03; older rows are recomputed here).
+SYSTEM_DAEMONS = ("corespotlightd", "backupd", "XProtect", "mds", "mdworker", "softwareupdated",
+                  "photoanalysisd", "mediaanalysisd", "spotlightknowledged")
+VM_ENTRY = "cpu>150%:com.apple.Virtualization.VirtualMachine"
+VM_ONLY = 2  # other_work value: only a busy VM flagged it; cleared once the minute is known to run a Sandbox job
+
+
+def _benign(ts, proc):
+    if ts < WRAPPER_FIX_TS and proc in WRAPPER_FALSE_POSITIVES:
+        return True
+    return proc.startswith("cpu>") and any(d in proc.split(":", 1)[-1] for d in SYSTEM_DAEMONS)
+
+
 def other_work_flag(ts, r):
+    """0 = not other work, 1 = other work, VM_ONLY = only the Virtualization VM (the Sandbox's own VM when a job ran)."""
     flagged = float(r.get("other_work") or 0) > 0
-    if not flagged or ts >= WRAPPER_FIX_TS or "other_procs" not in r:
+    if not flagged or "other_procs" not in r:
         return 1 if flagged else 0
     procs = {p.strip() for p in (r.get("other_procs") or "").split(";") if p.strip()}
-    return 0 if procs and procs <= WRAPPER_FALSE_POSITIVES else 1
+    if not procs:
+        return 1
+    left = {p for p in procs if not _benign(ts, p)}
+    if not left:
+        return 0
+    return VM_ONLY if left == {VM_ENTRY} else 1
 
 
 def parse_power_line(line, columns):
@@ -238,6 +258,7 @@ def apply_sandbox_bridge(db):
     db.execute("UPDATE power_minutes SET sandbox_jobs = (SELECT b.jobs FROM sandbox_bridge b WHERE b.machine_id = power_minutes.machine_id"
                " AND b.ts = power_minutes.ts) WHERE sandbox_jobs = 0 AND EXISTS (SELECT 1 FROM sandbox_bridge b"
                " WHERE b.machine_id = power_minutes.machine_id AND b.ts = power_minutes.ts AND b.jobs > 0)")
+    db.execute("UPDATE power_minutes SET other_work = 0 WHERE other_work = ? AND sandbox_jobs > 0", (VM_ONLY,))
     db.commit()
 
 
