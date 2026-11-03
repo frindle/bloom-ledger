@@ -16,6 +16,7 @@ ALLOWED_HOSTS = ("api.darkbloom.dev", "console.darkbloom.dev")
 PROVIDERS_URL = "https://api.darkbloom.dev/v1/me/providers"
 SANDBOX_HOSTS_URL = "https://console.darkbloom.dev/api/sandbox/hosts"
 CACHE_S = 20
+REJECTED_CACHE_S = 3600
 STALE_S = 180
 _cache = {}
 
@@ -194,11 +195,14 @@ def all_keys(root):
 def _remote(name, url, view, key, now, get):
     ck = (name, hashlib.sha256(key.encode()).hexdigest())
     hit = _cache.get(ck)
-    if hit and now - hit[0] < CACHE_S:
+    if hit and now - hit[0] < (REJECTED_CACHE_S if hit[1].get("unsupported") else CACHE_S):
         return hit[1]
     code, j = get(url, key)
     if code == 200:
         res = view(j)
+    elif code in (401, 403):
+        # Darkbloom keeps these endpoints Privy-login only for now (d-inference#1760); don't re-ask every 20 s.
+        res = {"error": "Darkbloom doesn't accept API keys for this yet", "unsupported": True}
     else:
         res = {"error": ("Darkbloom answered %s" % code) if code else "Darkbloom unreachable"}
     _cache[ck] = (now, res)

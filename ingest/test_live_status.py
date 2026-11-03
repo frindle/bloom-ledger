@@ -93,7 +93,14 @@ def test_live_without_key_or_with_failures(tmp_path):
     Path(LV.key_path(tmp_path)).parent.mkdir(parents=True)
     Path(LV.key_path(tmp_path)).write_text(KEY)
     res = LV.live(tmp_path, [], 600, fake_get({LV.PROVIDERS_URL: (403, None), LV.SANDBOX_HOSTS_URL: (0, None)}))
-    assert res["darkbloom"] == {"error": "Darkbloom answered 403"} and res["sandbox"] == {"error": "Darkbloom unreachable"}
+    assert res["darkbloom"] == {"error": "Darkbloom doesn't accept API keys for this yet", "unsupported": True}
+    assert res["sandbox"] == {"error": "Darkbloom unreachable"}
+    calls = []
+    def counting(url, key):
+        calls.append(url)
+        return (403, None)
+    LV.live(tmp_path, [], 600 + LV.CACHE_S + 1, counting)
+    assert LV.PROVIDERS_URL not in calls  # a rejected key is not re-asked for an hour
 
 
 def run_home(tmp_path, live):

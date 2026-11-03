@@ -120,7 +120,7 @@
 
 <section aria-labelledby="dbk-heading">
 <h2 id="dbk-heading">Darkbloom API key</h2>
-<p class="note">Lets the ledger page show live Darkbloom and Sandbox status. The key stays on this server and is never shown again. Watts still come from the Mac.</p>
+<p class="note">Meant for live Darkbloom and Sandbox status, but Darkbloom doesn't accept API keys for that yet, so a saved key is kept for when it does. Everything else comes from the Mac. The key stays on this server and is never shown again.</p>
 <form id="dbk-form" class="row-form">
 <div>
 <label for="dbk-key">API key</label>
@@ -272,7 +272,7 @@
       document.getElementById("pair-ttl").textContent = Math.round((reply.pair_ttl_s || 1800) / 60) + " minutes";
       const host = new URL(location.origin).hostname;
       let note = "Add --earnings to also archive this Mac's Darkbloom earnings (one Mac per account). ";
-      note += reply.darkbloom_key_saved ? "This Mac's Darkbloom key is saved." : "Live status uses the account key below.";
+      note += reply.darkbloom_key_saved ? "This Mac's Darkbloom key is saved." : "Live Sandbox status comes from the Mac.";
       if (!isLanHost(host)) note = "This page is open through " + host + ": run the command with the ledger's local network address instead. " + note;
       document.getElementById("pair-note").textContent = note;
     }
