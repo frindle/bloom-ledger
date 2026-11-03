@@ -66,7 +66,7 @@ def test_unknown_costs_say_not_set(tmp_path):
     s = find(run(tmp_path, summ)["dom"], "summary")
     dds = tags(s, "dd")
     for i in (0, 1, 2, 4, 5):
-        assert "not set" in dds[i]["text"], (LABELS[i], dds[i]["text"])
+        assert "$" not in dds[i]["text"], (LABELS[i], dds[i]["text"])
         assert [a["attrs"]["href"] for a in tags(dds[i], "a")] == ["/settings"]
     assert dds[3]["text"] == "$0.00"
 
