@@ -8,7 +8,7 @@ import dom_support as D
 
 HERE = Path(__file__).resolve().parent
 TOKENS = ["paper", "card", "ink", "muted", "rule", "sealed", "waiting", "missing", "serif", "mono"]
-COLUMNS = ["Machine id", "Display name", "Model", "Acquired", "Lease start", "Lease $/month", "Last seen", "Days sealed", "Status", "Actions"]
+COLUMNS = ["Machine id", "Display name", "Model", "Acquired", "Start date", "Amount", "Last seen", "Days sealed", "Status", "Actions"]
 PROFILE = {"display_name": "Studio", "model": "M4 Max", "lease_start": "2026-01-15", "lease_monthly_cents": 12345}
 NO_PROFILE = {"display_name": None, "model": None, "lease_start": None, "lease_monthly_cents": None}
 ACQ_TEXT = "LeasedPurchased"
@@ -69,8 +69,9 @@ def test_table_has_ten_columns_and_a_caption():
 def test_rows_show_every_column(tmp_path):
     res = load(tmp_path)
     assert res["errors"] == [], res["errors"]
-    assert D.rows(res) == [["m4max", "", "", ACQ_TEXT, "", "", "2 minutes ago", "12", "reporting", "SaveNew tokenRemove"],
-                           ["mini", "", "", ACQ_TEXT, "", "", "never", "0", "Not reporting yet", "SaveNew tokenRemove"]], D.rows(res)
+    shown = [r[:4] + r[6:] for r in D.rows(res)]  # columns 5-6 carry per-row labels, see test_settings_acquisition
+    assert shown == [["m4max", "", "", ACQ_TEXT, "2 minutes ago", "12", "reporting", "SaveNew tokenRemove"],
+                     ["mini", "", "", ACQ_TEXT, "never", "0", "Not reporting yet", "SaveNew tokenRemove"]], D.rows(res)
     first, second = table_row_inputs(res)
     assert [i["value"] for i in first] == ["Studio", "M4 Max", "2026-01-15", "123.45"], first
     assert [i["attrs"].get("type") for i in first] == ["text", "text", "date", "number"]

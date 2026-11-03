@@ -61,15 +61,15 @@
 <h2 id="machines-heading">Machines</h2>
 <div class="table-wrap">
 <table id="machines">
-<caption class="note">Each machine reports into the ledger with its own token. Edit the name, model, acquisition and lease, then save the row. For leased machines enter the lease start and monthly payment; for purchased machines the same two columns become the in-service date and purchase price.</caption>
+<caption class="note">Each machine reports into the ledger with its own token. Edit the name, model, acquisition and lease, then save the row. Set Acquired first: a leased machine takes the lease start and monthly payment, a purchased one takes the in-service date and purchase price. Each row labels its own two fields.</caption>
 <thead>
 <tr>
 <th scope="col">Machine id</th>
 <th scope="col">Display name</th>
 <th scope="col">Model</th>
 <th scope="col">Acquired</th>
-<th scope="col">Lease start</th>
-<th scope="col">Lease $/month</th>
+<th scope="col">Start date</th>
+<th scope="col">Amount</th>
 <th scope="col">Last seen</th>
 <th scope="col">Days sealed</th>
 <th scope="col">Status</th>
@@ -190,6 +190,13 @@
     return td;
   }
 
+  function labelled(label, input) {
+    const td = cell(label);
+    td.appendChild(document.createElement("br"));
+    td.appendChild(input);
+    return td;
+  }
+
   function fit(input) {
     const n = Math.ceil(input.value.length * 1.1) + 3;
     input.setAttribute("size", String(Math.max(10, Math.min(40, n))));
@@ -246,17 +253,25 @@
       const name = field(prof.display_name, "Display name for " + m.id, "text", "name-" + m.id);
       const model = field(prof.model, "Model for " + m.id, "text", "model-" + m.id);
       const acq = acquisitionToggle(prof.acquisition, m.id);
-      const lstart = field(prof.lease_start, "Lease start for " + m.id, "date");
-      const lamt = field(prof.lease_monthly_cents == null ? "" : (prof.lease_monthly_cents / 100).toFixed(2),
-        "Lease per month for " + m.id, "number");
+      const dollars = c => c == null ? "" : (c / 100).toFixed(2);
+      const kept = { leased: [prof.lease_start || "", dollars(prof.lease_monthly_cents)],
+                     purchased: [prof.in_service || "", dollars(prof.purchase_cents)] };
+      const lstart = field("", "Lease start for " + m.id, "date", "start-" + m.id);
+      const lamt = field("", "Lease per month for " + m.id, "number", "amt-" + m.id);
       lamt.step = "0.01"; lamt.min = "0.01";
+      const startLabel = document.createElement("span");
+      const amtLabel = document.createElement("span");
+      startLabel.className = amtLabel.className = "note";
+      startLabel.id = "start-label-" + m.id; amtLabel.id = "amt-label-" + m.id;
       const isbuy = () => acq.value === "purchased";
-      if (isbuy()) {
-        lstart.value = prof.in_service || "";
-        lamt.value = prof.purchase_cents == null ? "" : (prof.purchase_cents / 100).toFixed(2);
-      }
+      let mode = null;
       const syncAcq = () => {
         const buy = isbuy();
+        if (mode) kept[mode] = [lstart.value, lamt.value];
+        mode = buy ? "purchased" : "leased";
+        [lstart.value, lamt.value] = kept[mode];
+        startLabel.textContent = buy ? "In service" : "Lease start";
+        amtLabel.textContent = buy ? "Purchase price" : "Per month";
         lstart.setAttribute("aria-label", (buy ? "In service date for " : "Lease start for ") + m.id);
         lamt.setAttribute("aria-label", (buy ? "Purchase price for " : "Lease per month for ") + m.id);
       };
@@ -322,7 +337,7 @@
 
       const tr = document.createElement("tr");
       tr.append(
-        cell(m.id, "id"), cell(name), cell(model), cell(acq), cell(lstart), cell(lamt),
+        cell(m.id, "id"), cell(name), cell(model), cell(acq), labelled(startLabel, lstart), labelled(amtLabel, lamt),
         cell(m.last_seen == null ? "never" : formatRelativeTime(healthTime, m.last_seen)),
         cell(String(m.days_sealed)), status, actions
       );
