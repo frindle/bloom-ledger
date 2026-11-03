@@ -21,6 +21,12 @@ def lease_cents(settings, start, end):
     b, s, e = (dt.date.fromisoformat(x) for x in (begin, start, end))
     return _cum_lease(monthly, months, b, e) - _cum_lease(monthly, months, b, s - dt.timedelta(days=1))
 
+def entry_business_cents(e):
+    """The business-use part of one entry in cents: amount_cents * business_pct // 100 (business_pct missing or None = 100)."""
+    pct = e.get("business_pct")
+    return e["amount_cents"] * (100 if pct is None else pct) // 100
+
+
 def depreciation_basis_cents(entries, machine=None):
     """Sum hardware costs from cost entries; None when nothing matches."""
     total = 0
@@ -29,7 +35,7 @@ def depreciation_basis_cents(entries, machine=None):
         if e.get("kind") == "cost" and e.get("category") == "hardware":
             if machine is not None and e.get("machine_id") != machine:
                 continue
-            total += e["amount_cents"]
+            total += entry_business_cents(e)
             found = True
     return total if found else None
 
@@ -53,7 +59,7 @@ def owned_depreciation_cents(settings, entries, start, end, machine=None):
         if machine is not None and e.get("machine_id") != machine:
             continue
         placed = max(e.get("date") or in_service, in_service)
-        total += DP.depreciation_cents(method, e["amount_cents"], placed, life, start, end)
+        total += DP.depreciation_cents(method, entry_business_cents(e), placed, life, start, end)
     return total
 
 
@@ -65,7 +71,7 @@ def machine_basis_cents(machine, entries, links=None):
     total, found = 0, False
     for e in entries:
         if e.get("kind") == "cost" and e.get("category") == "hardware" and links.get(str(e["id"]), e.get("machine_id")) == machine["id"]:
-            total += e["amount_cents"]
+            total += entry_business_cents(e)
             found = True
     return total if found else machine.get("purchase_cents")
 
