@@ -35,6 +35,7 @@ def net_of(db, ts, machine="m"):
 
 def test_sidecar_first_then_power_rows():
     db = mk()
+    assert "net_bridge" in A.TABLES
     fn("store_net")(db, "m", SIDE)
     minute(db, T1)
     minute(db, T2)
