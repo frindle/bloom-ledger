@@ -35,15 +35,26 @@ def depreciation_basis_cents(entries, machine=None):
 
 
 def owned_depreciation_cents(settings, entries, start, end, machine=None):
-    """Depreciation (cents) for owned hardware under `settings` for the range start..end."""
+    """Depreciation (cents) for owned hardware under `settings` for the range start..end.
+
+    Each hardware entry is its own asset placed in service on the later of its date
+    and the setting.
+    """
     basis = depreciation_basis_cents(entries, machine)
     in_service = settings.get("m4_in_service_date")
     if basis is None or not in_service:
         return None
-    return DP.depreciation_cents(
-        settings.get("dep_method"), basis, in_service,
-        settings.get("dep_life_months"), start, end
-    )
+    method = settings.get("dep_method")
+    life = settings.get("dep_life_months")
+    total = 0
+    for e in entries:
+        if e.get("kind") != "cost" or e.get("category") != "hardware":
+            continue
+        if machine is not None and e.get("machine_id") != machine:
+            continue
+        placed = max(e.get("date") or in_service, in_service)
+        total += DP.depreciation_cents(method, e["amount_cents"], placed, life, start, end)
+    return total
 
 
 def machine_basis_cents(machine, entries, links=None):
