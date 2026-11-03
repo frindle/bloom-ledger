@@ -5,7 +5,8 @@
 # Options:
 #   --pair CODE     pair this Mac (the code from Settings; single use, 30 minutes)
 #   --earnings      also archive this Mac's Darkbloom earnings (one Mac per Darkbloom account is enough)
-#   --replace-old   stop older bloom LaunchAgents (com.*.bloom-*) and move their plists aside (kept, not deleted)
+#   --replace-old   stop the older LaunchAgents this client replaces (com.*.bloom-{power-log,archive,ship,earnings-archive})
+#                   and move their plists aside (kept, not deleted); other com.*.bloom-* jobs are left running
 #   --uninstall     stop and remove the bloom-ledger LaunchAgents (logged data in ~/.darkbloom is kept)
 # Installs to ~/Library/Application Support/bloom-ledger, stores the machine token in the login Keychain
 # (service bloom-ledger-ingest), and writes ~/.darkbloom/ledger.json. Nothing runs as root.
@@ -120,7 +121,8 @@ fi
 
 if [ "$REPLACE_OLD" = 1 ]; then
   mkdir -p "$APP/old-launchagents"
-  for p in "$AGENTS"/com.*.bloom-*.plist; do
+  for p in "$AGENTS"/com.*.bloom-power-log.plist "$AGENTS"/com.*.bloom-archive.plist \
+           "$AGENTS"/com.*.bloom-ship.plist "$AGENTS"/com.*.bloom-earnings-archive.plist; do
     [ -f "$p" ] || continue
     unload "$(basename "$p" .plist)"
     mv "$p" "$APP/old-launchagents/"
