@@ -45,13 +45,16 @@ def entry_amounts_micro(entries, start, end, bp):
         if kind == "receipt":
             receipts_micro += cents * 10000
         elif kind == "cost":
+            pct = e.get("business_pct")
+            if pct is None:
+                pct = 100
             if cat == "electricity":
                 electricity_micro += cents * 10000
             elif cat == "internet":
                 share = bp or 0
-                expensed_micro += cents * share // 10000 * 10000
+                expensed_micro += cents * pct // 100 * share // 10000 * 10000
             elif cat != "hardware":
-                expensed_micro += cents * 10000
+                expensed_micro += cents * pct // 100 * 10000
 
     return {"receipts_micro": receipts_micro, "expensed_micro": expensed_micro,
             "electricity_micro": electricity_micro}
