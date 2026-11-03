@@ -28,6 +28,7 @@ import bloom_accounting_index as AX  # noqa: E402
 import bloom_accounting_admin as AA  # noqa: E402
 import bloom_accounting_entries as AE  # noqa: E402
 import bloom_accounting_page as PG  # noqa: E402
+import bloom_accounting_receipts as RC  # noqa: E402
 import bloom_accounting_report as RP  # noqa: E402
 import bloom_accounting_summary as AS  # noqa: E402
 import bloom_accounting_tax as AT  # noqa: E402
@@ -149,6 +150,14 @@ class Handler(BaseHTTPRequestHandler):
                     "health": BS.ledger_health(self.server.db, ROOT, now, self.server_version),
                 }
                 self.reply(200, data)
+        elif RC.entry_id_from_path(self.path):
+            with DB_LOCK:
+                code, ctype, data = RC.receipt_get(self.server.db, ROOT, RC.entry_id_from_path(self.path))
+            self.send_response(code)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
         else:
             self.reply(404, {"error": "not found"})
 
@@ -206,13 +215,17 @@ class Handler(BaseHTTPRequestHandler):
             if n < 0:
                 self.reply(411, {"error": "length required"})
                 return
-            if n > 4096:
+            rid = RC.entry_id_from_path(self.path)
+            if n > (RC.MAX_BYTES if rid else 4096):
                 self.reply(413, {"error": "too large"})
                 self.close_connection = True
                 return
             body = self.rfile.read(n)
             with DB_LOCK:
-                code, obj = AA.accounting_post(self.path, self.headers, body, self.server.db, time.time())
+                if rid:
+                    code, obj = RC.receipt_post(self.server.db, ROOT, rid, self.headers.get("Content-Type"), body)
+                else:
+                    code, obj = AA.accounting_post(self.path, self.headers, body, self.server.db, time.time())
             self.reply(code, obj)
         else:
             self.reply(404, {"error": "not found"})
