@@ -70,7 +70,9 @@ def add_machine(path, machine_id, now):
     return token
 
 
-def rotate_machine(path, machine_id, now):
+def rotate_machine(path, machine_id, now, legacy_ids=()):
+    """New token for a machine. A machine known only from the read-only bloom_tokens file is adopted: it gets a
+    machines.json entry marked "adopted", and load_tokens then ignores its old hash."""
     import hashlib
     import json
     import secrets
@@ -79,7 +81,9 @@ def rotate_machine(path, machine_id, now):
         raise ValueError(f"invalid machine_id: {machine_id!r}")
     data = read_machines(path)
     if machine_id not in data["machines"]:
-        raise ValueError(f"unknown machine_id: {machine_id!r}")
+        if machine_id not in legacy_ids or machine_id in data["revoked"]:
+            raise ValueError(f"unknown machine_id: {machine_id!r}")
+        data["machines"][machine_id] = {"created": now, "adopted": True}
     token = secrets.token_urlsafe(32)
     h = hashlib.sha256(token.encode()).hexdigest()
     data["machines"][machine_id]["hash"] = h
@@ -102,7 +106,7 @@ def revoke_machine(path, machine_id):
     write_machines(path, data)
     return None
 
-def admin_post(path, headers, body, machines_path, now):
+def admin_post(path, headers, body, machines_path, now, legacy_ids=()):
     import json
     import bloom_ingest
     if path == "/v1/settings/machines":
@@ -131,7 +135,7 @@ def admin_post(path, headers, body, machines_path, now):
         if not isinstance(mid, str) or not bloom_ingest.MID_RE.match(mid):
             return (400, {"error": "bad request"})
         try:
-            token = rotate_machine(machines_path, mid, now)
+            token = rotate_machine(machines_path, mid, now, legacy_ids)
         except ValueError:
             return (404, {"error": "unknown machine"})
         return (200, {"id": mid, "token": token})

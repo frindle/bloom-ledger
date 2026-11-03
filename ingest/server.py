@@ -254,7 +254,8 @@ class Handler(BaseHTTPRequestHandler):
                 if self.path in ("/v1/settings/machines/profile", "/v1/settings/machines/remove"):
                     code, obj = MP.profile_post(self.path, body, self.server.db, MACHINES_PATH, time.time())
                 else:
-                    code, obj = BS.admin_post(self.path, self.headers, body, MACHINES_PATH, time.time())
+                    code, obj = BS.admin_post(self.path, self.headers, body, MACHINES_PATH, time.time(),
+                                              set(I.load_tokens(TOKENS_PATH).values()))
             self.reply(code, PA.after_machine_change(self.path, code, obj, body, dbkey, ROOT, time.time()))
         elif self.path.startswith("/v1/accounting/"):
             denied = LAN.write_guard(self.client_address[0], self.headers)

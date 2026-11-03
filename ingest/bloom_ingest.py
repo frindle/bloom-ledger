@@ -64,8 +64,10 @@ def load_tokens(path, machines_path=None):
                 for r in raw_revoked:
                     if isinstance(r, str):
                         revoked.add(r)
-            out = {sha: mid for sha, mid in out.items() if mid not in revoked}
             machines = data.get("machines", {})
+            adopted = {m for m, i in machines.items() if isinstance(i, dict) and i.get("adopted") is True} \
+                if isinstance(machines, dict) else set()
+            out = {sha: mid for sha, mid in out.items() if mid not in revoked and mid not in adopted}
             if isinstance(machines, dict):
                 for mid, info in machines.items():
                     if mid in revoked:
