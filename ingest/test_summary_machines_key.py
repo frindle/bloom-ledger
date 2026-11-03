@@ -26,7 +26,7 @@ def make(machines=None):
                    (utc(2026, 10, 20, 20, m), 3 if m == 0 else 0))
     db.commit()
     vals = {"rate_schedule": SCHED, "rate_adder_usd_per_kwh": "0", "universal_charge_usd_per_kwh": "0", "county_fee_pct": "0",
-            "m4_machine_id": "m4", "m5_machine_id": "m5", "m4_in_service_date": "2026-10-01", "dep_life_months": 60,
+            "m4_machine_id": "m4", "m5_machine_id": "m5", "m4_in_service_date": "2026-10-01", "dep_life_months": 60, "dep_method": "straight_line",
             "m5_lease_monthly_cents": 10000, "m5_lease_months": 36, "m5_lease_start": "2026-10-01"}
     if machines is not None:
         vals["machines"] = machines

@@ -12,7 +12,7 @@ def test_new_keys_default_to_none_and_stay_unflagged():
     v = CF.effective_settings(sqlite3.connect(":memory:"), "2026-10-31")
     assert v["values"]["machines"] is None and v["values"]["entry_machine_links"] is None
     assert not [f for f in v["flags"] if f["key"] in ("machines", "entry_machine_links")]
-    assert v["values"]["dep_method"] == "straight_line" and v["values"]["dep_life_months"] == 60
+    assert v["values"]["dep_method"] == "macrs5" and v["values"]["dep_life_months"] == 60
 
 
 def test_machines_and_links_round_trip_with_effective_dates():

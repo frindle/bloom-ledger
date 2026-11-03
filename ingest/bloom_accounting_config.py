@@ -6,7 +6,7 @@ import re
 
 DEFAULTS = {
     "ingest_from": "2026-10-13",
-    "m4_in_service_date": "2026-10-01",
+    "m4_in_service_date": "2026-09-28",
     "m5_lease_start": None,
     "m5_lease_monthly_cents": None,
     "m5_lease_months": None,
@@ -20,20 +20,20 @@ DEFAULTS = {
     "universal_charge_usd_per_kwh": None,
     "county_fee_pct": None,
     "local_timezone": "America/Los_Angeles",
-    "dep_method": "straight_line",
+    "dep_method": "macrs5",
     "dep_life_months": 60,
     "machines": None,
     "entry_machine_links": None,
 }
 FLAGGED = {
-    "m4_in_service_date": "ASSUMED 2026-10-01 (Darkbloom start); confirm the real placed-in-service date",
+    "m4_in_service_date": "ASSUMED 2026-09-28 (Darkbloom start); confirm the real placed-in-service date",
     "rate_schedule": "UNKNOWN: power cost is not computed until the electricity rate schedule is entered in Settings",
     "rate_adder_usd_per_kwh": "UNKNOWN: optional per-kWh adder; none applied until entered",
     "universal_charge_usd_per_kwh": "UNKNOWN: optional per-kWh universal energy charge; none applied until entered",
     "county_fee_pct": "UNKNOWN: optional county fee percent; none applied until entered",
     "m5_lease_monthly_cents": "UNKNOWN: no lease expense until the monthly lease amount is set",
     "m5_lease_start": "UNKNOWN: no lease expense until the M5 start date is set at delivery",
-    "dep_method": "DEFAULT straight_line over dep_life_months; the accountant picks the method",
+    "dep_method": "DEFAULT macrs5 (5-year MACRS, half-year convention); the accountant confirms the method",
 }
 
 

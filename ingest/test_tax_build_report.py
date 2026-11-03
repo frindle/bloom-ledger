@@ -27,7 +27,7 @@ def make(rates=True):
                    (utc(2026, 10, 20, 20, m), other, tok))
     db.commit()
     vals = {"rate_adder_usd_per_kwh": "0", "universal_charge_usd_per_kwh": "0", "county_fee_pct": "0", "m4_machine_id": "m4",
-            "m4_in_service_date": "2026-10-01", "dep_life_months": 60, "m5_lease_monthly_cents": 1000, "m5_lease_months": 36,
+            "m4_in_service_date": "2026-10-01", "dep_life_months": 60, "dep_method": "straight_line", "m5_lease_monthly_cents": 1000, "m5_lease_months": 36,
             "m5_lease_start": "2026-10-01"}
     if rates:
         vals["rate_schedule"] = SCHED
