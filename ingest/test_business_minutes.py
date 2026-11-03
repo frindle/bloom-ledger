@@ -1,4 +1,4 @@
-"""Frozen test: the business-use share counts online-idle minutes and the inference share of other-work minutes. Fake data."""
+"""Frozen test: the business-use share counts only paid-job minutes (Darkbloom GPU or Sandbox); idle and own-work minutes count nothing. Fake data."""
 import bloom_accounting_index as A
 import bloom_accounting_report as RP
 import bloom_ingest as I
@@ -13,9 +13,9 @@ def share(*a):
 
 def test_share_per_minute():
     assert share("gpu", "serving", None) == 1.0 and share("sandbox", "idle", 0.0) == 1.0
-    assert share("idle", "idle", None) == 1.0 and share("idle", "serving", 0.0) == 1.0, "online and waiting is business"
+    assert share("idle", "idle", None) == 0.0 and share("idle", "serving", 0.0) == 0.0, "online and waiting is not business time"
     assert share("idle", "off", None) == 0.0 and share("idle", "", None) == 0.0 and share("idle", None, None) == 0.0
-    assert share("other", "serving", 0.4) == 0.4 and share("other", "idle", None) == 0.0
+    assert share("other", "serving", 0.4) == 0.0 and share("other", "idle", None) == 0.0, "own work is personal even with inference alongside"
     assert share("gap", "serving", 1.0) == 0.0
 
 
@@ -33,8 +33,8 @@ def test_day_and_period_share(tmp_path):
     db.commit()
     day = RP.day_rows(db, "UTC", "2026-12-01", "2026-12-01")
     assert len(day) == 1 and day[0]["minutes"] == 4 and day[0]["paid_minutes"] == 1
-    assert day[0].get("business_minutes") == 2.5
+    assert day[0].get("business_minutes") == 1.0
     t = RP.totals(day)
-    assert t["business_minutes"] == 2.5 and t["paid_minutes"] == 1 and t["business_bp"] == 6250
+    assert t["business_minutes"] == 1.0 and t["paid_minutes"] == 1 and t["business_bp"] == 2500
     assert RP.totals([{"date": "x", "earned_micro": 0, "tokens": 0, "wh": 0.0, "minutes": 10, "paid_minutes": 3,
                        "cost_micro": 0}])["business_bp"] == 3000, "a row without business_minutes falls back to paid minutes"

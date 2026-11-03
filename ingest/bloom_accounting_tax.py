@@ -98,7 +98,8 @@ def month_shares(year, day_rows):
     """Per-month income, metered power cost and business-use share for the 12 months of `year`.
 
     Returns {"YYYY-MM": {"income_micro", "power_micro" (None when any day's cost is None), "minutes", "paid_minutes",
-    "business_minutes", "bp"}} where bp is business_minutes * 10000 / minutes (capped at 10000; a row without business_minutes
+    "business_minutes", "bp", "job_power_micro"}} where job_power_micro is the metered cost of the minutes a Darkbloom or Sandbox
+    job was running (None when power_micro is None), and bp is business_minutes * 10000 / minutes (capped at 10000; a row without business_minutes
     counts its paid minutes), or None when there are no metered minutes. day_rows are RP.day_rows rows."""
     out = {}
     for m in range(1, 13):
@@ -108,7 +109,9 @@ def month_shares(year, day_rows):
         paid = sum(r["paid_minutes"] for r in rows)
         biz = sum(r.get("business_minutes", r["paid_minutes"]) for r in rows)
         costs = [r["cost_micro"] for r in rows]
+        job = None if None in costs else sum(r.get("gpu_cost_micro", 0) + r.get("sandbox_cost_micro", 0) for r in rows)
         out[key] = {"income_micro": sum(r["earned_micro"] for r in rows), "power_micro": None if None in costs else sum(costs),
+                    "job_power_micro": job,
                     "minutes": minutes, "paid_minutes": paid, "business_minutes": round(biz, 3),
                     "bp": min(10000, int(biz * 10000 / minutes + 1e-9)) if minutes else None}
     return out
@@ -119,7 +122,7 @@ def month_rows(year, shares, fixed, extras=None):
 
     fixed is {"YYYY-MM": {"depreciation_business_cents", "lease_business_cents"}} (cents at business share, None = input not set).
     extras is {"YYYY-MM": {"other_income_micro", "entries_business_micro"}} (default 0 when key missing).
-    Row keys: month, income_micro, other_income_micro, bp, power_business_micro (power * bp // 10000), depreciation_business_micro,
+    Row keys: month, income_micro, other_income_micro, bp, power_business_micro (job_power_micro: power of paid-job minutes), depreciation_business_micro,
     lease_business_micro (cents * 10000), entries_business_micro, expenses_micro (power + dep + lease + ent, None when any is None)
     and net_micro (income + other - expenses, None when expenses is None)."""
     rows = []
@@ -128,7 +131,12 @@ def month_rows(year, shares, fixed, extras=None):
         x = (extras or {}).get(key, {})
         other = x.get("other_income_micro", 0)
         ent = x.get("entries_business_micro", 0)
-        power = None if s["power_micro"] is None else s["power_micro"] * (s["bp"] or 0) // 10000
+        # Deductible power is the metered cost of the minutes a paid job ran. Older share dicts without job_power_micro
+        # fall back to whole-month power at the business share.
+        if "job_power_micro" in s:
+            power = s["job_power_micro"]
+        else:
+            power = None if s["power_micro"] is None else s["power_micro"] * (s["bp"] or 0) // 10000
         dep, lease = (None if f.get(k) is None else f[k] * 10000 for k in ("depreciation_business_cents", "lease_business_cents"))
         parts = (power, dep, lease, ent)
         exp = None if None in parts else sum(parts)

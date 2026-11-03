@@ -30,16 +30,12 @@ def minute_stream(ok, tok, other, sbx):
 
 
 def business_share(stream, state, frac):
-    """Business-use share (0..1) of one power minute: Darkbloom or Sandbox work counts whole, an idle minute counts whole
-    while Darkbloom is online (dbk_state not "off" or blank: the machine is up and waiting for paid work), an other-work
-    minute counts the share the GPU was serving inference (active_frac), and anything else counts nothing."""
-    if stream in ("gpu", "sandbox"):
-        return 1.0
-    if stream == "idle":
-        return 1.0 if (state or "off") != "off" else 0.0
-    if stream == "other":
-        return frac or 0.0
-    return 0.0
+    """Business-use share (0..1) of one power minute: only paid work counts. A Darkbloom GPU or Sandbox minute counts
+    whole; idle (online or not), your own work (even with inference running alongside) and unmeasured minutes count
+    nothing. So the business share is paid minutes / measured minutes, a figure each minute of which is backed by
+    served tokens or a running Sandbox job. Pay earned while idle (base rewards) is still income. state and frac are
+    accepted for older callers and ignored."""
+    return 1.0 if stream in ("gpu", "sandbox") else 0.0
 
 
 def stream_of_kind(kind):

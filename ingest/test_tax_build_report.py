@@ -43,7 +43,7 @@ def test_business_year_report():
     assert [m["month"] for m in r["months"]] == ["2026-%02d" % i for i in range(1, 13)]
     oct_ = r["months"][9]
     assert oct_["income_micro"] == 2000000 and oct_["bp"] == 3333
-    assert oct_["power_business_micro"] == 300000 * 3333 // 10000
+    assert oct_["power_business_micro"] == 100000, "only the paid-job minute's metered power"
     assert oct_["depreciation_business_micro"] == 18260 * 31 // 1826 * 3333 // 10000 * 10000
     assert oct_["lease_business_micro"] == 1000 * 12 * 31 // 365 * 3333 // 10000 * 10000
     assert r["months"][10]["expenses_micro"] == 0 and r["months"][10]["net_micro"] == 0

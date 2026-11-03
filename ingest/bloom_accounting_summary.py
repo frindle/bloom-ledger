@@ -29,7 +29,8 @@ def build(db, today, period, machine=None):
     bp = t["business_bp"]
     depr_biz = depr if not depr else (None if bp is None else DP.business_cents(depr, bp))
     lease_biz = lease if not lease else (None if bp is None else DP.business_cents(lease, bp))
-    power_biz = None if t["cost_micro"] is None else t["cost_micro"] * (bp or 0) // 10000
+    # Deductible power: only the metered cost of minutes a Darkbloom GPU or Sandbox job was running.
+    power_biz = None if t["cost_micro"] is None else (t.get("gpu_cost_micro") or 0) + (t.get("sandbox_cost_micro") or 0)
     live = [e for e in AE.current_entries(db) if machine is None or e["machine_id"] in (None, machine)]
     amt = TX.entry_amounts_micro(live, start, end, bp)
     pre = TX.pre_tracking_micro(db, start, end, settings.get("m4_in_service_date")) if machine is None else 0

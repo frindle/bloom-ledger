@@ -15,7 +15,7 @@ TOT = {"earned_micro": 4_250_000, "gpu_micro": 1_180_000, "sandbox_micro": 3_070
 SUM = {"totals": TOT, "net_micro": 2_920_000, "net_missing": [], "lease_cents": 0, "depreciation_cents": 129,
        "depreciation_business_cents": 129, "days": [], "entries": [], "not_set": [],
        "power": {"basis": "metered", "estimated": False, "note": "grid"}}
-LABELS = ["Darkbloom GPU margin", "Sandbox margin", "Power while idle or doing your own work", "Lease",
+LABELS = ["Darkbloom GPU margin", "Sandbox margin", "Power while idle or doing your own work (not deducted)", "Lease",
           "Depreciation (business share)", "Net"]
 
 

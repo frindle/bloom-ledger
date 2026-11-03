@@ -251,7 +251,7 @@ def script_js():
     const marginKnown = costKnown;
     sumDl.appendChild(sumLine("Darkbloom GPU margin", marginKnown ? usdFine(gpu - gpuCost) : null));
     sumDl.appendChild(sumLine("Sandbox margin", marginKnown ? usdFine(sbx - sbxCost) : null));
-    sumDl.appendChild(sumLine("Power while idle or doing your own work", marginKnown ? usdFine(-(t.cost_micro - gpuCost - sbxCost)) : null));
+    sumDl.appendChild(sumLine("Power while idle or doing your own work (not deducted)", marginKnown ? usdFine(-(t.cost_micro - gpuCost - sbxCost)) : null));
     sumDl.appendChild(sumLine("Lease", usd(-(s.lease_cents || 0) * 10000)));
     if (s.depreciation_business_cents === null) {
       sumDl.appendChild(sumLine("Depreciation (business share)", null));

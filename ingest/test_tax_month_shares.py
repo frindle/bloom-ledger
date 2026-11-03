@@ -13,12 +13,14 @@ ROWS = [row("2026-10-20", 3000000, 400000, 60, 15), row("2026-10-02", 1000000, 1
 def test_twelve_months_always_present_and_keyed():
     s = T.month_shares(2026, ROWS)
     assert list(s) == ["2026-%02d" % m for m in range(1, 13)]
-    assert s["2026-01"] == {"income_micro": 0, "power_micro": 0, "minutes": 0, "paid_minutes": 0, "business_minutes": 0, "bp": None}
+    assert s["2026-01"] == {"income_micro": 0, "power_micro": 0, "minutes": 0, "paid_minutes": 0, "business_minutes": 0, "bp": None,
+                          "job_power_micro": 0}
 
 
 def test_month_sums_and_paid_share():
     s = T.month_shares(2026, ROWS)
-    assert s["2026-10"] == {"income_micro": 4000000, "power_micro": 500000, "minutes": 120, "paid_minutes": 60, "business_minutes": 60, "bp": 5000}
+    assert s["2026-10"] == {"income_micro": 4000000, "power_micro": 500000, "minutes": 120, "paid_minutes": 60, "business_minutes": 60, "bp": 5000,
+                          "job_power_micro": 0}
 
 
 def test_unset_power_cost_stays_none_and_other_years_are_ignored():
@@ -32,3 +34,13 @@ def test_share_uses_business_minutes_when_present():
     rows = [dict(row("2026-03-01", 0, 0, 100, 10), business_minutes=62.5), dict(row("2026-03-02", 0, 0, 100, 20), business_minutes=100.0)]
     s = T.month_shares(2026, rows)["2026-03"]
     assert s["business_minutes"] == 162.5 and s["paid_minutes"] == 30 and s["bp"] == 8125
+
+
+def test_job_power_is_the_cost_of_paid_job_minutes():
+    rows = [dict(row("2026-04-01", 0, 900000, 60, 20), gpu_cost_micro=200000, sandbox_cost_micro=50000),
+            dict(row("2026-04-02", 0, 100000, 60, 5), gpu_cost_micro=30000, sandbox_cost_micro=0)]
+    s = T.month_shares(2026, rows)["2026-04"]
+    assert s["power_micro"] == 1000000 and s["job_power_micro"] == 280000, "idle and own-work power is not counted"
+    assert T.month_shares(2026, ROWS)["2026-11"]["job_power_micro"] is None, "unknown power cost stays unknown"
+    (m,) = [r for r in T.month_rows(2026, {"2026-04": s}, {"2026-04": {"depreciation_business_cents": 0, "lease_business_cents": 0}})]
+    assert m["power_business_micro"] == 280000
