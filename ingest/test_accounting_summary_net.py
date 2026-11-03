@@ -3,6 +3,7 @@ import datetime as dt
 import sqlite3
 
 import bloom_accounting_config as CF
+import bloom_accounting_depr as DP
 import bloom_accounting_entries as AE
 import bloom_accounting_index as AX
 import bloom_accounting_summary as SM
@@ -40,7 +41,8 @@ def test_net_all_machines():
     assert s["lease_cents"] == 10000 * 12 * 31 // 365
     assert s["depreciation_cents"] == 182600 * 31 // 1826 and s["depreciation_business_cents"] == s["depreciation_cents"] // 2
     assert s["net_missing"] == []
-    assert s["net_micro"] == 2000000 - 200000 - (s["lease_cents"] + s["depreciation_business_cents"]) * 10000
+    assert s["lease_business_cents"] == DP.business_cents(s["lease_cents"], 5000) and s["power_business_micro"] == 100000
+    assert s["net_micro"] == 2000000 - 100000 - (s["lease_business_cents"] + s["depreciation_business_cents"]) * 10000
 
 
 def test_missing_inputs_give_no_net():

@@ -7,6 +7,7 @@ import bloom_accounting_entries as AE
 import bloom_accounting_fixed as FX
 import bloom_accounting_periods as PR
 import bloom_accounting_report as RP
+import bloom_accounting_tax as TX
 
 GRID_NOTE = "grid rates, solar credit not applied"
 RATE_KEYS = ("rate_schedule", "rate_adder_usd_per_kwh", "universal_charge_usd_per_kwh", "county_fee_pct")
@@ -27,14 +28,21 @@ def build(db, today, period, machine=None):
     depr = FX.owned_depreciation_cents(settings, AE.current_entries(db), start, end, machine) if owned else 0
     bp = t["business_bp"]
     depr_biz = depr if not depr else (None if bp is None else DP.business_cents(depr, bp))
-    parts = (t["cost_micro"], lease, depr_biz)
-    net = None if t["cost_micro"] is None or None in parts else t["earned_micro"] - t["cost_micro"] - (lease + depr_biz) * 10000
+    lease_biz = lease if not lease else (None if bp is None else DP.business_cents(lease, bp))
+    power_biz = None if t["cost_micro"] is None else t["cost_micro"] * (bp or 0) // 10000
+    live = [e for e in AE.current_entries(db) if machine is None or e["machine_id"] in (None, machine)]
+    amt = TX.entry_amounts_micro(live, start, end, bp)
+    pre = TX.pre_tracking_micro(db, start, end, settings.get("m4_in_service_date")) if machine is None else 0
+    parts = (power_biz, lease_biz, depr_biz)
+    net = None if None in parts else t["earned_micro"] + pre + amt["receipts_micro"] - power_biz - amt["expensed_micro"] - (lease_biz + depr_biz) * 10000
     net_missing = [k for k, v in (("lease", lease), ("depreciation", depr_biz)) if v is None]
     machines = machine_breakdown(settings, AE.current_entries(db), start, end)
     return {"machines": machines, "lease_cents": lease, "depreciation_cents": depr, "depreciation_business_cents": depr_biz, "net_micro": net,
             "net_missing": net_missing, "period": period, "start": start, "end": end, "machine": machine, "days": rows, "totals": t, "entries": entries,
             "power": {"basis": "metered" if t["minutes"] else "none", "estimated": False, "note": GRID_NOTE},
-            "not_set": not_set}
+            "not_set": not_set, "lease_business_cents": lease_biz, "power_business_micro": power_biz,
+            "pre_tracking_micro": pre, "receipts_micro": amt["receipts_micro"],
+            "entries_business_micro": amt["expensed_micro"], "electricity_entries_micro": amt["electricity_micro"]}
 
 
 def machine_breakdown(settings, entries, start, end):
