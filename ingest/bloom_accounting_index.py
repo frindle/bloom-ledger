@@ -71,7 +71,7 @@ def parse_earnings_line(line):
     if not isinstance(lid, str) or not lid or isinstance(amt, bool) or not isinstance(amt, int) or amt < 0:
         return None
     jid = e.get("job_id")
-    kind = "base" if e.get("model") == "base_reward" or str(jid).startswith("floor:") else "job"
+    kind = "base" if e.get("model") == "base_reward" or str(jid).startswith("floor:") else ("sandbox" if (isinstance(e.get("model"), str) and e.get("model").startswith("sandbox:")) or str(jid).startswith("sandbox:") else "job")
     ctok = e.get("completion_tokens")
     return {"ledger_id": lid, "ts": ts, "micro_usd": amt, "kind": kind, "model": e.get("model"), "job_id": jid,
             "completion_tokens": ctok if isinstance(ctok, int) and not isinstance(ctok, bool) else 0}
