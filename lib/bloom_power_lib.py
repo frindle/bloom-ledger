@@ -361,10 +361,13 @@ def entry_usd(e):
 
 def entry_kind(e):
     """'base' for the per-epoch base reward ledger rows (model == 'base_reward' or job_id floor:*),
-    else 'job' (per-job inference income)."""
+    'sandbox' for sandbox entries, else 'job' (per-job inference income)."""
     jid = str(e.get("job_id", ""))
-    if str(e.get("model", "")) == "base_reward" or jid.startswith("floor:"):
+    model = str(e.get("model", ""))
+    if model == "base_reward" or jid.startswith("floor:"):
         return "base"
+    if model.startswith("sandbox:") or jid.startswith("sandbox:"):
+        return "sandbox"
     return "job"
 
 
@@ -522,16 +525,16 @@ def compute_report(rows, rate, calibration=1.0, offset_w=0.0, baseline_w=None, m
 
 
 def summarize_earnings(entries):
-    by_day, tot = {}, {"base": 0.0, "job": 0.0}
+    by_day, tot = {}, {"base": 0.0, "job": 0.0, "sandbox": 0.0}
     for e in entries:
         ts, usd, kind = entry_ts(e), entry_usd(e), entry_kind(e)
         day = ts.strftime("%Y-%m-%d")
-        d = by_day.setdefault(day, {"base": 0.0, "job": 0.0, "n": 0})
+        d = by_day.setdefault(day, {"base": 0.0, "job": 0.0, "sandbox": 0.0, "n": 0})
         d[kind] += usd
         d["n"] += 1
         tot[kind] += usd
     return {"by_day": dict(sorted(by_day.items())), "base": tot["base"], "job": tot["job"],
-            "gross": tot["base"] + tot["job"], "n": len(entries)}
+            "sandbox": tot["sandbox"], "gross": tot["base"] + tot["job"] + tot["sandbox"], "n": len(entries)}
 
 
 # ====================================================================== own-vs-paid attribution
