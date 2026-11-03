@@ -95,19 +95,22 @@ def pre_tracking_micro(db, start, end, from_date):
     return max(total - seen, 0)
 
 def month_shares(year, day_rows):
-    """Per-month income, metered power cost and paid-minute business share for the 12 months of `year`.
+    """Per-month income, metered power cost and business-use share for the 12 months of `year`.
 
-    Returns {"YYYY-MM": {"income_micro", "power_micro" (None when any day's cost is None), "minutes", "paid_minutes", "bp"}} where bp is
-    paid_minutes * 10000 // minutes, or None when there are no metered minutes. day_rows are RP.day_rows rows."""
+    Returns {"YYYY-MM": {"income_micro", "power_micro" (None when any day's cost is None), "minutes", "paid_minutes",
+    "business_minutes", "bp"}} where bp is business_minutes * 10000 / minutes (capped at 10000; a row without business_minutes
+    counts its paid minutes), or None when there are no metered minutes. day_rows are RP.day_rows rows."""
     out = {}
     for m in range(1, 13):
         key = "%04d-%02d" % (year, m)
         rows = [r for r in day_rows if r["date"][:7] == key]
         minutes = sum(r["minutes"] for r in rows)
         paid = sum(r["paid_minutes"] for r in rows)
+        biz = sum(r.get("business_minutes", r["paid_minutes"]) for r in rows)
         costs = [r["cost_micro"] for r in rows]
         out[key] = {"income_micro": sum(r["earned_micro"] for r in rows), "power_micro": None if None in costs else sum(costs),
-                    "minutes": minutes, "paid_minutes": paid, "bp": paid * 10000 // minutes if minutes else None}
+                    "minutes": minutes, "paid_minutes": paid, "business_minutes": round(biz, 3),
+                    "bp": min(10000, int(biz * 10000 / minutes + 1e-9)) if minutes else None}
     return out
 
 
