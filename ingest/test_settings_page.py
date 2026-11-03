@@ -124,7 +124,8 @@ def test_save_posts_the_row_profile(tmp_path):
     assert post["url"] == "/v1/settings/machines/profile" and post["headers"]["content-type"] == "application/json"
     assert "authorization" not in post["headers"]
     assert json.loads(post["body"]) == {"id": "m4max", "display_name": "Studio", "model": "M4 Max",
-                                        "lease_start": "2026-01-15", "lease_monthly_cents": 12345, "acquisition": "leased"}
+                                        "lease_start": "2026-01-15", "lease_monthly_cents": 12345, "acquisition": "leased",
+                                        "in_service": None, "purchase_cents": None}
     assert "Saved." in D.rows(res)[0][9]
     assert len(get_calls(res)) == 1, "saving does not reload the table"
 
@@ -132,7 +133,7 @@ def test_save_posts_the_row_profile(tmp_path):
 def test_save_sends_nulls_for_an_empty_profile(tmp_path):
     res = load(tmp_path, one(NO_PROFILE), [{"do": "click", "sel": ".primary"}], **{"/profile": (200, {"ok": True})})
     (post,) = post_calls(res)
-    assert json.loads(post["body"]) == dict(NO_PROFILE, id="m4max", acquisition="leased")
+    assert json.loads(post["body"]) == dict(NO_PROFILE, id="m4max", acquisition="leased", in_service=None, purchase_cents=None)
 
 
 def test_save_refusals_are_explained_in_the_row(tmp_path):

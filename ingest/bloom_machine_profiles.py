@@ -7,7 +7,7 @@ import datetime as dt
 import bloom_ingest
 
 ACQUISITIONS = ("leased", "purchased")
-FIELDS = ("display_name", "model", "lease_start", "lease_monthly_cents", "acquisition")
+FIELDS = ("display_name", "model", "lease_start", "lease_monthly_cents", "acquisition", "in_service", "purchase_cents")
 
 
 def create_table(db):
@@ -17,6 +17,9 @@ def create_table(db):
     cols = [r[1] for r in db.execute("PRAGMA table_info(machine_profiles)")]
     if "acquisition" not in cols:
         db.execute("ALTER TABLE machine_profiles ADD COLUMN acquisition TEXT")
+    for col, typ in (("in_service", "TEXT"), ("purchase_cents", "INTEGER")):
+        if col not in cols:
+            db.execute("ALTER TABLE machine_profiles ADD COLUMN " + col + " " + typ)
     db.commit()
 
 
@@ -32,19 +35,22 @@ def validate_profile(fields):
             v = fields[key]
             if v is not None and not (isinstance(v, str) and v.strip() and len(v) <= 60):
                 errors[key] = key + " must be a non-blank string of at most 60 characters"
-    if "lease_start" in fields:
-        v = fields["lease_start"]
+    for dkey in ("lease_start", "in_service"):
+        if dkey not in fields:
+            continue
+        v = fields[dkey]
         if v is not None:
             try:
                 if not isinstance(v, str) or len(v) != 10:
                     raise ValueError(v)
                 dt.date.fromisoformat(v)
             except ValueError:
-                errors["lease_start"] = "lease_start must be a valid date like YYYY-MM-DD"
-    if "lease_monthly_cents" in fields:
-        v = fields["lease_monthly_cents"]
-        if v is not None and (not isinstance(v, int) or isinstance(v, bool) or v <= 0):
-            errors["lease_monthly_cents"] = "lease_monthly_cents must be a positive integer"
+                errors[dkey] = dkey + " must be a valid date like YYYY-MM-DD"
+    for ckey in ("lease_monthly_cents", "purchase_cents"):
+        if ckey in fields:
+            v = fields[ckey]
+            if v is not None and (not isinstance(v, int) or isinstance(v, bool) or v <= 0):
+                errors[ckey] = ckey + " must be a positive integer"
     if "acquisition" in fields:
         v = fields["acquisition"]
         if v is not None and v not in ACQUISITIONS:
@@ -81,10 +87,11 @@ def deactivate_profile(db, machine_id, now):
 def list_profiles(db):
     create_table(db)
     out = {}
-    for mid, name, model, start, cents, active, acq in db.execute(
-            "SELECT machine_id, display_name, model, lease_start, lease_monthly_cents, active, acquisition FROM machine_profiles"):
+    for mid, name, model, start, cents, active, acq, ins, pc in db.execute(
+            "SELECT machine_id, display_name, model, lease_start, lease_monthly_cents, active, acquisition, in_service,"
+            " purchase_cents FROM machine_profiles"):
         out[mid] = {"display_name": name, "model": model, "lease_start": start, "lease_monthly_cents": cents,
-                    "acquisition": acq or "leased", "active": bool(active)}
+                    "acquisition": acq or "leased", "in_service": ins, "purchase_cents": pc, "active": bool(active)}
     return out
 
 

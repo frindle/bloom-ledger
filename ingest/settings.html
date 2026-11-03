@@ -61,7 +61,7 @@
 <h2 id="machines-heading">Machines</h2>
 <div class="table-wrap">
 <table id="machines">
-<caption class="note">Each machine reports into the ledger with its own token. Edit the name, model, acquisition and lease, then save the row. Purchased machines have no lease, so the lease fields are cleared and disabled; record the purchase itself under purchases.</caption>
+<caption class="note">Each machine reports into the ledger with its own token. Edit the name, model, acquisition and lease, then save the row. For leased machines enter the lease start and monthly payment; for purchased machines the same two columns become the in-service date and purchase price.</caption>
 <thead>
 <tr>
 <th scope="col">Machine id</th>
@@ -250,17 +250,18 @@
       const lamt = field(prof.lease_monthly_cents == null ? "" : (prof.lease_monthly_cents / 100).toFixed(2),
         "Lease per month for " + m.id, "number");
       lamt.step = "0.01"; lamt.min = "0.01";
+      const isbuy = () => acq.value === "purchased";
+      if (isbuy()) {
+        lstart.value = prof.in_service || "";
+        lamt.value = prof.purchase_cents == null ? "" : (prof.purchase_cents / 100).toFixed(2);
+      }
       const syncAcq = () => {
-        const owned = acq.value === "purchased";
-        for (const f of [lstart, lamt]) {
-          if (owned) { f.dataset.prev = f.value; f.value = ""; }
-          else if (f.dataset.prev && !f.value) f.value = f.dataset.prev;
-          f.disabled = owned;
-          f.title = owned ? "Not used for purchased machines" : "";
-        }
+        const buy = isbuy();
+        lstart.setAttribute("aria-label", (buy ? "In service date for " : "Lease start for ") + m.id);
+        lamt.setAttribute("aria-label", (buy ? "Purchase price for " : "Lease per month for ") + m.id);
       };
       acq.addEventListener("change", syncAcq);
-      if (acq.value === "purchased") { lstart.disabled = true; lamt.disabled = true; lstart.title = lamt.title = "Not used for purchased machines"; }
+      syncAcq();
       const rowErr = document.createElement("div");
       rowErr.className = "error"; rowErr.hidden = true;
       const saved = document.createElement("span");
@@ -274,10 +275,13 @@
         fields.acquisition = acq.value === "purchased" ? "purchased" : "leased";
         const owned = fields.acquisition === "purchased";
         fields.lease_start = owned ? null : (lstart.value || null);
-        const dollars = owned ? "" : lamt.value.trim();
-        fields.lease_monthly_cents = dollars === "" ? null : Math.round(parseFloat(dollars) * 100);
-        if (fields.lease_monthly_cents !== null && !(fields.lease_monthly_cents > 0)) {
-          showError(rowErr, "Lease per month must be a positive amount."); return;
+        fields.in_service = owned ? (lstart.value || null) : null;
+        const dollars = lamt.value.trim();
+        const cents = dollars === "" ? null : Math.round(parseFloat(dollars) * 100);
+        fields.lease_monthly_cents = owned ? null : cents;
+        fields.purchase_cents = owned ? cents : null;
+        if (cents !== null && !(cents > 0)) {
+          showError(rowErr, (owned ? "Purchase price" : "Lease per month") + " must be a positive amount."); return;
         }
         try {
           const res = await post("/v1/settings/machines/profile", fields);

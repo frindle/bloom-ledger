@@ -192,7 +192,7 @@ def machine_rows(db, root, now, extra_ids):
         prof = profiles.get(r["id"])
         if prof is None:
             continue
-        r["profile"] = {k: prof[k] for k in ("display_name", "model", "lease_start", "lease_monthly_cents", "acquisition")}
+        r["profile"] = {k: prof[k] for k in ("display_name", "model", "lease_start", "lease_monthly_cents", "acquisition", "in_service", "purchase_cents")}
         if not prof["active"] and r["id"] not in extra_ids:
             r["status"] = "removed"
     rows.sort(key=lambda r: r["id"])
