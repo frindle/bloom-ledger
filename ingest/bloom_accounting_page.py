@@ -9,7 +9,7 @@ def body_html():
         '<main>\n'
         '  <div class="top">\n'
         '    <h1>Ledger</h1>\n'
-        '    <nav aria-label="Pages"><a href="/log">Log</a> <a href="/settings">Settings</a></nav>\n'
+        '    <nav aria-label="Pages"><a href="/log">Log</a> <a href="/tax">Tax year</a> <a href="/settings">Settings</a></nav>\n'
         '  </div>\n'
         '  <p id="banner" class="banner" role="alert" hidden>Can\'t reach the ledger. Showing nothing until it answers.</p>\n'
         '  <div class="picker">\n'
@@ -28,9 +28,25 @@ def body_html():
         '      <thead><tr><th scope="col">Date</th><th scope="col" class="num">GPU</th><th scope="col" class="num">Sandbox</th><th scope="col" class="num">Power</th><th scope="col" class="num">Energy (kWh)</th><th scope="col" class="num">Paid h</th><th scope="col" class="num">Hours</th><th scope="col" class="num">Tokens</th></tr></thead>\n'
         '      <tbody id="day-rows"></tbody></table></div>\n'
         '  </section>\n'
-        '  <section aria-labelledby="entries-h"><h2 id="entries-h">Entries</h2>\n'
+        '  <section aria-labelledby="entries-h"><h2 id="entries-h">Purchases and other entries</h2>\n'
+        '    <p class="meta">Add what you buy for this work so it counts as a write-off on the tax year. Hardware is depreciated; everything else is expensed in the year you paid. Internet counts at the business share; electricity bills are already covered by metered power.</p>\n'
+        '    <form id="entry-form" class="entry-form" novalidate>\n'
+        '      <label for="e-date">Date paid</label>\n'
+        '      <input id="e-date" type="date">\n'
+        '      <label for="e-amount">Amount (USD)</label>\n'
+        '      <input id="e-amount" inputmode="decimal">\n'
+        '      <label for="e-category">Category</label>\n'
+        '      <select id="e-category"><option value="hardware">Hardware</option><option value="software">Software or subscription</option><option value="internet">Internet service</option><option value="supplies" selected>Supplies</option><option value="electricity">Electricity bill</option><option value="other">Other</option></select>\n'
+        '      <label for="e-kind">Type</label>\n'
+        '      <select id="e-kind"><option value="cost">Expense (write-off)</option><option value="receipt">Other income</option></select>\n'
+        '      <label for="e-note">Note</label>\n'
+        '      <input id="e-note">\n'
+        '      <button type="submit" class="add">Add entry</button>\n'
+        '    </form>\n'
+        '    <p id="entry-msg" class="meta" role="status"></p>\n'
+        '    <p class="meta">A voided entry stays listed for the record but no longer counts.</p>\n'
         '    <div class="scroll"><table><caption>Manual entries for the period; voided entries are marked</caption>\n'
-        '      <thead><tr><th scope="col">Date</th><th scope="col">Kind</th><th scope="col">Category</th><th scope="col" class="num">Amount</th><th scope="col">Machine</th><th scope="col">Note</th><th scope="col">Status</th></tr></thead>\n'
+        '      <thead><tr><th scope="col">Date</th><th scope="col">Kind</th><th scope="col">Category</th><th scope="col" class="num">Amount</th><th scope="col">Machine</th><th scope="col">Note</th><th scope="col">Status</th><th scope="col"><span class="sr">Action</span></th></tr></thead>\n'
         '      <tbody id="entry-rows"></tbody></table></div>\n'
         '  </section>\n'
         '  <section class="alerts" aria-labelledby="alerts-h"><h2 id="alerts-h">Alerts</h2><ul id="alerts"></ul></section>\n'
@@ -207,6 +223,15 @@ def script_js():
         tr.appendChild(el("td", e.machine_id !== null ? e.machine_id : "All"));
         tr.appendChild(el("td", e.note || ""));
         tr.appendChild(el("td", e.voided ? "Voided" : "Active"));
+        const act = el("td");
+        if (!e.voided) {
+          const vb = el("button", "Void", "void");
+          vb.type = "button";
+          vb.setAttribute("aria-label", "Void the " + e.category + " entry from " + e.date);
+          vb.addEventListener("click", () => voidEntry(e.id));
+          act.appendChild(vb);
+        }
+        tr.appendChild(act);
         if (e.voided) tr.className = "voided";
         entries.push(tr);
       }
@@ -377,6 +402,56 @@ def script_js():
     }
     return box;
   }
+  function dollarsToCents(s) {
+    const t = String(s).trim().replace(/^\\$/, "").replace(/,/g, "");
+    const m = /^(\\d+)(?:\\.(\\d{1,2}))?$/.exec(t);
+    if (!m) return null;
+    const cents = Number(m[1]) * 100 + Number((m[2] || "").padEnd(2, "0"));
+    return cents > 0 ? cents : null;
+  }
+  function localToday() {
+    const d = new Date();
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  }
+  async function addEntry(ev) {
+    ev.preventDefault();
+    const msg = $("entry-msg");
+    const date = $("e-date").value;
+    const cents = dollarsToCents($("e-amount").value);
+    if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(date)) { msg.textContent = "Pick the date you paid."; return; }
+    if (cents === null) { msg.textContent = "Enter the amount in dollars, like 49.99."; return; }
+    const note = $("e-note").value.trim();
+    const entry = { kind: $("e-kind").value || "cost", date: date, amount_cents: cents, category: $("e-category").value || "other",
+                    machine_id: $("machine").value || null, note: note || null };
+    let res;
+    try { res = await postJson("/v1/accounting/entries", entry); } catch (e) { msg.textContent = "Can't reach the ledger. Nothing was added."; return; }
+    if (res.status !== 201) { msg.textContent = await refused(res); return; }
+    msg.textContent = "Added " + usd(cents * 10000) + " for " + entry.category + " on " + date + ".";
+    $("e-amount").value = ""; $("e-note").value = "";
+    await load();
+  }
+  const entryForm = $("entry-form");
+  if (entryForm) { if (!$("e-date").value) $("e-date").value = localToday(); entryForm.addEventListener("submit", addEntry); }
+  async function postJson(path, body) {
+    return fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  }
+  async function refused(res) {
+    if (res.status === 403) return "Changes are only accepted from your local network.";
+    let b = null;
+    try { b = await res.json(); } catch (e) { b = null; }
+    return "Not saved: " + ((b && b.error) || "the server refused it") + ".";
+  }
+  async function voidEntry(id) {
+    const msg = $("entry-msg");
+    let res;
+    try { res = await postJson("/v1/accounting/entries/void", { id: id }); } catch (e) { msg.textContent = "Can't reach the ledger. Nothing was voided."; return; }
+    if (res.ok) {
+      msg.textContent = "Entry voided.";
+      await load();
+    } else {
+      msg.textContent = await refused(res);
+    }
+  }
   async function load() {
     const period = $("period").value || "month";
     let url = "/v1/accounting/summary?period=" + encodeURIComponent(period);
@@ -519,7 +594,14 @@ def style_block():
         '  .key { display: inline-block; width: .9rem; height: .9rem; margin-right: .4rem; vertical-align: -.1em; border: 1px solid var(--ink); }\n'
         '  .alerts ul { margin: 0; padding-left: 1.2rem; color: var(--muted); }\n'
         '  .notset { color: var(--bad); }\n'
-        '  a:focus-visible, select:focus-visible, button:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }\n'
+        '  .entry-form { display: grid; grid-template-columns: auto 1fr; gap: .5rem 1rem; padding: 1rem 1.25rem; background: var(--card); border-left: 6px solid var(--ink); max-width: 34rem; margin-bottom: .75rem; }\n'
+        '  .entry-form label { font-size: .85rem; color: var(--muted); grid-column: 1; }\n'
+        '  .entry-form input, .entry-form select { font: inherit; background: var(--paper); color: var(--ink); border: 2px solid var(--ink); border-radius: 0; padding: .3rem .6rem; min-height: 2.25rem; grid-column: 2; }\n'
+        '  .entry-form button { grid-column: 1 / -1; justify-self: start; }\n'
+        '  .add { font: inherit; color: var(--ink); background: var(--card); border: 2px solid var(--ink); border-radius: 0; padding: .4rem .8rem; cursor: pointer; }\n'
+        '  .void { font: inherit; color: var(--bad); background: none; border: 0; padding: .25rem .25rem .25rem 0; cursor: pointer; }\n'
+        '  .sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }\n'
+        '  a:focus-visible, input:focus-visible, select:focus-visible, button:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }\n'
         '  @media (max-width: 40rem) { main { padding: 1.25rem .75rem 3rem; } th, td { padding: .4rem .5rem; } table { font-size: .9rem; }\n'
         '    dl.sum .total dd { font-size: 1.6rem; } }\n'
         '  @media (prefers-reduced-motion: no-preference) { .toggle::before { transition: transform .15s ease-out; } .picker select { transition: background .12s; } }\n'

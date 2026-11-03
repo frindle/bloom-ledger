@@ -17,7 +17,7 @@ def test_controls_and_navigation():
 def test_tables_are_accessible():
     h = PG.body_html()
     assert h.count("<caption>") == 2 and 'id="day-rows"' in h and 'id="entry-rows"' in h
-    assert h.count('scope="col"') == 15
+    assert h.count("scope=\"col\"") == 16
     for label in ("GPU", "Sandbox", "Power", "Paid h", "Energy (kWh)", "Hours", "Tokens", "Category", "Amount", "Status"):
         assert ">" + label + "<" in h, label
     assert 'id="summary"' in h and 'id="power-note"' in h
