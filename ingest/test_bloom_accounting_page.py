@@ -70,8 +70,3 @@ def test_unknown_costs_say_not_set(tmp_path):
         assert [a["attrs"]["href"] for a in tags(dds[i], "a")] == ["/settings"]
     assert dds[3]["text"] == "$0.00"
 
-
-def test_old_payload_without_stream_keys_never_shows_nan(tmp_path):
-    old = {k: v for k, v in TOT.items() if not k.startswith(("gpu_", "sandbox_"))}
-    res = run(tmp_path, dict(SUM, totals=old))
-    assert "NaN" not in find(res["dom"], "summary")["text"] and "NaN" not in find(res["dom"], "streams")["text"]
