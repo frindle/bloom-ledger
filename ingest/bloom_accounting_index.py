@@ -40,7 +40,7 @@ def reset(db):
 
 _ROUTES = (
     (re.compile(r"^power/power-log-\d{4}-\d{2}\.csv\Z"), "power"),
-    (re.compile(r"^power/sandbox-jobs-\d{4}-\d{2}\.csv\Z"), "sandbox"),
+    (re.compile(r"^power/sandbox-jobs-[a-z]*-?\d{4}-\d{2}\.csv\Z"), "sandbox"),
     (re.compile(r"^earnings-archive/totals\.jsonl\Z"), "totals"),
     (re.compile(r"^earnings-archive/[^/]+\.jsonl\Z"), "earnings"),
 )

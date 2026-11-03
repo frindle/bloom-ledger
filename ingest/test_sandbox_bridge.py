@@ -14,3 +14,7 @@ def test_bridge_sets_sandbox_jobs_in_either_order():
 
 def test_route():
     assert AX.route("power/sandbox-jobs-2026-11.csv") == "sandbox"
+
+
+def test_backfill_route():
+    assert AX.route("power/sandbox-jobs-backfill-2026-11.csv") == "sandbox"
