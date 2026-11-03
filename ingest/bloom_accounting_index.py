@@ -6,11 +6,13 @@ import datetime as dt
 import json
 import re
 
-TABLES = ("power_minutes", "earnings", "account_totals", "acct_cursor", "acct_parse_errors")
+TABLES = ("power_minutes", "sandbox_bridge", "earnings", "account_totals", "acct_cursor", "acct_parse_errors")
 
 _DDL = (
     "CREATE TABLE IF NOT EXISTS power_minutes (machine_id TEXT NOT NULL, ts INTEGER NOT NULL, wh REAL, interval_s REAL,"
     " power_ok INTEGER, dbk_state TEXT, other_work INTEGER, tokens_delta INTEGER, sandbox_jobs INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (machine_id, ts))",
+    "CREATE TABLE IF NOT EXISTS sandbox_bridge (machine_id TEXT NOT NULL, ts INTEGER NOT NULL, jobs INTEGER NOT NULL,"
+    " PRIMARY KEY (machine_id, ts))",
     "CREATE TABLE IF NOT EXISTS earnings (ledger_id TEXT PRIMARY KEY, ts INTEGER NOT NULL, micro_usd INTEGER NOT NULL,"
     " kind TEXT, model TEXT, job_id TEXT, completion_tokens INTEGER, source_machine TEXT)",
     "CREATE TABLE IF NOT EXISTS account_totals (at TEXT PRIMARY KEY, count INTEGER, total_micro_usd INTEGER,"
@@ -38,6 +40,7 @@ def reset(db):
 
 _ROUTES = (
     (re.compile(r"^power/power-log-\d{4}-\d{2}\.csv\Z"), "power"),
+    (re.compile(r"^power/sandbox-jobs-\d{4}-\d{2}\.csv\Z"), "sandbox"),
     (re.compile(r"^earnings-archive/totals\.jsonl\Z"), "totals"),
     (re.compile(r"^earnings-archive/[^/]+\.jsonl\Z"), "earnings"),
 )
@@ -191,6 +194,29 @@ def store_power(db, machine_id, sha, path, offset, payload, since_ts=INGEST_FROM
     return stored, bad
 
 
+def store_sandbox(db, machine_id, payload):
+    """Sandbox-jobs sidecar rows (ts_utc,sandbox_jobs) -> sandbox_bridge, then copy onto the matching power_minutes rows.
+    The sampler writes the sidecar while a month's power CSV header predates the sandbox_jobs column."""
+    for ln in payload.splitlines():
+        a = ln.strip().split(",")
+        if len(a) != 2 or a[0] == "ts_utc":
+            continue
+        try:
+            ts = int(dt.datetime.fromisoformat(a[0].replace("Z", "+00:00")).timestamp())
+            jobs = max(0, int(float(a[1])))
+        except ValueError:
+            continue
+        db.execute("INSERT OR REPLACE INTO sandbox_bridge (machine_id, ts, jobs) VALUES (?, ?, ?)", (machine_id, ts, jobs))
+    apply_sandbox_bridge(db)
+
+
+def apply_sandbox_bridge(db):
+    db.execute("UPDATE power_minutes SET sandbox_jobs = (SELECT b.jobs FROM sandbox_bridge b WHERE b.machine_id = power_minutes.machine_id"
+               " AND b.ts = power_minutes.ts) WHERE sandbox_jobs = 0 AND EXISTS (SELECT 1 FROM sandbox_bridge b"
+               " WHERE b.machine_id = power_minutes.machine_id AND b.ts = power_minutes.ts AND b.jobs > 0)")
+    db.commit()
+
+
 def index_new(db, root):
     """Parse every not-yet-parsed `log` object into the derived tables; returns the number of objects handled."""
     n = 0
@@ -215,6 +241,9 @@ def index_new(db, root):
             store_totals(db, text)
         elif kind == "power":
             store_power(db, machine_id, sha, path, offset, text)
+            apply_sandbox_bridge(db)
+        elif kind == "sandbox":
+            store_sandbox(db, machine_id, text)
         mark_parsed(db, machine_id, sha)
         n += 1
     return n
