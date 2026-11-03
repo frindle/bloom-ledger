@@ -28,4 +28,4 @@ def test_tax_page_links_the_packet():
 
 
 def test_server_routes_the_packet():
-    assert '"/tax/packet"' in open("server.py").read()
+    assert '"/tax/packet"' in open(__import__("os").path.join(__import__("os").path.dirname(__file__), "server.py")).read()

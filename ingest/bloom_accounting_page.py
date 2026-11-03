@@ -22,6 +22,10 @@ def body_html():
         '    <div id="streams" class="streams"></div>\n'
         '    <p class="meta">Power while working is the metered cost of the minutes that stream was running a job. Idle minutes and your own work are counted below, in the whole machine.</p>\n'
         '  </section>\n'
+        '  <section aria-labelledby="data-h"><h2 id="data-h">Data moved</h2>\n'
+        '    <div id="data" class="data"></div>\n'
+        '    <p id="data-note" class="meta"></p>\n'
+        '  </section>\n'
         '  <section aria-labelledby="sum-h"><h2 id="sum-h">Whole machine</h2><div id="summary" class="ledger"></div><p id="power-note" class="meta"></p></section>\n'
         '  <section aria-labelledby="days-h"><h2 id="days-h">Days</h2>\n'
         '    <div class="scroll"><table class="days"><caption>Newest first. Open a day to see its minutes and every payment.</caption>\n'
@@ -197,6 +201,35 @@ def script_js():
     if (!t.net_minutes) return "data not measured";
     return "data " + fmtBytes(t[key + "_bytes_in"] || 0) + " in, " + fmtBytes(t[key + "_bytes_out"] || 0) + " out";
   }
+  function dataTile(key, label, t) {
+    const art = el("article", null, "dtile s-" + key);
+    art.appendChild(el("h3", label));
+    const dl = el("dl", null, "bytes");
+    for (const [dir, word] of [["in", "Downloaded"], ["out", "Uploaded"]]) {
+      const row = el("div");
+      row.appendChild(el("dt", word));
+      row.appendChild(el("dd", fmtBytes(t[key + "_bytes_" + dir] || 0)));
+      dl.appendChild(row);
+    }
+    art.appendChild(dl);
+    return art;
+  }
+  function drawData(t) {
+    const box = $("data");
+    const note = $("data-note");
+    if (!box) return;
+    if (!t.net_minutes) {
+      box.replaceChildren(el("p", "Data not measured for this period.", "meta"));
+      if (note) note.textContent = "";
+      return;
+    }
+    box.replaceChildren(dataTile("gpu", NAMES.gpu, t), dataTile("sandbox", NAMES.sandbox, t), dataTile("total", "Whole machine", t));
+    if (note) {
+      const mh = (t.net_minutes / 60).toFixed(1);
+      const of = t.minutes ? " of " + (t.minutes / 60).toFixed(1) + " h" : "";
+      note.textContent = "Measured over " + mh + " h" + of + " in this period. The whole machine includes idle time and your own work.";
+    }
+  }
   function render(s) {
     last = s;
     const t = s.totals;
@@ -235,6 +268,7 @@ def script_js():
     tokenSpan.setAttribute("title", fmtTokensFull(t.tokens));
     metaP.appendChild(tokenSpan);
     $("summary").replaceChildren(sumDl, metaP);
+    drawData(t);
     drawDays();
     const entryRows = $("entry-rows");
     if (entryRows) {
@@ -610,6 +644,12 @@ def style_block():
         '  .streams { display: grid; grid-template-columns: repeat(auto-fit, minmax(19rem, 1fr)); gap: 1.25rem; }\n'
         '  .stream { background: var(--card); padding: 1rem 1.25rem 1.1rem 1.4rem; border-left: 6px solid var(--gpu); }\n'
         '  .stream.s-sandbox { border-left-color: var(--sandbox); }\n'
+        '  .data { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: 1.25rem; }\n'
+        '  .dtile { background: var(--card); padding: 1rem 1.25rem 1.1rem 1.4rem; border-left: 6px solid var(--ink); }\n'
+        '  .dtile.s-gpu { border-left-color: var(--gpu); } .dtile.s-sandbox { border-left-color: var(--sandbox); }\n'
+        '  .dtile.s-gpu h3 { color: var(--gpu); } .dtile.s-sandbox h3 { color: var(--sandbox); }\n'
+        '  dl.bytes { margin: .4rem 0 0; } dl.bytes div { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; }\n'
+        '  dl.bytes dt { color: var(--muted); } dl.bytes dd { margin: 0; font-size: 1.75rem; line-height: 1.25; font-weight: 600; font-variant-numeric: tabular-nums; }\n'
         '  .stream h3 { color: var(--gpu); } .stream.s-sandbox h3 { color: var(--sandbox); }\n'
         '  dl.sum { margin: 0; font-variant-numeric: tabular-nums; }\n'
         '  dl.sum .line { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; padding: .2rem 0; }\n'
