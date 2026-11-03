@@ -15,8 +15,9 @@ FIXED = {"2026-10": {"depreciation_business_cents": 300, "lease_business_cents":
 def test_expenses_are_power_at_share_plus_fixed_and_net_follows():
     r = T.month_rows(2026, SHARES, FIXED)
     assert [x["month"] for x in r] == ["2026-10", "2026-11", "2026-12"]
-    assert r[0] == {"month": "2026-10", "income_micro": 9000000, "bp": 5000, "power_business_micro": 1000000,
-                    "depreciation_business_micro": 3000000, "lease_business_micro": 1000000, "expenses_micro": 5000000, "net_micro": 4000000}
+    assert r[0] == {"month": "2026-10", "income_micro": 9000000, "other_income_micro": 0, "bp": 5000, "power_business_micro": 1000000,
+                    "depreciation_business_micro": 3000000, "lease_business_micro": 1000000, "entries_business_micro": 0,
+                    "expenses_micro": 5000000, "net_micro": 4000000}
 
 
 def test_unset_inputs_propagate_none_to_expenses_and_net():

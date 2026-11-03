@@ -4,13 +4,14 @@ import bloom_accounting_tax as T
 
 def r(inc, pw, dep, lease):
     exp = None if None in (pw, dep, lease) else pw + dep + lease
-    return {"month": "m", "income_micro": inc, "bp": 1, "power_business_micro": pw, "depreciation_business_micro": dep,
-            "lease_business_micro": lease, "expenses_micro": exp, "net_micro": None if exp is None else inc - exp}
+    return {"month": "m", "income_micro": inc, "other_income_micro": 0, "bp": 1, "power_business_micro": pw, "depreciation_business_micro": dep,
+            "lease_business_micro": lease, "entries_business_micro": 0, "expenses_micro": exp, "net_micro": None if exp is None else inc - exp}
 
 
 def test_sums_every_column():
     t = T.tax_totals([r(1000, 100, 200, 300), r(2000, 10, 20, 30)])
-    assert t == {"income_micro": 3000, "power_business_micro": 110, "depreciation_business_micro": 220, "lease_business_micro": 330,
+    assert t == {"income_micro": 3000, "other_income_micro": 0, "power_business_micro": 110,
+                 "depreciation_business_micro": 220, "lease_business_micro": 330, "entries_business_micro": 0,
                  "expenses_micro": 660, "net_micro": 2340}
 
 
