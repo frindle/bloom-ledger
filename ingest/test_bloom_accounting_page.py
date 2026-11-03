@@ -70,3 +70,8 @@ def test_unknown_costs_say_not_set(tmp_path):
         assert [a["attrs"]["href"] for a in tags(dds[i], "a")] == ["/settings"]
     assert dds[3]["text"] == "$0.00"
 
+    assert '<div id="summary" class="ledger"></div>' in PG.body_html() and 'dl id="summary"' not in PG.body_html()
+    css = PG.style_block()
+    rule = css[css.index(".ledger {"):]
+    rule = rule[:rule.index("}")]
+    assert "max-width: 34rem" in rule and "background: var(--card)" in rule
