@@ -18,8 +18,9 @@ SANDBOX_HOSTS_URL = "https://console.darkbloom.dev/api/sandbox/hosts"
 CACHE_S = 20
 REJECTED_CACHE_S = 3600
 # The Mac spools power minutes every 15 min (bloom-archive) and ships them within a minute, so the newest
-# minute is normally up to ~16 min old. Stale = a full cycle plus slack has passed with nothing new.
-STALE_S = 1200
+# minute is normally up to ~16 min old and was seen at 20 min (launchd interval drift). Stale matches the
+# machine-silent alert (bloom_alerts.SILENT_S): a whole cycle missed, not a late one.
+STALE_S = 1800
 _cache = {}
 
 
