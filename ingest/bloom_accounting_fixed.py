@@ -76,6 +76,16 @@ def machine_basis_cents(machine, entries, links=None):
     return total if found else machine.get("purchase_cents")
 
 
+ASSET_KEYS = ("class", "convention", "section179_cents", "bonus_bp", "business_use_bp", "life_months", "salvage_cents",
+              "disposed_on", "disposal_price_cents", "manual_schedule_cents", "state")
+
+
+def machine_asset(machine, basis_cents):
+    """The depreciation asset record (bloom_accounting_depr) for an owned machine record with the given basis."""
+    return {"basis_cents": basis_cents, "placed_in_service": machine["in_service"],
+            "method": machine.get("depreciation_method", "macrs5"), **{k: machine[k] for k in ASSET_KEYS if k in machine}}
+
+
 def machine_fixed_cents(machine, entries, links, start, end, default_bp=None):
     """Fixed costs (cents) of one machine record for the inclusive range start..end, gross and at business share.
 
@@ -89,8 +99,7 @@ def machine_fixed_cents(machine, entries, links, start, end, default_bp=None):
     if machine["ownership"] == "owned":
         basis = machine_basis_cents(machine, entries, links)
         if basis is not None:
-            asset = {"basis_cents": basis, "placed_in_service": machine["in_service"], "method": machine.get("depreciation_method", "macrs5"),
-                     **{k: machine[k] for k in ("class", "convention", "section179_cents", "bonus_bp", "business_use_bp") if k in machine}}
+            asset = machine_asset(machine, basis)
             dep = DP.asset_depreciation_cents(asset, start, end)
             dep_biz = DP.asset_business_cents(asset, start, end, bp)
         lease_biz = 0

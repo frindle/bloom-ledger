@@ -40,6 +40,25 @@ def accounting_post(path, headers, body, db, now):
             errs = WO.validate(data.get("value"))
             if errs:
                 return (400, {"error": "; ".join(errs)})
+        if key == "machines" and data.get("value") is not None:
+            errs = machines_errors(data.get("value"))
+            if errs:
+                return (400, {"error": "; ".join(errs)})
         AC.set_setting(db, key, data.get("value"), effective_from, int(now))
         return (200, {"ok": True})
     return (404, {"error": "not found"})
+
+
+def machines_errors(value):
+    """[] when `value` is a usable list of machine records, else plain-language problems (one per bad field)."""
+    import bloom_accounting_machines as M
+    if not isinstance(value, list):
+        return ["machines must be a list"]
+    errs, seen = [], set()
+    for i, m in enumerate(value):
+        name = m.get("id") if isinstance(m, dict) and isinstance(m.get("id"), str) else "#%d" % (i + 1)
+        errs += ["%s: %s" % (name, msg) for msg in M.validate_machine(m).values()]
+        if name in seen:
+            errs.append("%s: listed twice" % name)
+        seen.add(name)
+    return errs

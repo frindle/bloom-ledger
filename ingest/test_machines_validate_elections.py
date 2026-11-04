@@ -12,7 +12,7 @@ def test_bad_class_convention_and_elections_are_named():
     good = dict(OWNED, **{"class": "5-year"}, convention="half_year", section179_cents=0, bonus_bp=10000,
                 business_use_bp={"2026": 5000, "2027": 10000})
     assert M.validate_machine(good) == {} and M.validate_machine(dict(OWNED, bonus_bp=None, business_use_bp=None)) == {}
-    bad = dict(OWNED, **{"class": "7-year"}, convention="mid_quarter", section179_cents=-1, bonus_bp=10001)
+    bad = dict(OWNED, **{"class": "40-year"}, convention="monthly", section179_cents=-1, bonus_bp=10001)
     assert sorted(M.validate_machine(bad)) == ["bonus_bp", "class", "convention", "section179_cents"]
     assert sorted(M.validate_machine(dict(OWNED, section179_cents=True, bonus_bp=True))) == ["bonus_bp", "section179_cents"]
     assert M.validate_machine(dict(OWNED, section179_cents=1.5)).keys() == {"section179_cents"}

@@ -6,7 +6,9 @@ import re
 
 OWNERSHIP = ("owned", "leased")
 BUSINESS_MODES = ("auto_paid_hours", "leased_100", "personal_windows")
-DEP_METHODS = ("straight_line", "section179", "macrs5")
+DEP_METHODS = ("macrs5", "macrs_150db", "ads", "straight_line", "section179", "de_minimis", "manual")
+CLASSES = ("3-year", "5-year", "7-year")
+CONVENTIONS = ("half_year", "mid_quarter")
 ID_RE = re.compile(r"[a-z0-9][a-z0-9_-]{0,31}")
 
 
@@ -80,17 +82,12 @@ def validate_machine(m):
         if not _date_ok(m.get("lease_start")):
             errors["lease_start"] = "lease_start must be a valid date like YYYY-MM-DD"
 
-    # class: when not None, must equal "5-year"
     cl = m.get("class")
-    if cl is not None:
-        if cl != "5-year":
-            errors["class"] = "class must be \"5-year\""
-
-    # convention: when not None, must equal "half_year"
+    if cl is not None and cl not in CLASSES:
+        errors["class"] = "class must be one of: " + ", ".join(CLASSES)
     conv = m.get("convention")
-    if conv is not None:
-        if conv != "half_year":
-            errors["convention"] = "convention must be \"half_year\""
+    if conv is not None and conv not in CONVENTIONS:
+        errors["convention"] = "convention must be half_year or mid_quarter"
 
     # section179_cents and bonus_bp: when not None, must be int (bool excluded) >= 0;
     #   bonus_bp must also be <= 10000
@@ -144,4 +141,73 @@ def validate_machine(m):
         elif w <= 0 or w > 5000:
             errors["watts"] = "watts must be between 1 and 5000"
 
+    _depreciation_options(m, errors, ins if _date_ok(ins) else None)
     return errors
+
+
+def _nonneg_int(v):
+    return isinstance(v, int) and not isinstance(v, bool) and v >= 0
+
+
+def _year_cents_ok(v):
+    return isinstance(v, dict) and all(re.fullmatch(r"\d{4}", str(k)) and _nonneg_int(x) for k, x in v.items())
+
+
+def _depreciation_options(m, errors, ins):
+    """Checks for the optional depreciation fields: life, salvage, disposal, manual schedule and the state book."""
+    lm = m.get("life_months")
+    if lm is not None and not (_nonneg_int(lm) and 0 < lm <= 600):
+        errors["life_months"] = "life_months must be a whole number of months from 1 to 600"
+    sv = m.get("salvage_cents")
+    if sv is not None:
+        if not _nonneg_int(sv):
+            errors["salvage_cents"] = "salvage_cents must be a non-negative integer"
+        elif _cents_ok(m.get("purchase_cents")) and sv > m["purchase_cents"]:
+            errors["salvage_cents"] = "salvage_cents cannot be more than the purchase price"
+    d = m.get("disposed_on")
+    if d is not None:
+        if not _date_ok(d):
+            errors["disposed_on"] = "disposed_on must be a valid date like YYYY-MM-DD"
+        elif ins and d < ins:
+            errors["disposed_on"] = "disposed_on cannot be before in_service"
+    dp = m.get("disposal_price_cents")
+    if dp is not None and not _nonneg_int(dp):
+        errors["disposal_price_cents"] = "disposal_price_cents must be a non-negative integer"
+    ms = m.get("manual_schedule_cents")
+    if ms is not None and not _year_cents_ok(ms):
+        errors["manual_schedule_cents"] = "manual_schedule_cents must map 4-digit years to non-negative integer cents"
+    if m.get("depreciation_method") == "manual" and not ms:
+        errors["manual_schedule_cents"] = "a manual schedule needs at least one year"
+    if m.get("depreciation_method") == "de_minimis" and _cents_ok(m.get("purchase_cents")) and m["purchase_cents"] > 250000:
+        errors["depreciation_method"] = "the de minimis safe harbor is limited to $2,500 per item"
+    st = m.get("state")
+    if st is not None:
+        bad = []
+        if not isinstance(st, dict):
+            bad.append("must be an object")
+        else:
+            unknown = sorted(set(st) - {"name", "method", "convention", "class", "section179_cents", "bonus_bp", "life_months",
+                                         "salvage_cents", "manual_schedule_cents"})
+            if unknown:
+                bad.append("unknown fields " + ", ".join(unknown))
+            if "name" in st and not (isinstance(st["name"], str) and 0 < len(st["name"].strip()) <= 40):
+                bad.append("name must be 1-40 characters")
+            if "method" in st and st["method"] not in DEP_METHODS:
+                bad.append("method must be one of the allowed methods")
+            if "convention" in st and st["convention"] not in CONVENTIONS:
+                bad.append("convention must be half_year or mid_quarter")
+            if "class" in st and st["class"] not in CLASSES:
+                bad.append("class must be one of " + ", ".join(CLASSES))
+            for k in ("section179_cents", "salvage_cents"):
+                if k in st and not _nonneg_int(st[k]):
+                    bad.append(k + " must be a non-negative integer")
+            if "bonus_bp" in st and not (_nonneg_int(st["bonus_bp"]) and st["bonus_bp"] <= 10000):
+                bad.append("bonus_bp must be 0-10000")
+            if "life_months" in st and not (_nonneg_int(st["life_months"]) and 0 < st["life_months"] <= 600):
+                bad.append("life_months must be 1-600")
+            if "manual_schedule_cents" in st and not _year_cents_ok(st["manual_schedule_cents"]):
+                bad.append("manual_schedule_cents must map years to cents")
+            if st.get("method") == "manual" and not st.get("manual_schedule_cents"):
+                bad.append("a manual state schedule needs at least one year")
+        if bad:
+            errors["state"] = "state: " + "; ".join(bad)

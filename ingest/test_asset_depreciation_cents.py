@@ -45,6 +45,6 @@ def test_bonus_applies_to_what_section179_left():
 
 
 def test_bad_records_raise_value_error():
-    for bad in (asset(method="bogus"), asset(convention="mid_quarter"), asset(**{"class": "7-year"}), asset(bonus_bp=10001)):
+    for bad in (asset(method="bogus"), asset(convention="monthly"), asset(**{"class": "40-year"}), asset(bonus_bp=10001)):
         with pytest.raises(ValueError):
             D.asset_depreciation_cents(bad, "2026-01-01", "2026-12-31")
