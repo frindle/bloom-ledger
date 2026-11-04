@@ -10,24 +10,41 @@ import bloom_accounting_depr as DP
 import bloom_accounting_entries as AE
 import bloom_accounting_fixed as FX
 import bloom_accounting_report as RP
+import bloom_accounting_schedule as SC
 import bloom_accounting_writeoff as WO
 import bloom_accounting_tax as TX
 
 LINES = (("1", "Gross receipts (Darkbloom pay)"), ("6", "Other income"), ("13", "Depreciation (Form 4562)"), ("16b", "Interest (machine loan)"),
          ("18", "Office expense (software)"), ("20a", "Rent or lease of equipment"), ("22", "Supplies"),
          ("25", "Utilities (metered electricity, internet)"), ("27a", "Other expenses"))
-METHOD_LABEL = {"macrs5": "5-year MACRS, half-year", "straight_line": "Straight line", "section179": "Section 179"}
+METHOD_LABEL = {"macrs5": "5-year MACRS, half-year", "straight_line": "Straight line", "section179": "Section 179",
+                "macrs_150db": "MACRS 150% declining balance", "ads": "ADS straight line", "de_minimis": "De minimis safe harbor",
+                "manual": "Your schedule (entered)"}
+CONVENTION_LABEL = {"half_year": "half-year", "mid_quarter": "mid-quarter"}
+
+
+def method_label(asset):
+    """Readable method for an asset record, e.g. "MACRS 200% declining balance, 7-year, mid-quarter"."""
+    m = asset.get("method", "macrs5")
+    if m in ("macrs5", "macrs_150db"):
+        return "MACRS %s declining balance, %s, %s" % ("200%" if m == "macrs5" else "150%", asset.get("class", "5-year"),
+                                                        CONVENTION_LABEL.get(asset.get("convention", "half_year")))
+    if m == "ads":
+        return "ADS straight line, %d years, %s" % ((asset.get("life_months") or 60) // 12, CONVENTION_LABEL.get(asset.get("convention", "half_year")))
+    if m == "straight_line":
+        return "Straight line, %d months" % (asset.get("life_months") or 60)
+    return METHOD_LABEL.get(m, m)
 CATEGORY_LINE = {"hardware": "13", "software": "18", "supplies": "22", "electricity": "25", "internet": "25", "interest": "16b", "other": "27a"}
 DISCLAIMER = "Bookkeeping, not tax advice. Line numbers are suggestions for your tax preparer."
 
 # Page shell; packet_html fills the %-slots in order: year, year, prepared, disclaimer, lines rows, use paragraph, year,
-# asset rows, entry rows, to-confirm list. Every slot value must already be escaped.
+# asset rows, per-machine schedules, entry rows, to-confirm list. Every slot value must already be escaped.
 TEMPLATE = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Tax packet %d</title>
 <style>
 body { font: 11pt/1.45 Georgia, "Times New Roman", serif; color: #1a1a1a; max-width: 54rem; margin: 2rem auto; padding: 0 1rem; }
-h1 { font-size: 1.6rem; margin: 0; } h2 { font-size: 1.1rem; margin: 1.8rem 0 .4rem; border-bottom: 1px solid #999; }
+h1 { font-size: 1.6rem; margin: 0; } h3 { font-size: 1rem; margin: 1.1rem 0 .3rem; } h2 { font-size: 1.1rem; margin: 1.8rem 0 .4rem; border-bottom: 1px solid #999; }
 table { border-collapse: collapse; width: 100%%; font-size: 10pt; } th, td { padding: .2rem .45rem; text-align: left; vertical-align: top; }
 th { border-bottom: 1px solid #666; } td.num, th.num { text-align: right; white-space: nowrap; } td.d { white-space: nowrap; } tr.total td { border-top: 1px solid #666; font-weight: bold; }
 .meta { color: #555; } @media print { body { margin: 0; max-width: none; } h2 { break-after: avoid; } tr { break-inside: avoid; } }
@@ -41,6 +58,7 @@ th { border-bottom: 1px solid #666; } td.num, th.num { text-align: right; white-
 %s
 <h2>Depreciation schedule</h2>
 <table><thead><tr><th>Bought</th><th>Vendor</th><th>In service</th><th>Method</th><th class="num">Basis</th><th class="num">%d depreciation</th></tr></thead><tbody>%s</tbody></table>
+%s
 <h2>Income and expense entries</h2>
 <table><thead><tr><th>Date</th><th>Vendor</th><th>Purpose</th><th>Category</th><th>Line</th><th class="num">Amount</th><th class="num">Business</th><th class="num">Counts</th><th>Receipt</th></tr></thead><tbody>%s</tbody></table>
 <h2>To confirm with your preparer</h2>
@@ -113,6 +131,53 @@ def asset_rows(settings, entries, year, through):
     return out
 
 
+def machine_assets(settings, entries):
+    """[(machine record, asset record)] for the owned machine records in settings that have a basis."""
+    out = []
+    for m in settings.get("machines") or []:
+        if m.get("ownership") != "owned":
+            continue
+        basis = FX.machine_basis_cents(m, entries, settings.get("entry_machine_links"))
+        if basis is not None:
+            out.append((m, FX.machine_asset(m, basis)))
+    return out
+
+
+def machine_asset_rows(pairs, year, through):
+    """asset_rows-shaped rows for machine records: one per machine placed in service by Dec 31 of `year`."""
+    start, end = "%d-01-01" % year, "%d-12-31" % year
+    stop = min(end, through)
+    return [{"id": m["id"], "date": a["placed_in_service"], "vendor": m.get("display_name", m["id"]), "purpose": m.get("processor"),
+             "basis_cents": a["basis_cents"], "placed_in_service": a["placed_in_service"], "method": a["method"],
+             "method_label": method_label(a), "year_cents": 0 if stop < start else DP.asset_depreciation_cents(a, start, stop)}
+            for m, a in pairs if a["placed_in_service"] <= end]
+
+
+def machine_schedules(pairs, year, default_bp=None):
+    """Per-machine year-by-year schedules through `year`, federal and (when recorded) state, plus preparer notes.
+
+    Returns (schedules, notes): schedules are {"id", "name", "method_label", "years", "state": None or {"name",
+    "method_label", "years"}, "disposal"}; notes are plain-language strings (bonus, recapture, disposal, mid-quarter)."""
+    out, notes = [], []
+    for m, a in pairs:
+        if a["placed_in_service"] > "%d-12-31" % year:
+            continue
+        name = m.get("display_name", m["id"])
+        st = SC.state_asset(a)
+        out.append({"id": m["id"], "name": name, "method_label": method_label(a),
+                    "years": SC.asset_schedule(a, default_bp, year)["years"],
+                    "state": None if st is None else {"name": a["state"].get("name", "State"), "method_label": method_label(st),
+                                                      "years": SC.asset_schedule(st, default_bp, year)["years"]},
+                    "disposal": SC.disposal(a) if (a.get("disposed_on") or "9999")[:4] <= str(year) else None})
+        notes += SC.asset_flags(a, default_bp, name)
+    mq = SC.mid_quarter_test([a for _, a in pairs], year)
+    if mq["required"] and any(a.get("convention", "half_year") != "mid_quarter" for _, a in pairs
+                              if a["placed_in_service"][:4] == str(year)):
+        notes.append("%d.%02d%% of %d's depreciable purchases were placed in service in October-December, over 40%%: the "
+                     "mid-quarter convention applies to that year's property" % (mq["q4_bp"] // 100, mq["q4_bp"] % 100, year))
+    return out, notes
+
+
 def packet_data(db, year, today=None):
     """The packet for calendar `year` as a dict; `today` (YYYY-MM-DD, default the real date) is the prepared date.
 
@@ -129,9 +194,13 @@ def packet_data(db, year, today=None):
     start, end = "%d-01-01" % year, "%d-12-31" % year
     rows = [entry_row(e, bp.get(e["date"][:7])) for e in AE.current_entries(db, start, end)]
     use = RP.totals(RP.day_rows(db, settings["local_timezone"], start, end, None, settings))
+    everything = AE.current_entries(db)
+    pairs = machine_assets(settings, everything)
+    schedules, notes = machine_schedules(pairs, year)
     return {"year": year, "prepared": today, "lines": packet_lines(report["totals"], rows),
             "expenses_micro": report["totals"]["expenses_micro"], "net_micro": report["totals"]["net_micro"], "entries": rows,
-            "assets": asset_rows(settings, AE.current_entries(db), year, today),
+            "assets": machine_asset_rows(pairs, year, today) if pairs else asset_rows(settings, everything, year, today),
+            "schedules": schedules, "dep_notes": notes,
             "use": {"business_bp": WO.share_bp(WO.rules(settings), use["business_bp"]), "minutes": use["minutes"], "kwh": use["kwh"]},
             "flags": eff["flags"], "disclaimer": DISCLAIMER}
 
@@ -160,7 +229,7 @@ def packet_html(data):
     use = "<p>Business use: <strong>%s</strong> of %s metered minutes (%s kWh).</p>" % (
         share, "{:,}".format(u["minutes"]), html.escape(str(u["kwh"])))
     assets = "".join("<tr>%s%s%s%s%s%s</tr>" % (
-        td(a["date"], "d"), td(a["vendor"]), td(a["placed_in_service"], "d"), td(METHOD_LABEL.get(a["method"], a["method"])),
+        td(a["date"], "d"), td(a["vendor"]), td(a["placed_in_service"], "d"), td(a.get("method_label") or METHOD_LABEL.get(a["method"], a["method"])),
         td(cents_money(a["basis_cents"]), "num"), td(cents_money(a["year_cents"]), "num"))
         for a in data["assets"]) or '<tr><td colspan="6">No hardware entries</td></tr>'
     line13 = next((l["micro"] for l in data["lines"] if l["line"] == "13"), None)
@@ -171,8 +240,33 @@ def packet_html(data):
         td(cents_money(r["amount_cents"]), "num"), td("%d%%" % r["business_pct"], "num"),
         td("depreciated" if r["deduct_micro"] is None else money(r["deduct_micro"]), "num"),
         td(r["receipt"] or "missing")) for r in data["entries"]) or '<tr><td colspan="9">No entries</td></tr>'
+    sched = "".join(schedule_html(sc) for sc in data.get("schedules") or [])
     todo = ["<li>%s</li>" % html.escape(f["reason"]) for f in data["flags"]]
+    todo += ["<li>%s</li>" % html.escape(n) for n in data.get("dep_notes") or []]
     todo += ["<li>Entry %d (%s): add %s</li>" % (r["id"], html.escape(r["date"]), html.escape(", ".join(r["needs"])))
              for r in data["entries"] if r["needs"]]
     todo_html = "<ul>%s</ul>" % "".join(todo) if todo else "<p>Nothing to confirm.</p>"
-    return TEMPLATE % (y, y, html.escape(data["prepared"]), html.escape(data["disclaimer"]), lines, use, y, assets, ents, todo_html)
+    return TEMPLATE % (y, y, html.escape(data["prepared"]), html.escape(data["disclaimer"]), lines, use, y, assets, sched, ents, todo_html)
+
+
+def schedule_table(years):
+    """Rows of one year-by-year schedule as an HTML table (escaped)."""
+    rows = "".join("<tr>%s%s%s%s%s</tr>" % (td(r["year"]), td(cents_money(r["depreciation_cents"]), "num"),
+                                            td("%d%%" % (r["business_bp"] // 100), "num"), td(cents_money(r["business_cents"]), "num"),
+                                            td(cents_money(r["remaining_basis_cents"]), "num")) for r in years)
+    return ('<table><thead><tr><th>Year</th><th class="num">Depreciation</th><th class="num">Business use</th>'
+            '<th class="num">Business part</th><th class="num">Remaining basis</th></tr></thead><tbody>%s</tbody></table>' % rows)
+
+
+def schedule_html(sc):
+    """One machine's year-by-year section: federal schedule, the state schedule when recorded, and any disposal."""
+    out = "<h3>%s: %s</h3>%s" % (html.escape(sc["name"]), html.escape(sc["method_label"]), schedule_table(sc["years"]))
+    if sc.get("state"):
+        out += "<h3>%s, %s: %s</h3>%s" % (html.escape(sc["name"]), html.escape(sc["state"]["name"]),
+                                         html.escape(sc["state"]["method_label"]), schedule_table(sc["state"]["years"]))
+    d = sc.get("disposal")
+    if d:
+        out += "<p>Disposed of %s for %s. Adjusted basis %s; %s %s, of which %s is depreciation recapture.</p>" % (
+            html.escape(d["date"]), cents_money(d["price_cents"]), cents_money(d["adjusted_basis_cents"]),
+            "gain" if d["gain_cents"] >= 0 else "loss", cents_money(abs(d["gain_cents"])), cents_money(d["recapture_1245_cents"]))
+    return out
