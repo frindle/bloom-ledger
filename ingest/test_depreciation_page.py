@@ -34,11 +34,12 @@ def test_data_has_schedules_state_and_keeps_leased():
 
 
 def test_seed_from_profiles_when_no_records():
-    prof = {"mini": {"display_name": "Mini", "model": "M4", "acquisition": "owned", "in_service": "2026-11-20",
+    prof = {"mini": {"display_name": "Mini", "model": "M4", "acquisition": "purchased", "in_service": "2026-11-20",
                      "purchase_cents": 60000}, "rent": {"acquisition": "leased"}}
     out = DPG.depreciation_data(db(), prof, "2026-11-03")
     assert out["seeded"] is True and [m["id"] for m in out["machines"]] == ["mini"]
     assert out["effective_from"] == "2026-11-20" and out["mid_quarter"][0]["required"] is True
+    assert "Not recorded" in DPG.page() and "Prefilled" not in DPG.page()
     legacy = DPG.seed_machines({"m4_in_service_date": "2025-06-01", "dep_method": "straight_line"}, {})
     assert legacy[0]["in_service"] == "2025-06-01" and legacy[0]["depreciation_method"] == "straight_line"
 

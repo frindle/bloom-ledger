@@ -24,7 +24,7 @@ def seed_machines(settings, profiles):
     purchase price and in-service date, else from the legacy M4 depreciation settings. Nothing is saved until the user saves."""
     out = []
     for mid, p in sorted((profiles or {}).items()):
-        if p.get("acquisition") == "owned" and p.get("purchase_cents") and p.get("in_service"):
+        if p.get("acquisition") in ("purchased", "owned") and p.get("purchase_cents") and p.get("in_service"):
             out.append({"id": mid, "display_name": p.get("display_name") or mid, "processor": p.get("model") or mid,
                         "ownership": "owned", "in_service": p["in_service"], "business_mode": "auto_paid_hours",
                         "purchase_cents": p["purchase_cents"], "depreciation_method": "macrs5"})
@@ -167,14 +167,14 @@ function scheduleTable(sc) {
 function machineCard(m, a) {
   var form = el("div", {"class": "grid"});
   var bonusHint = a && a.bonus_in_force_bp != null ? "Rate in force for this date: " + a.bonus_in_force_bp / 100 + "%. 0 elects out." : "0 elects out.";
-  var bonus = m.bonus_bp != null ? m.bonus_bp : (a ? a.bonus_in_force_bp : null);
+  var bonus = m.bonus_bp;
   form.appendChild(field("Method", select("depreciation_method", METHODS, m.depreciation_method || "macrs5")));
   form.appendChild(field("Recovery class", select("class", CLASSES, m["class"], "5-year (default)")));
   form.appendChild(field("Convention", select("convention", [["half_year","Half-year"],["mid_quarter","Mid-quarter"]], m.convention, "Half-year (default)")));
   form.appendChild(field("Placed in service", input("in_service", m.in_service, {pattern: "\\d{4}-\\d{2}-\\d{2}", required: ""})));
   form.appendChild(field("Purchase price ($)", input("purchase_cents", dollarsIn(m.purchase_cents), {inputmode: "decimal"}), "Hardware cost entries override this."));
   form.appendChild(field("Section 179 ($)", input("section179_cents", dollarsIn(m.section179_cents), {inputmode: "decimal"}), "Partial amounts allowed."));
-  form.appendChild(field("Bonus (%)", input("bonus_bp", pctIn(bonus), {inputmode: "decimal"}), bonusHint + (m.bonus_bp == null ? " Prefilled, not yet recorded: the schedule below uses 0% until you save." : "")));
+  form.appendChild(field("Bonus (%)", input("bonus_bp", pctIn(bonus), {inputmode: "decimal", placeholder: a && a.bonus_in_force_bp != null ? "e.g. " + a.bonus_in_force_bp / 100 : ""}), bonusHint + (m.bonus_bp == null ? " Not recorded: the schedule uses 0% until you enter one." : "")));
   form.appendChild(field("Life (months)", input("life_months", m.life_months, {inputmode: "numeric"}), "Straight line and ADS."));
   form.appendChild(field("Salvage value ($)", input("salvage_cents", dollarsIn(m.salvage_cents), {inputmode: "decimal"}), "Straight line only; a book figure."));
   form.appendChild(field("Sold or retired on", input("disposed_on", m.disposed_on, {pattern: "\\d{4}-\\d{2}-\\d{2}", placeholder: "YYYY-MM-DD"})));
