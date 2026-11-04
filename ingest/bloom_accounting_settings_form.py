@@ -80,6 +80,7 @@ def settings_form_page():
 <style>body { font-family: system-ui, sans-serif; margin: 1.5rem; } label { display: inline-block; min-width: 18rem; } textarea { width: 30rem; height: 5rem; }</style>
 </head><body>
 <h1>Accounting settings</h1>
+<p><a href="/settings/depreciation">Edit depreciation per machine</a></p>
 <p><strong>Bookkeeping, not tax advice.</strong> Confirm with CPA: depreciation method, elections and business-use figures.</p>
 <form id="acct-form">
 <p><label for="effective-from">Effective from (YYYY-MM-DD)</label> <input id="effective-from" required></p>

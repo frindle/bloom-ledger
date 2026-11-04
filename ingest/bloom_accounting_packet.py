@@ -196,12 +196,13 @@ def packet_data(db, year, today=None):
     use = RP.totals(RP.day_rows(db, settings["local_timezone"], start, end, None, settings))
     everything = AE.current_entries(db)
     pairs = machine_assets(settings, everything)
-    schedules, notes = machine_schedules(pairs, year)
+    share = WO.share_bp(WO.rules(settings), use["business_bp"])
+    schedules, notes = machine_schedules(pairs, year, None if share is None else {year: share})
     return {"year": year, "prepared": today, "lines": packet_lines(report["totals"], rows),
             "expenses_micro": report["totals"]["expenses_micro"], "net_micro": report["totals"]["net_micro"], "entries": rows,
             "assets": machine_asset_rows(pairs, year, today) if pairs else asset_rows(settings, everything, year, today),
             "schedules": schedules, "dep_notes": notes,
-            "use": {"business_bp": WO.share_bp(WO.rules(settings), use["business_bp"]), "minutes": use["minutes"], "kwh": use["kwh"]},
+            "use": {"business_bp": share, "minutes": use["minutes"], "kwh": use["kwh"]},
             "flags": eff["flags"], "disclaimer": DISCLAIMER}
 
 
@@ -252,7 +253,8 @@ def packet_html(data):
 def schedule_table(years):
     """Rows of one year-by-year schedule as an HTML table (escaped)."""
     rows = "".join("<tr>%s%s%s%s%s</tr>" % (td(r["year"]), td(cents_money(r["depreciation_cents"]), "num"),
-                                            td("%d%%" % (r["business_bp"] // 100), "num"), td(cents_money(r["business_cents"]), "num"),
+                                            td("measured" if r["business_bp"] is None else "%d.%02d%%" % (r["business_bp"] // 100, r["business_bp"] % 100), "num"),
+                                            td("" if r["business_cents"] is None else cents_money(r["business_cents"]), "num"),
                                             td(cents_money(r["remaining_basis_cents"]), "num")) for r in years)
     return ('<table><thead><tr><th>Year</th><th class="num">Depreciation</th><th class="num">Business use</th>'
             '<th class="num">Business part</th><th class="num">Remaining basis</th></tr></thead><tbody>%s</tbody></table>' % rows)

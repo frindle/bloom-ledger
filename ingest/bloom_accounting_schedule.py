@@ -38,13 +38,21 @@ def state_asset(asset):
     return out
 
 
-def _year_bp(asset, year, default_bp):
-    return (asset.get("business_use_bp") or {}).get(str(year), 10000 if default_bp is None else default_bp)
+def _year_bp(asset, year, default_bp, missing=10000):
+    """Business share (bp) recorded for `year`, else default_bp (an int, or a {year: bp} dict), else `missing`."""
+    rec = (asset.get("business_use_bp") or {}).get(str(year))
+    if rec is not None:
+        return rec
+    if isinstance(default_bp, dict):
+        default_bp = default_bp.get(year, default_bp.get(str(year)))
+    return missing if default_bp is None else default_bp
 
 
 def asset_schedule(asset, default_bp=None, through_year=None):
     """{"years": [{"year", "depreciation_cents", "business_bp", "business_cents", "remaining_basis_cents"}], "total_cents"}.
 
+    business_bp is the year's recorded share, else default_bp (int or {year: bp}); None (and business_cents None) when
+    neither gives one, meaning the measured share applies.
     One row per calendar year from the in-service year until the basis is used up, the asset is disposed of, or
     through_year; remaining_basis_cents is the gross basis less all depreciation to the end of that year."""
     basis, y0 = asset["basis_cents"], int(asset["placed_in_service"][:4])
@@ -56,8 +64,9 @@ def asset_schedule(asset, default_bp=None, through_year=None):
     for y in range(y0, stop + 1):
         amt = DP.asset_depreciation_cents(asset, "%d-01-01" % y, "%d-12-31" % y)
         cum += amt
-        bp = _year_bp(asset, y, default_bp)
-        rows.append({"year": y, "depreciation_cents": amt, "business_bp": bp, "business_cents": DP.business_cents(amt, bp),
+        bp = _year_bp(asset, y, default_bp, None)
+        rows.append({"year": y, "depreciation_cents": amt, "business_bp": bp,
+                     "business_cents": None if bp is None else DP.business_cents(amt, bp),
                      "remaining_basis_cents": basis - cum})
         if cum >= full and not asset.get("disposed_on") and through_year is None:
             break

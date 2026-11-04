@@ -36,6 +36,7 @@ import bloom_accounting_report as RP  # noqa: E402
 import bloom_accounting_summary as AS  # noqa: E402
 import bloom_accounting_tax as AT  # noqa: E402
 import bloom_accounting_settings_form as SF  # noqa: E402
+import bloom_accounting_deprpage as DPG  # noqa: E402
 import bloom_accounting_config as ACF  # noqa: E402
 import urllib.parse  # noqa: E402
 from zoneinfo import ZoneInfo  # noqa: E402
@@ -153,6 +154,12 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
             self.wfile.write(data)
+        elif self.path == "/settings/depreciation":
+            self.send_bytes("text/html; charset=utf-8", DPG.page().encode())
+        elif self.path == "/v1/accounting/depreciation":
+            import bloom_machine_profiles as MP
+            with DB_LOCK:
+                self.reply(200, DPG.depreciation_data(self.server.db, MP.list_profiles(self.server.db)))
         elif self.path == "/v1/hello":
             self.reply(200, {"service": "bloom-ledger", "server_id": PA.server_id(ROOT), "client_version": PA.client_version()})
         elif self.path == "/install.sh":
@@ -270,7 +277,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.reply(411, {"error": "length required"})
                 return
             rid = RC.entry_id_from_path(self.path)
-            if n > (RC.MAX_BYTES if rid else 4096):
+            if n > (RC.MAX_BYTES if rid else 65536 if self.path == "/v1/accounting/settings" else 4096):  # machine lists pass 4 KB
                 self.reply(413, {"error": "too large"})
                 self.close_connection = True
                 return
