@@ -17,7 +17,9 @@ PROVIDERS_URL = "https://api.darkbloom.dev/v1/me/providers"
 SANDBOX_HOSTS_URL = "https://console.darkbloom.dev/api/sandbox/hosts"
 CACHE_S = 20
 REJECTED_CACHE_S = 3600
-STALE_S = 180
+# The Mac spools power minutes every 15 min (bloom-archive) and ships them within a minute, so the newest
+# minute is normally up to ~16 min old. Stale = a full cycle plus slack has passed with nothing new.
+STALE_S = 1200
 _cache = {}
 
 
@@ -143,7 +145,7 @@ def sandbox_view(j):
 
 
 def mac_view(db, now):
-    """Newest power minute per machine, as the Mac reported it (about once a minute)."""
+    """Newest power minute per machine, as the Mac reported it (in 15-minute batches)."""
     rows = db.execute("SELECT p.machine_id, p.ts, p.wh, p.interval_s, p.dbk_state, p.sandbox_jobs"
                       " FROM power_minutes p JOIN (SELECT machine_id, MAX(ts) AS ts FROM power_minutes GROUP BY machine_id) n"
                       " ON p.machine_id = n.machine_id AND p.ts = n.ts ORDER BY p.machine_id").fetchall()

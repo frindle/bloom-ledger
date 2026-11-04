@@ -88,7 +88,8 @@ def test_live_summarises_darkbloom_sandbox_and_power(tmp_path):
 
 
 def test_live_without_key_or_with_failures(tmp_path):
-    res = LV.live(tmp_path, LV.mac_view(db_with([("m", 0, 1.0, 60, None, 0)]), 500), 500, fake_get({}))
+    res = LV.live(tmp_path, LV.mac_view(db_with([("m", 0, 1.0, 60, None, 0)]), 2000), 2000, fake_get({}))
+    assert LV.mac_view(db_with([("m", 0, 1.0, 60, None, 0)]), 960)[0]["stale"] is False  # one 15-min batch late is normal
     assert res["darkbloom"] == {"error": "no API key saved"} and res["mac"][0]["stale"] is True
     Path(LV.key_path(tmp_path)).parent.mkdir(parents=True)
     Path(LV.key_path(tmp_path)).write_text(KEY)
