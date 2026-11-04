@@ -278,7 +278,7 @@ def script_js():
     const note = $("data-note");
     if (!box) return;
     if (!t.net_minutes) {
-      box.replaceChildren(el("p", "Data not measured for this period.", "meta"));
+      box.replaceChildren(el("p", "Not measured: the Mac sent no network counts for this period, so this is unknown, not zero.", "meta"));
       if (note) note.textContent = "";
       return;
     }
@@ -310,7 +310,7 @@ def script_js():
     const marginKnown = costKnown;
     sumDl.appendChild(sumLine("Darkbloom GPU margin", marginKnown ? usdFine(gpu - gpuCost) : null));
     sumDl.appendChild(sumLine("Sandbox margin", marginKnown ? usdFine(sbx - sbxCost) : null));
-    sumDl.appendChild(sumLine("Power while idle or doing your own work (not deducted)", marginKnown ? usdFine(-(t.cost_micro - gpuCost - sbxCost)) : null));
+    sumDl.appendChild(sumLine("Power while idle or doing your own work (not deducted)", marginKnown ? usdFine(Math.max(0, t.cost_micro - gpuCost - sbxCost)) : null));
     sumDl.appendChild(sumLine("Lease", usd(-(s.lease_cents || 0) * 10000)));
     if (s.depreciation_business_cents === null) {
       sumDl.appendChild(sumLine("Depreciation (business share)", null));
@@ -712,7 +712,7 @@ def style_block():
         '  .stream h3 { color: var(--gpu); } .stream.s-sandbox h3 { color: var(--sandbox); }\n'
         '  dl.sum { margin: 0; font-variant-numeric: tabular-nums; }\n'
         '  dl.sum .line { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; padding: .2rem 0; }\n'
-        '  dl.sum dt { color: var(--muted); } dl.sum dd { margin: 0; font-size: 1.15rem; text-align: right; }\n'
+        '  dl.sum dt { color: var(--muted); } dl.sum dd { margin: 0; font-size: 1.15rem; text-align: right; white-space: nowrap; }\n'
         '  dl.sum .total { margin-top: .35rem; padding-top: .45rem; border-top: 1px solid var(--ink); }\n'
         '  dl.sum .total dt { color: var(--ink); }\n'
         '  dl.sum .total dd { font-size: 2rem; line-height: 1.1; font-weight: 600; border-bottom: 4px double var(--ink); padding-bottom: .1rem; }\n'

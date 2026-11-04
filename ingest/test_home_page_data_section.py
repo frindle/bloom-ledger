@@ -24,4 +24,4 @@ def test_tiles_show_in_and_out(tmp_path):
 def test_unmeasured_period(tmp_path):
     out = run(tmp_path, dict(SUM, totals=dict(TOT, net_minutes=0)))
     arts, box = tiles(out["dom"])
-    assert arts == [] and "Data not measured" in box["text"], box["text"]
+    assert arts == [] and "Not measured" in box["text"], box["text"]

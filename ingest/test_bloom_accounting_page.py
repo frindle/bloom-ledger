@@ -50,7 +50,7 @@ def test_stream_power_shows_sub_cent_cost(tmp_path):
 def test_summary_reconciles_margins_to_net(tmp_path):
     s = find(run(tmp_path, SUM)["dom"], "summary")
     assert [n["text"] for n in tags(s, "dt")] == LABELS
-    assert [n["text"] for n in tags(s, "dd")] == ["$1.18", "$3.07", "−$0.03", "$0.00", "−$1.29", "$2.92"]
+    assert [n["text"] for n in tags(s, "dd")] == ["$1.18", "$3.07", "$0.03", "$0.00", "−$1.29", "$2.92"]
     total = [n for n in walk(s) if "total" in n["class"].split()]
     assert len(total) == 1 and "Net" in total[0]["text"]
     meta = [n for n in s["children"] if n["tag"] == "p"]
