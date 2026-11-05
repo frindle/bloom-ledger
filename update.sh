@@ -22,12 +22,13 @@ fi
 # so an existing .env (e.g. with the Cloudflare Access settings) keeps its values.
 if [ -d /mnt/user ]; then
   DEF_DATA=/mnt/user/data/Docker/bloom-ledger DEF_SECRETS=/mnt/user/appdata/bloom-ledger/secrets
+  DEF_KEYS=/mnt/user/appdata/bloom-ledger/keys
   DEF_EARN=/mnt/user/data/Docker/bloom-ledger/earnings DEF_UID=99 DEF_GID=100
 else
-  DEF_DATA=./data DEF_SECRETS=./secrets DEF_EARN=./data/earnings DEF_UID=$(id -u) DEF_GID=$(id -g)
+  DEF_DATA=./data DEF_SECRETS=./secrets DEF_KEYS=./data/secrets DEF_EARN=./data/earnings DEF_UID=$(id -u) DEF_GID=$(id -g)
 fi
 touch .env
-for kv in "BLOOM_DATA_DIR=$DEF_DATA" "BLOOM_SECRETS_DIR=$DEF_SECRETS" "BLOOM_EARNINGS_DIR=$DEF_EARN" \
+for kv in "BLOOM_DATA_DIR=$DEF_DATA" "BLOOM_SECRETS_DIR=$DEF_SECRETS" "BLOOM_KEYS_DIR=$DEF_KEYS" "BLOOM_EARNINGS_DIR=$DEF_EARN" \
           "BLOOM_UID=$DEF_UID" "BLOOM_GID=$DEF_GID"; do
   if ! grep -q "^${kv%%=*}=" .env; then
     [ -z "$(tail -c1 .env)" ] || echo >> .env
@@ -36,7 +37,7 @@ for kv in "BLOOM_DATA_DIR=$DEF_DATA" "BLOOM_SECRETS_DIR=$DEF_SECRETS" "BLOOM_EAR
   fi
 done
 set -a; . ./.env; set +a
-mkdir -p "${BLOOM_DATA_DIR:-./data}" "${BLOOM_SECRETS_DIR:-./secrets}"
+mkdir -p "${BLOOM_DATA_DIR:-./data}" "${BLOOM_SECRETS_DIR:-./secrets}" "${BLOOM_KEYS_DIR:-./data/secrets}"
 
 # Hard-reset to origin/main: this deploy clone has no local commits, and a
 # plain pull fails on divergent history.

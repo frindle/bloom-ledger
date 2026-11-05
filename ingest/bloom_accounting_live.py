@@ -1,7 +1,7 @@
 """Live status for the ledger page: Darkbloom serving state and Sandbox host state from Darkbloom's account API
 (with a key the owner saves in Settings), plus this ledger's newest power minute (watts, Sandbox jobs) from the Mac.
 
-The key is stored at <data>/secrets/darkbloom_api_key (mode 0600). It is never returned, logged or sent anywhere but
+The key is stored at $BLOOM_KEYS/darkbloom_api_key (default <data>/secrets; mode 0600). It is never returned, logged or sent anywhere but
 the allowlisted Darkbloom hosts over https. GET /v1/settings/darkbloom-key reports only whether it is set and what the
 last check found."""
 import hashlib
@@ -24,12 +24,17 @@ STALE_S = 1800
 _cache = {}
 
 
+def keys_dir(root):
+    """Writable folder for saved keys: $BLOOM_KEYS when set (its own mount), else <data>/secrets."""
+    return os.environ.get("BLOOM_KEYS") or os.path.join(str(root), "secrets")
+
+
 def key_path(root):
-    return os.path.join(str(root), "secrets", "darkbloom_api_key")
+    return os.path.join(keys_dir(root), "darkbloom_api_key")
 
 
 def status_path(root):
-    return os.path.join(str(root), "secrets", "darkbloom_api_key.status.json")
+    return os.path.join(keys_dir(root), "darkbloom_api_key.status.json")
 
 
 def read_key(root):
@@ -159,7 +164,7 @@ def mac_view(db, now):
 
 
 def machine_keys_path(root):
-    return os.path.join(str(root), "secrets", "darkbloom_machine_keys.json")
+    return os.path.join(keys_dir(root), "darkbloom_machine_keys.json")
 
 
 def read_machine_keys(root):

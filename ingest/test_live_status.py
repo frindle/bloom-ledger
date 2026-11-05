@@ -146,3 +146,15 @@ def test_settings_key_form_posts_and_shows_probe_without_the_key(tmp_path):
     assert D.find(res["dom"], "dbk-key")["value"] == ""
     s = D.find(res["dom"], "dbk-status")["text"]
     assert "Darkbloom status: works" in s and "Sandbox status: key not accepted" in s and KEY not in s, s
+
+
+def test_keys_dir_env_moves_saved_keys_out_of_data(tmp_path, monkeypatch):
+    data, keys = tmp_path / "data", tmp_path / "keys"
+    assert LV.key_path(data) == str(data / "secrets" / "darkbloom_api_key")
+    monkeypatch.setenv("BLOOM_KEYS", str(keys))
+    assert LV.key_path(data) == str(keys / "darkbloom_api_key")
+    assert LV.status_path(data) == str(keys / "darkbloom_api_key.status.json")
+    assert LV.machine_keys_path(data) == str(keys / "darkbloom_machine_keys.json")
+    (keys).mkdir()
+    (keys / "darkbloom_api_key").write_text(KEY + "\n")
+    assert LV.read_key(data) == KEY

@@ -1,6 +1,7 @@
 # bloom-ledger with Docker Compose. Build context is this folder. ./update.sh builds and (re)starts it.
 # Paths come from .env (update.sh writes one on first run; on Unraid it points at /mnt/user/... ):
 #   BLOOM_DATA_DIR      data (objects, ledger manifests, index.sqlite) and saved keys (default ./data) -- back this up
+#   BLOOM_KEYS_DIR      keys saved in the web UI (Darkbloom API keys; default ./data/secrets) -- writable, keep private
 #   BLOOM_SECRETS_DIR   optional legacy files: bloom_tokens, darkbloom_token  (default ./secrets)
 #   BLOOM_UID/BLOOM_GID the owner of those folders (default 99:100, Unraid's nobody:users)
 # Machines are added in the web UI (Settings > Add a machine); no secret files are needed to start.
@@ -21,8 +22,10 @@ services:
       DAILY_PUSH_HOUR: ${DAILY_PUSH_HOUR:-9}
       BLOOM_ACCESS_TEAM_DOMAIN: ${BLOOM_ACCESS_TEAM_DOMAIN:-}
       BLOOM_ACCESS_AUD: ${BLOOM_ACCESS_AUD:-}
+      BLOOM_KEYS: /keys
     volumes:
       - ${BLOOM_DATA_DIR:-./data}:/data
+      - ${BLOOM_KEYS_DIR:-./data/secrets}:/keys
       - ${BLOOM_SECRETS_DIR:-./secrets}:/run/secrets:ro
 
   # Optional: run the Darkbloom earnings archiver here instead of on a Mac. Needs <secrets>/darkbloom_token.
