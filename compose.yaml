@@ -15,6 +15,10 @@ services:
       - "${BLOOM_PORT:-8787}:8787"
     environment:
       ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}
+      # Daily earnings push (Pushover). Both empty = no push.
+      PUSHOVER_TOKEN: ${PUSHOVER_TOKEN:-}
+      PUSHOVER_USER: ${PUSHOVER_USER:-}
+      DAILY_PUSH_HOUR: ${DAILY_PUSH_HOUR:-9}
       BLOOM_ACCESS_TEAM_DOMAIN: ${BLOOM_ACCESS_TEAM_DOMAIN:-}
       BLOOM_ACCESS_AUD: ${BLOOM_ACCESS_AUD:-}
     volumes:

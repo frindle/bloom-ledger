@@ -42,6 +42,7 @@ import urllib.parse  # noqa: E402
 from zoneinfo import ZoneInfo  # noqa: E402
 import bloom_lan as LAN  # noqa: E402
 import bloom_alerts as AL  # noqa: E402
+import bloom_daily_push as DP  # noqa: E402
 import bloom_ingest as I  # noqa: E402
 import bloom_ingest_ledger as IL  # noqa: E402
 import bloom_ledger as L  # noqa: E402
@@ -53,6 +54,9 @@ TOKENS_PATH = os.environ.get("BLOOM_TOKENS", "/run/secrets/bloom_tokens")
 PORT = int(os.environ.get("BLOOM_PORT", "8787"))
 LISTEN = os.environ.get("BLOOM_LISTEN", "0.0.0.0")
 WEBHOOK = os.environ.get("ALERT_WEBHOOK_URL", "")
+PUSHOVER_TOKEN = os.environ.get("PUSHOVER_TOKEN", "")
+PUSHOVER_USER = os.environ.get("PUSHOVER_USER", "")
+DAILY_PUSH_HOUR = int(os.environ.get("DAILY_PUSH_HOUR", "9") or 9)
 DASHBOARD = Path(__file__).resolve().parent / "dashboard.html"
 MACHINES_PATH = os.environ.get("BLOOM_MACHINES", str(ROOT / "machines.json"))
 SETTINGS = Path(__file__).resolve().parent / "settings.html"
@@ -333,6 +337,12 @@ def scheduler(db, stop):
                                                  headers={"Content-Type": "application/json"}, method="POST")
                     urllib.request.urlopen(req, timeout=15).close()
                 last_alerts = keys
+            with DB_LOCK:
+                tz = ACF.effective_settings(db, "9999-12-31")["values"]["local_timezone"]
+                sent = DP.run(ROOT / "daily-push.json", dt.datetime.now(ZoneInfo(tz)), DAILY_PUSH_HOUR,
+                              lambda day, period: AS.build(db, day, period), PUSHOVER_TOKEN, PUSHOVER_USER)
+            if sent:
+                log(f"daily push sent for {sent}")
         except Exception as e:  # noqa: BLE001 - the scheduler must survive; the next tick retries
             log(f"scheduler error {type(e).__name__}: {e}")
         stop.wait(300)
