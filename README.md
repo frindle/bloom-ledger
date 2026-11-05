@@ -12,7 +12,7 @@ cd bloom-ledger
 ./update.sh
 ```
 
-`update.sh` writes a `.env` on first run (git-ignored; edit it to move things), builds the image and starts the container. On Unraid the `.env` points at `/mnt/user/data/bloom-ledger` for data and `/mnt/user/appdata/bloom-ledger/secrets` for optional secret files; elsewhere it uses `./data` and `./secrets` owned by you. Run `./update.sh` again to update. No secret files are needed to start: machines are added in the web UI.
+`update.sh` writes a `.env` on first run (git-ignored; edit it to move things), builds the image and starts the container. On Unraid the `.env` points at `/mnt/user/data/Docker/bloom-ledger` for data and `/mnt/user/appdata/bloom-ledger/secrets` for optional secret files; elsewhere it uses `./data` and `./secrets` owned by you. Run `./update.sh` again to update. No secret files are needed to start: machines are added in the web UI.
 
 Open `http://<host>:8787/`. Health check: `GET /healthz`. Keep port 8787 on your local network.
 

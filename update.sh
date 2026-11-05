@@ -21,8 +21,8 @@ fi
 # Make sure .env names this host's paths (kept across updates; edit it to move things). Only missing keys are added,
 # so an existing .env (e.g. with the Cloudflare Access settings) keeps its values.
 if [ -d /mnt/user ]; then
-  DEF_DATA=/mnt/user/data/bloom-ledger DEF_SECRETS=/mnt/user/appdata/bloom-ledger/secrets
-  DEF_EARN=/mnt/user/data/bloom-ledger/earnings DEF_UID=99 DEF_GID=100
+  DEF_DATA=/mnt/user/data/Docker/bloom-ledger DEF_SECRETS=/mnt/user/appdata/bloom-ledger/secrets
+  DEF_EARN=/mnt/user/data/Docker/bloom-ledger/earnings DEF_UID=99 DEF_GID=100
 else
   DEF_DATA=./data DEF_SECRETS=./secrets DEF_EARN=./data/earnings DEF_UID=$(id -u) DEF_GID=$(id -g)
 fi
