@@ -32,6 +32,38 @@ POWER_COLUMNS = [
 DAEMON_STAT_KEYS = ("requests_served", "tokens_generated", "prompt_tokens_processed", "cached_input_tokens",
                     "reasoning_tokens", "usage_gaps", "cancellations_partial_complete")
 DAEMON_COLUMNS = POWER_COLUMNS[POWER_COLUMNS.index("machine_id"):]
+# Network bytes and sandbox jobs (2026-11-03). The main power-log header does NOT carry these columns (bloom-ledger
+# reads them from the sidecar files below, written every minute by bridge_row), so the power-log CSV is unchanged.
+# gpu_* = Darkbloom provider service; sandbox_* = Sandbox agent + workers (carry job VM traffic); total_* = en* links.
+NET_COLUMNS = ["gpu_bytes_in", "gpu_bytes_out", "sandbox_bytes_in", "sandbox_bytes_out", "total_bytes_in", "total_bytes_out"]
+# The Darkbloom Sandbox agent's status file (rewritten by the agent about every 30 s; READ-ONLY for us).
+SANDBOX_STATUS = Path(os.environ.get("BLOOM_SANDBOX_STATUS")
+                      or "/Volumes/NVMe-Models/DarkbloomSandbox/agent/status.json")
+SANDBOX_STALE_S = 300.0        # an older status is a stopped agent's last word: its jobs_running is not counted
+SANDBOX_BRIDGE = "sandbox-jobs-{month}.csv"     # power dir: ts_utc,sandbox_jobs while the month file lacks the column
+SANDBOX_BRIDGE_COLUMNS = ["ts_utc", "sandbox_jobs"]
+# Sandbox processes are Darkbloom business, never the operator's other work: the agent and its worker helpers run from
+# DarkbloomSandbox.app; each job's VM runs in a Virtualization.framework XPC service (ppid 1, no link to the job).
+SANDBOX_PROCS = ("DarkbloomSandbox", "darkbloom-sandbox", "sandbox-linux-worker", "sandbox-macos-worker")
+VM_SERVICE = "com.apple.Virtualization.VirtualMachine"
+NET_BRIDGE = "net-bytes-{month}.csv"            # power dir: ts_utc + NET_COLUMNS while the month file lacks them
+NET_BRIDGE_COLUMNS = ["ts_utc"] + NET_COLUMNS
+BRIDGES = ((SANDBOX_BRIDGE, SANDBOX_BRIDGE_COLUMNS), (NET_BRIDGE, NET_BRIDGE_COLUMNS))
+
+# Network bytes (read-only: nettop and netstat, no root). Per-process bytes come from ONE long-running nettop in
+# delta mode (bloom-power-log.py NettopReader): each block is every process's bytes since the previous block on
+# the given interface types, flows that closed in between included. Loopback is left out (the operator's own requests to
+# the provider's 127.0.0.1:8000 are not network traffic). nettop types the Cloudflare WARP tunnel (utun*, where
+# app traffic flows while WARP is on) as "undefined" and the physical NICs as "external".
+NETTOP_CMD = ["/usr/bin/nettop", "-P", "-x", "-n", "-d", "-L", "0", "-s", "5", "-t", "external", "-t", "undefined",
+              "-J", "bytes_in,bytes_out"]
+NETSTAT_CMD = ["/usr/sbin/netstat", "-ibn"]   # -n: address-to-name lookups made -ib take 6.7 s (past the 5 s probe timeout)
+NET_NAME_MAX = 15              # nettop prints at most 15 characters of a process name ("sandbox-macos-w")
+NET_SANDBOX_NAMES = tuple(sorted({p[:NET_NAME_MAX] for p in SANDBOX_PROCS + (VM_SERVICE,)}))
+DARKBLOOM_SERVICE_CMDS = ("start", "watchdog")     # the `darkbloom <cmd>` processes that are the provider service
+NET_MAX_BPS = 5e9              # 40 Gbit/s, above any link here (en0 is 10GbE): more in a block is a glitch, counts 0
+NET_IFACE_RE = re.compile(r"^en\d+$")              # physical Ethernet/Wi-Fi: not lo0, utun* (WARP inner), bridge*, awdl0
+
 
 # the operator's own LLM work shares this Mac. Its power must NOT be attributed to Darkbloom.
 # Patterns are matched against the full command line of running processes.
@@ -247,13 +279,175 @@ def csv_columns_for(path, columns):
     return header
 
 
+# ---------------------------------------------------------------- Darkbloom Sandbox
+def read_sandbox_jobs(path, now, max_age_s=SANDBOX_STALE_S):
+    """(jobs, note) from the Darkbloom Sandbox agent's status.json (READ-ONLY: the agent rewrites it).
+    jobs is its jobs_running, or 0 when the file is missing or unreadable, the value is not a whole
+    number >= 0 (bool is not a number here), or the status is older than max_age_s (updated_at, else
+    the file's mtime): a stopped agent's last word is not a running job. note is "" except when a
+    stale status still claimed jobs. Never raises."""
+    try:
+        p = Path(path)
+        d = json.loads(p.read_text())
+        mtime = p.stat().st_mtime
+    except Exception:
+        return 0, ""
+    j = d.get("jobs_running") if isinstance(d, dict) else None
+    if isinstance(j, bool) or not isinstance(j, (int, float)) or not 0 <= j < 1e6 or int(j) != j:
+        return 0, ""
+    j = int(j)
+    at = d.get("updated_at")
+    if isinstance(at, bool) or not isinstance(at, (int, float)) or not 0 < at < 1e11:
+        at = mtime
+    if now - at > max_age_s:
+        return 0, (f"sandbox status stale ({j} jobs not counted)" if j else "")
+    return j, ""
+
+
+def bridge_row(base, row, columns=POWER_COLUMNS):
+    """Append the row's ts_utc and values to each BRIDGES file whose columns the month's power-log header predates
+    (csv_columns_for keeps such a header, so the bytes bloom_ledger's manifest covers never change):
+    sandbox-jobs-YYYY-MM.csv (ts_utc,sandbox_jobs) and net-bytes-YYYY-MM.csv (ts_utc + NET_COLUMNS).
+    -> the bridge paths written, in BRIDGES order ([] when the header has every column). Raises OSError."""
+    have = set(csv_columns_for(power_log_path(base, row["ts_utc"]), columns))
+    written = []
+    for name, cols in BRIDGES:
+        if all(c in have for c in cols[1:]):
+            continue
+        bridge = Path(base) / POWER_DIRNAME / name.format(month=month_of(row["ts_utc"]))
+        append_csv_row(bridge, cols, row)
+        written.append(bridge)
+    return written
+
+
+# ---------------------------------------------------------------- network bytes
+def parse_nettop_line(line):
+    """One line of `nettop -P -x -J bytes_in,bytes_out` CSV -> ("header", None) for a block header (it starts with
+    ","), ("row", (name, pid, bytes_in, bytes_out)) for a process row, else (None, None). A process name may hold
+    commas, dots and spaces, so a row is read from the right: name.pid,bytes_in,bytes_out, (trailing comma
+    optional). A negative count is read as 0. Never raises."""
+    s = str(line).rstrip("\r\n")
+    if s.startswith(","):
+        return "header", None
+    f = s.split(",")
+    if f and f[-1] == "":
+        f = f[:-1]
+    if len(f) < 3:
+        return None, None
+    try:
+        b_in, b_out = int(f[-2]), int(f[-1])
+    except ValueError:
+        return None, None
+    name, dot, pid = ",".join(f[:-2]).rpartition(".")
+    if not dot or not name or not pid.isdigit():
+        return None, None
+    return "row", (name, int(pid), max(b_in, 0), max(b_out, 0))
+
+
+def darkbloom_subcommand(cmd):
+    """'start' for '/…/Darkbloom.app/Contents/MacOS/darkbloom start --foreground …' ('' when there is none)."""
+    m = re.search(r"(?:^|/)darkbloom\s+([A-Za-z][\w-]*)", cmd or "")
+    return m.group(1) if m else ""
+
+
+def classify_net_proc(name, pid, cmd=None, provider_pid=None):
+    """'gpu', 'sandbox' or None (machine total only) for one nettop process row. name is nettop's (at most
+    NET_NAME_MAX characters); cmd the process's ps command line, None when unknown (it has exited).
+    sandbox: a Sandbox agent or worker helper (SANDBOX_PROCS), or the Virtualization.framework VM service.
+    gpu: a `darkbloom` process that is the provider (provider_pid, from daemon-state.json) or runs a
+    DARKBLOOM_SERVICE_CMDS subcommand (start, watchdog). A `darkbloom status` or other CLI call (the queue polls
+    status every ~10 s) is not the provider, nor is a darkbloom process that exited before ps saw it."""
+    name = str(name or "")
+    if any(name.startswith(p) for p in NET_SANDBOX_NAMES):
+        return "sandbox"
+    if name != "darkbloom":
+        return None
+    try:
+        if provider_pid is not None and int(provider_pid) == int(pid):
+            return "gpu"
+    except (TypeError, ValueError):
+        pass
+    return "gpu" if darkbloom_subcommand(cmd) in DARKBLOOM_SERVICE_CMDS else None
+
+
+def net_block_bytes(rows, dt_s, classify):
+    """Sum one nettop delta block by class -> ({"gpu": [in, out], "sandbox": [in, out]}, notes). rows are
+    parse_nettop_line tuples; classify(name, pid) -> 'gpu' | 'sandbox' | None. A row that moved more than
+    NET_MAX_BPS allows in dt_s is a counter glitch, never traffic: it counts 0 and adds a note."""
+    out = {"gpu": [0, 0], "sandbox": [0, 0]}
+    notes = []
+    try:
+        cap = NET_MAX_BPS * max(float(dt_s), 1.0)
+    except (TypeError, ValueError):
+        cap = NET_MAX_BPS
+    for name, pid, b_in, b_out in rows:
+        cls = classify(name, pid)
+        if cls not in out:
+            continue
+        if b_in > cap or b_out > cap:
+            notes.append(f"net spike dropped ({cls}: {name}.{pid})")
+            continue
+        out[cls][0] += b_in
+        out[cls][1] += b_out
+    return out, notes
+
+
+def parse_netstat_ib(text):
+    """`netstat -ibn` -> {iface: (ibytes, obytes)} for the physical interfaces (NET_IFACE_RE) from each one's
+    <Link#n> row: 64-bit link-layer counters. Columns are read from the right (an interface without a link
+    address has no Address column); a down interface's name ends in '*'. Never raises."""
+    out = {}
+    for ln in str(text or "").splitlines():
+        p = ln.split()
+        if len(p) < 9 or not p[2].startswith("<Link#"):
+            continue
+        name = p[0].rstrip("*")
+        if not NET_IFACE_RE.match(name) or name in out:
+            continue
+        try:
+            out[name] = (int(p[-5]), int(p[-2]))
+        except ValueError:
+            continue
+    return out
+
+
+def iface_bytes_delta(prev, cur, dt_s):
+    """Bytes the physical interfaces moved between two parse_netstat_ib readings dt_s apart -> (in, out, notes).
+    An interface missing from prev counts 0 (no baseline yet); one whose counter went down (reset, re-created)
+    counts 0, never a negative; one that moved more than NET_MAX_BPS allows in dt_s counts 0 with a note."""
+    t_in = t_out = 0
+    notes = []
+    try:
+        cap = NET_MAX_BPS * max(float(dt_s), 1.0)
+    except (TypeError, ValueError):
+        cap = NET_MAX_BPS
+    for name, (c_in, c_out) in sorted((cur or {}).items()):
+        if name not in (prev or {}):
+            continue
+        p_in, p_out = prev[name]
+        d_in, d_out = c_in - p_in, c_out - p_out
+        if d_in < 0 or d_out < 0:
+            continue
+        if d_in > cap or d_out > cap:
+            notes.append(f"net spike dropped (total: {name})")
+            continue
+        t_in += d_in
+        t_out += d_out
+    return t_in, t_out, notes
+
+
 # ---------------------------------------------------------------- non-Darkbloom work detection
-def detect_other_work(ps_rows, local_clients, patterns=None):
+def detect_other_work(ps_rows, local_clients, patterns=None, sandbox_vms=0):
     """ps_rows: [(pid, pcpu, command)]; local_clients: [(procname, pid)] of non-darkbloom processes
     holding an ESTABLISHED connection to Darkbloom's local endpoint (127.0.0.1:8000: the operator's own
-    requests, never network jobs). Returns sorted unique short names."""
+    requests, never network jobs). sandbox_vms: Darkbloom Sandbox jobs running now: that many busy VM_SERVICE
+    processes are the sandbox's VMs, not other work; the sandbox's own processes (SANDBOX_PROCS) never are. Returns sorted unique short names."""
     pats = [re.compile(p) for p in (patterns or OTHER_WORK_PATTERNS)]
     names = set()
+    try:
+        vms_left = max(int(sandbox_vms or 0), 0)
+    except (TypeError, ValueError):
+        vms_left = 0
     for pid, pcpu, cmd in ps_rows:
         base = os.path.basename(cmd.split(" ")[0]) if cmd else "?"
         hit = None
@@ -264,7 +458,10 @@ def detect_other_work(ps_rows, local_clients, patterns=None):
                 break
         if hit:
             names.add(hit.replace("\\", ""))
-        elif pcpu >= HEAVY_CPU_PCT and not any(x in cmd for x in IGNORE_HEAVY):
+        elif pcpu >= HEAVY_CPU_PCT and not any(x in cmd for x in IGNORE_HEAVY + SANDBOX_PROCS):
+            if vms_left and VM_SERVICE in cmd:
+                vms_left -= 1
+                continue
             names.add(f"cpu>{int(HEAVY_CPU_PCT)}%:{base}")
     for name, _pid in local_clients:
         names.add(f"local-endpoint-client:{name}")
