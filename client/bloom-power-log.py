@@ -487,10 +487,11 @@ class BoundedSandboxRead:
 
     def __init__(self, path, wait_s=SANDBOX_READ_WAIT_S, read=None, incident=None):
         self.path, self.wait_s = path, wait_s
-        self.read = read or L.read_sandbox_jobs
+        self.read = read or (L.read_sandbox_auto if path is None else L.read_sandbox_jobs)
         self.incident = incident or _incident
         self.pending = None
         self.blocked_since = None
+        self.problem = False
 
     def __call__(self, now):
         if self.pending is not None:
@@ -501,7 +502,7 @@ class BoundedSandboxRead:
 
         def run():
             try:
-                box["v"] = self.read(self.path, now)
+                box["v"] = self.read(now) if self.path is None else self.read(self.path, now)
             except Exception:  # noqa: BLE001 - read_sandbox_jobs never raises; a stand-in might
                 box["v"] = (0, "")
         t = threading.Thread(target=run, daemon=True, name="sandbox-status-read")
@@ -513,7 +514,16 @@ class BoundedSandboxRead:
         if self.blocked_since is not None:
             self.incident("path-cleared", path=str(self.path), blocked_for_s=round(now - self.blocked_since))
             self.blocked_since = None
-        return box.get("v", (0, ""))
+        v = box.get("v", (0, ""))
+        bad = bool(v[1]) and v[1].startswith(L.SANDBOX_PROBLEM_NOTE)
+        if bad != self.problem:          # once per condition per process
+            self.problem = bad
+            if bad:
+                print(f"bloom-power-log: WARNING {v[1]}", file=sys.stderr, flush=True)
+                self.incident("status-problem", detail=v[1])
+            else:
+                self.incident("status-ok")
+        return v
 
     def _blocked(self, now):
         if self.blocked_since is None:
@@ -533,7 +543,7 @@ def sample_once(win, reader, sandbox_read=None, net=None):
     up = dbk_process_up(ds.get("pid"))
     if sandbox_read is None:
         if not _SANDBOX_READ:
-            _SANDBOX_READ.append(BoundedSandboxRead(L.SANDBOX_STATUS))
+            _SANDBOX_READ.append(BoundedSandboxRead(None))
         sandbox_read = _SANDBOX_READ[0]
     sandbox = sandbox_read(now)
     try:

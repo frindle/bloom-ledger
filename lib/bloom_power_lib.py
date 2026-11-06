@@ -39,6 +39,11 @@ NET_COLUMNS = ["gpu_bytes_in", "gpu_bytes_out", "sandbox_bytes_in", "sandbox_byt
 # The Darkbloom Sandbox agent's status file (rewritten by the agent about every 30 s; READ-ONLY for us).
 SANDBOX_STATUS = Path(os.environ.get("BLOOM_SANDBOX_STATUS")
                       or "/Volumes/NVMe-Models/DarkbloomSandbox/agent/status.json")
+SANDBOX_PLIST = "~/Library/LaunchAgents/io.darkbloom.sandbox.agent.plist"
+SANDBOX_HOME_STATUS = "~/DarkbloomSandbox/agent/status.json"
+SANDBOX_LEGACY_STATUS = "/Volumes/NVMe-Models/DarkbloomSandbox/agent/status.json"
+SANDBOX_WARN_AGE_S = 900.0     # a status older than this (or no file at all) beside an installed agent is an incident
+SANDBOX_PROBLEM_NOTE = "sandbox status problem"
 SANDBOX_STALE_S = 300.0        # an older status is a stopped agent's last word: its jobs_running is not counted
 SANDBOX_BRIDGE = "sandbox-jobs-{month}.csv"     # power dir: ts_utc,sandbox_jobs while the month file lacks the column
 SANDBOX_BRIDGE_COLUMNS = ["ts_utc", "sandbox_jobs"]
@@ -280,6 +285,63 @@ def csv_columns_for(path, columns):
 
 
 # ---------------------------------------------------------------- Darkbloom Sandbox
+def sandbox_plist_status(plist=SANDBOX_PLIST):
+    """status.json beside the --config value of the Sandbox LaunchAgent's ProgramArguments (only that key is read), or None."""
+    try:
+        import plistlib
+        with open(os.path.expanduser(plist), "rb") as fh:
+            args = plistlib.load(fh).get("ProgramArguments") or []
+        for i, a in enumerate(args):
+            if a == "--config" and i + 1 < len(args):
+                return Path(os.path.expanduser(str(args[i + 1]))).parent / "status.json"
+            if isinstance(a, str) and a.startswith("--config="):
+                return Path(os.path.expanduser(a[9:])).parent / "status.json"
+    except Exception:
+        pass
+    return None
+
+
+def sandbox_status_candidates(env=None, plist=SANDBOX_PLIST):
+    """status.json locations in priority order: $BLOOM_SANDBOX_STATUS, the LaunchAgent's --config dir, ~/DarkbloomSandbox, legacy."""
+    env = os.environ if env is None else env
+    out = [Path(env["BLOOM_SANDBOX_STATUS"])] if env.get("BLOOM_SANDBOX_STATUS") else []
+    p = sandbox_plist_status(plist)
+    if p:
+        out.append(p)
+    out += [Path(os.path.expanduser(SANDBOX_HOME_STATUS)), Path(SANDBOX_LEGACY_STATUS)]
+    return list(dict.fromkeys(out))
+
+
+def resolve_sandbox_status(env=None, plist=SANDBOX_PLIST):
+    """(path, tried): the first existing candidate (path None when none exists) and every path tried."""
+    tried = sandbox_status_candidates(env, plist)
+    for c in tried:
+        if c.exists():
+            return c, tried
+    return None, tried
+
+
+def read_sandbox_auto(now, env=None, plist=SANDBOX_PLIST, max_age_s=SANDBOX_STALE_S):
+    """read_sandbox_jobs on the resolved status.json -> (jobs, note). With the Sandbox LaunchAgent plist installed, a
+    missing status.json or one older than SANDBOX_WARN_AGE_S gives a note starting SANDBOX_PROBLEM_NOTE (never a silent
+    healthy 0). Never raises."""
+    try:
+        path, tried = resolve_sandbox_status(env, plist)
+        installed = os.path.exists(os.path.expanduser(plist))
+        if path is None:
+            if installed:
+                return 0, f"{SANDBOX_PROBLEM_NOTE}: no status.json (tried {', '.join(map(str, tried))})"
+            return 0, ""
+        jobs, note = read_sandbox_jobs(path, now, max_age_s)
+        if installed:
+            age = now - path.stat().st_mtime
+            if age > SANDBOX_WARN_AGE_S:
+                return jobs, f"{SANDBOX_PROBLEM_NOTE}: {path} is {int(age)}s old (tried {', '.join(map(str, tried))})"
+        return jobs, note
+    except Exception:
+        return 0, ""
+
+
 def read_sandbox_jobs(path, now, max_age_s=SANDBOX_STALE_S):
     """(jobs, note) from the Darkbloom Sandbox agent's status.json (READ-ONLY: the agent rewrites it).
     jobs is its jobs_running, or 0 when the file is missing or unreadable, the value is not a whole
