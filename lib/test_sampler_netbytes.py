@@ -73,7 +73,8 @@ def test_bridge_row_writes_both_sidecars_and_leaves_the_main_file_alone(tmp_path
     L.append_csv_row(f, L.POWER_COLUMNS, prow("2026-11-03T07:00:00Z"))
     before = f.read_bytes()
     got = L.bridge_row(tmp_path, prow("2026-11-03T07:00:00Z", sandbox_jobs=2))
-    assert got == [tmp_path / "power" / "sandbox-jobs-2026-11.csv", tmp_path / "power" / "net-bytes-2026-11.csv"]
+    assert got == [tmp_path / "power" / "sandbox-jobs-2026-11.csv", tmp_path / "power" / "net-bytes-2026-11.csv",
+                   tmp_path / "power" / "usage-2026-11.csv"]
     assert f.read_bytes() == before and f.read_text().splitlines()[0] == ",".join(MAIN_HEADER)
     assert all(len(r) == 30 for r in csv.reader(f.read_text().splitlines()))
     net = (tmp_path / "power" / "net-bytes-2026-11.csv").read_text().splitlines()

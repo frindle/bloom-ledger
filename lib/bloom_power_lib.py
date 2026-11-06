@@ -10,6 +10,7 @@ import csv
 import datetime as dt
 import json
 import os
+import plistlib
 import re
 import statistics
 from pathlib import Path
@@ -53,7 +54,22 @@ SANDBOX_PROCS = ("DarkbloomSandbox", "darkbloom-sandbox", "sandbox-linux-worker"
 VM_SERVICE = "com.apple.Virtualization.VirtualMachine"
 NET_BRIDGE = "net-bytes-{month}.csv"            # power dir: ts_utc + NET_COLUMNS while the month file lacks them
 NET_BRIDGE_COLUMNS = ["ts_utc"] + NET_COLUMNS
-BRIDGES = ((SANDBOX_BRIDGE, SANDBOX_BRIDGE_COLUMNS), (NET_BRIDGE, NET_BRIDGE_COLUMNS))
+# Per-process CPU and GPU use (2026-11-06), for splitting a minute between Darkbloom business and the operator's own
+# use. Each row says how much CPU time (ms) and CPU energy (mJ, the kernel's per-process energy counter) and GPU time
+# (ms, the GPU driver's per-client counter) went to: dbk = the Darkbloom provider (inference runs in it), sbx = the
+# Sandbox agent, its workers and its job VMs, own = every other process of the operator's user, sys = GPU clients of
+# other users (WindowServer, root daemons) and the sampler's own meters. CPU energy of other users' processes cannot
+# be read without root: it is cpu_mj (macmon's whole-CPU energy) minus the three buckets. usage_s = seconds between
+# the two counter snapshots (empty columns = not measured, e.g. the first row after a start). dbk_local = 1 when a
+# local-endpoint client (the operator's own requests to Darkbloom) was seen: then Darkbloom's use is not all business.
+USAGE_COLUMNS = ["usage_s", "dbk_cpu_ms", "dbk_cpu_mj", "dbk_gpu_ms", "sbx_cpu_ms", "sbx_cpu_mj", "sbx_gpu_ms",
+                 "own_cpu_ms", "own_cpu_mj", "own_gpu_ms", "sys_gpu_ms", "cpu_mj", "gpu_mj", "dbk_local"]
+USAGE_BRIDGE = "usage-{month}.csv"              # power dir: ts_utc + USAGE_COLUMNS (the main header never has them)
+USAGE_BRIDGE_COLUMNS = ["ts_utc"] + USAGE_COLUMNS
+USAGE_SYS_PROCS = ("macmon", "bloom-power")      # the sampler and its meter: measuring overhead, nobody's work
+VM_GPU_SERVICE = "com.apple.gpusw.ParavirtualizedGraphicsGPUTask"   # a VM's GPU work runs in this helper
+DARKBLOOM_EXE = re.compile(r"^(?:\S*/)?darkbloom(?:\s|$)")   # the provider binary itself, not a command naming it
+BRIDGES = ((SANDBOX_BRIDGE, SANDBOX_BRIDGE_COLUMNS), (NET_BRIDGE, NET_BRIDGE_COLUMNS), (USAGE_BRIDGE, USAGE_BRIDGE_COLUMNS))
 
 # Network bytes (read-only: nettop and netstat, no root). Per-process bytes come from ONE long-running nettop in
 # delta mode (bloom-power-log.py NettopReader): each block is every process's bytes since the previous block on
@@ -376,7 +392,8 @@ def read_sandbox_jobs(path, now, max_age_s=SANDBOX_STALE_S):
 def bridge_row(base, row, columns=POWER_COLUMNS):
     """Append the row's ts_utc and values to each BRIDGES file whose columns the month's power-log header predates
     (csv_columns_for keeps such a header, so the bytes bloom_ledger's manifest covers never change):
-    sandbox-jobs-YYYY-MM.csv (ts_utc,sandbox_jobs) and net-bytes-YYYY-MM.csv (ts_utc + NET_COLUMNS).
+    sandbox-jobs-YYYY-MM.csv (ts_utc,sandbox_jobs), net-bytes-YYYY-MM.csv (ts_utc + NET_COLUMNS) and usage-YYYY-MM.csv
+    (ts_utc + USAGE_COLUMNS, always: no power-log header has them).
     -> the bridge paths written, in BRIDGES order ([] when the header has every column). Raises OSError."""
     have = set(csv_columns_for(power_log_path(base, row["ts_utc"]), columns))
     written = []
@@ -565,6 +582,140 @@ def parse_macmon_line(line):
         return w, (float(g) if g is not None else None)
     except (ValueError, KeyError, TypeError):
         return None
+
+
+def parse_macmon_parts(line):
+    """-> (cpu_power_w, gpu_power_w) from one `macmon pipe` line, or None when either is missing, not a number or < 0."""
+    try:
+        d = json.loads(line)
+        c, g = float(d["cpu_power"]), float(d["gpu_power"])
+    except (ValueError, KeyError, TypeError):
+        return None
+    if c != c or g != g or c < 0 or g < 0:
+        return None
+    return c, g
+
+
+# ---------------------------------------------------------------- per-process CPU / GPU use
+def usage_bucket(cmd, uid, my_uid):
+    """The usage bucket of one process: "sys" (another user's process, or the sampler's own meters), "sbx" (the Sandbox
+    agent and workers), "vm" (a Virtualization.framework VM) or "vmgpu" (a VM's paravirtualized GPU helper; usage_deltas
+    gives both to the Sandbox while jobs run), "dbk" (the Darkbloom binary) or "own" (every other process of the
+    operator)."""
+    cmd = cmd or ""
+    if uid != my_uid:
+        return "sys"
+    if any(x in cmd for x in SANDBOX_PROCS):
+        return "sbx"
+    if VM_GPU_SERVICE in cmd:
+        return "vmgpu"
+    if VM_SERVICE in cmd:
+        return "vm"
+    if DARKBLOOM_EXE.search(cmd):
+        return "dbk"
+    if any(x in cmd for x in USAGE_SYS_PROCS):
+        return "sys"
+    return "own"
+
+
+def parse_gpu_clients(data):
+    """`ioreg -a -r -d 1 -w 0 -c AGXDeviceUserClient` output (plist XML bytes) -> {IORegistryEntryID: (pid, gpu_ns)}:
+    every GPU client's accumulated GPU time (its AppUsage entries summed) and the pid that opened it. An entry without a
+    registry id or a "pid N, name" creator is skipped; unreadable data gives {}. Never raises."""
+    try:
+        items = plistlib.loads(data) if data else []
+    except Exception:  # noqa: BLE001 - any parse failure is "no clients"
+        return {}
+    out = {}
+    for e in items if isinstance(items, list) else []:
+        if not isinstance(e, dict):
+            continue
+        m = re.match(r"pid (\d+),", str(e.get("IOUserClientCreator", "")))
+        rid = e.get("IORegistryEntryID")
+        if not m or isinstance(rid, bool) or not isinstance(rid, int):
+            continue
+        ns = 0
+        for u in e.get("AppUsage") or []:
+            t = u.get("accumulatedGPUTime") if isinstance(u, dict) else None
+            if isinstance(t, int) and not isinstance(t, bool) and t > 0:
+                ns += t
+        out[rid] = (int(m.group(1)), ns)
+    return out
+
+
+USAGE_DELTA_COLUMNS = USAGE_COLUMNS[:USAGE_COLUMNS.index("cpu_mj")]     # usage_s .. sys_gpu_ms
+
+
+def usage_deltas(prev, cur, sandbox_jobs=0, my_uid=None):
+    """One row's CPU and GPU use per bucket from two counter snapshots (bloom-power-log.py UsageProbe), as the
+    USAGE_DELTA_COLUMNS values: ints (ms / mJ), usage_s to 0.1 s, "" for a part not measured in both snapshots.
+    None without both snapshots.
+
+    A snapshot is {"t": monotonic seconds, "abs": mach ticks, "procs": {pid: (uid, command)},
+    "cpu": {(pid, start_ticks): (cpu_ns, energy_nj)} or None, "gpu": {client id: (pid, gpu_ns)} or None,
+    "meters": pids of the sampler and its children (macmon, nettop): the system's}.
+    A process or GPU client in both snapshots counts its increase (a counter that went down counts 0). One that is new
+    since prev counts all of it only when it began after prev (a process that started later, a client with a higher
+    registry id); otherwise it was missed, not new, and counts nothing. One that ended in between loses its last part.
+    sandbox_jobs: the most Sandbox jobs running in the row; that many VMs (busiest CPU first) and VM GPU helpers
+    (busiest GPU first) are the Sandbox's, any other is the operator's own."""
+    if not prev or not cur:
+        return None
+    uid = os.getuid() if my_uid is None else my_uid
+    cpu, gpu = {}, {}
+    if prev.get("cpu") is not None and cur.get("cpu") is not None:
+        for key, (c, e) in cur["cpu"].items():
+            old = prev["cpu"].get(key)
+            if old is not None:
+                d = (max(c - old[0], 0), max(e - old[1], 0))
+            elif key[1] >= prev.get("abs", 0):
+                d = (max(c, 0), max(e, 0))
+            else:
+                continue
+            a = cpu.setdefault(key[0], [0, 0])
+            a[0] += d[0]
+            a[1] += d[1]
+    else:
+        cpu = None
+    if prev.get("gpu") is not None and cur.get("gpu") is not None:
+        top = max(prev["gpu"], default=-1)
+        for rid, (pid, ns) in cur["gpu"].items():
+            old = prev["gpu"].get(rid)
+            if old is not None and old[0] == pid:
+                d = max(ns - old[1], 0)
+            elif rid > top:
+                d = max(ns, 0)
+            else:
+                continue
+            if d:
+                gpu[pid] = gpu.get(pid, 0) + d
+    else:
+        gpu = None
+    procs = cur.get("procs") or {}
+    bucket = {pid: usage_bucket(cmd, u, uid) for pid, (u, cmd) in procs.items()}
+    for p in cur.get("meters") or ():
+        bucket[p] = "sys"
+    try:
+        jobs = max(int(sandbox_jobs or 0), 0)
+    except (TypeError, ValueError):
+        jobs = 0
+    c_of, g_of = (lambda p: (cpu or {}).get(p, (0,))[0]), (lambda p: (gpu or {}).get(p, 0))
+    for kind, rank in (("vm", lambda p: (-c_of(p), -g_of(p), p)), ("vmgpu", lambda p: (-g_of(p), -c_of(p), p))):
+        for i, p in enumerate(sorted((p for p, b in bucket.items() if b == kind), key=rank)):
+            bucket[p] = "sbx" if i < jobs else "own"
+    sums = {c: 0 for c in USAGE_DELTA_COLUMNS[1:]}
+    for pid, (c, e) in (cpu or {}).items():
+        b = bucket.get(pid, "sys")
+        if b != "sys":                       # readable meter processes: part of the cpu_mj remainder
+            sums[b + "_cpu_ms"] += c
+            sums[b + "_cpu_mj"] += e
+    for pid, ns in (gpu or {}).items():
+        sums[bucket.get(pid, "sys") + "_gpu_ms"] += ns
+    out = {"usage_s": round(max(cur["t"] - prev["t"], 0.0), 1)}
+    for col, v in sums.items():
+        measured = gpu is not None if "_gpu_" in col else cpu is not None
+        out[col] = int(round(v / 1e6)) if measured else ""
+    return out
 
 
 # ---------------------------------------------------------------- earnings normalisation

@@ -43,7 +43,7 @@ def test_active_frac_stored_and_old_index_rebuilds(tmp_path):
     body = HDR + "\n" + line("2026-12-01T00:00:00Z", "0.5") + "\n" + line("2026-12-01T00:01:00Z", "") + "\n"
     assert A.store_power(db, "m1", "a" * 64, P, 0, body) == (2, 0)
     assert fracs(db) == [0.5, None]
-    assert A.INDEX_VERSION == "5"
+    assert A.INDEX_VERSION == "6"
     old = sqlite3.connect(":memory:")
     old.execute("CREATE TABLE acct_meta (k TEXT PRIMARY KEY, v TEXT)")
     old.execute("INSERT INTO acct_meta VALUES ('index_version', '4')")
@@ -52,4 +52,4 @@ def test_active_frac_stored_and_old_index_rebuilds(tmp_path):
     A.create_schema(old)
     assert "active_frac" in [r[1] for r in old.execute("PRAGMA table_info(power_minutes)")]
     assert old.execute("SELECT COUNT(*) FROM power_minutes").fetchone()[0] == 0, "old derived rows are rebuilt from raw objects"
-    assert old.execute("SELECT v FROM acct_meta WHERE k = 'index_version'").fetchone()[0] == "5"
+    assert old.execute("SELECT v FROM acct_meta WHERE k = 'index_version'").fetchone()[0] == "6"

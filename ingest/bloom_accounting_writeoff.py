@@ -13,7 +13,7 @@ DEFAULTS = {
     "lease_pct": 100,
 }
 POWER_METHODS = ("work_minutes", "share_of_total", "all", "none")
-SHARE_MODES = ("measured", "fixed")
+SHARE_MODES = ("measured", "usage", "fixed")
 STREAM_KEY = {"gpu": "darkbloom", "sandbox": "sandbox", "other": "own", "idle": "idle"}
 ONLINE_STATES = ("idle", "serving")
 
@@ -53,7 +53,7 @@ def validate(value):
     if "power" in value and value["power"] not in POWER_METHODS:
         errs.append("power must be one of " + ", ".join(POWER_METHODS))
     if "share" in value and value["share"] not in SHARE_MODES:
-        errs.append("share must be measured or fixed")
+        errs.append("share must be measured, usage or fixed")
     if value.get("share") == "fixed" and not _pct(value.get("fixed_pct")):
         errs.append("a fixed share needs fixed_pct between 0 and 100")
     for k in ("fixed_pct", "lease_pct"):
@@ -71,8 +71,51 @@ def minute_counts(r, stream, state):
     return key != "idle" or (state or "") in ONLINE_STATES
 
 
+def usage_energy(u):
+    """Energy (mJ) one minute's usage puts on {"darkbloom", "sandbox", "own"}, or None when the minute's usage was not
+    fully measured. u maps bloom_accounting_index.USAGE_COLUMNS to values (None = not measured). CPU energy is each
+    bucket's own kernel counter; GPU energy is the minute's whole-GPU energy split by each bucket's share of all GPU time
+    (other users' clients, "sys", take their share and are left out like the rest of the system). When dbk_local is set
+    (the operator's own requests reached Darkbloom's local endpoint that minute) Darkbloom's part is the operator's."""
+    if not u:
+        return None
+    keys = ("dbk_cpu_mj", "sbx_cpu_mj", "own_cpu_mj", "dbk_gpu_ms", "sbx_gpu_ms", "own_gpu_ms", "sys_gpu_ms", "gpu_mj")
+    if any(u.get(k) is None for k in keys):
+        return None
+    gms = [u["dbk_gpu_ms"], u["sbx_gpu_ms"], u["own_gpu_ms"], u["sys_gpu_ms"]]
+    busy = sum(gms)
+    g = [u["gpu_mj"] * v / busy for v in gms[:3]] if busy > 0 else [0.0, 0.0, 0.0]
+    e = {"darkbloom": u["dbk_cpu_mj"] + g[0], "sandbox": u["sbx_cpu_mj"] + g[1], "own": u["own_cpu_mj"] + g[2]}
+    if u.get("dbk_local"):
+        e = {"darkbloom": 0.0, "sandbox": e["sandbox"], "own": e["own"] + e["darkbloom"]}
+    return e
+
+
+def usage_share(r, u):
+    """The counted buckets' share (0..1) of one minute's attributable energy (usage_energy), or None when the minute's
+    usage was not measured or nothing in it was attributable."""
+    e = usage_energy(u)
+    total = sum(e.values()) if e else 0
+    if total <= 0:
+        return None
+    return min(1.0, sum(v for k, v in e.items() if r["count"][k]) / total)
+
+
+def minute_business(r, stream, state, paid, usage=None):
+    """Business share (0..1) of one measured minute. Whole minutes (1 when minute_counts, else 0) unless the share is
+    "usage" and the minute had paid work (`paid`: tokens served or a Sandbox job running) with its usage measured: then
+    it is the counted buckets' share of the minute's energy (usage_share), so the operator's own use beside paid work is
+    left out, and paid work beside heavy own work still counts its part."""
+    whole = 1.0 if minute_counts(r, stream, state) else 0.0
+    if r["share"] != "usage" or not paid:
+        return whole
+    f = usage_share(r, usage)
+    return whole if f is None else f
+
+
 def share_bp(r, measured_bp):
-    """Business share in basis points: the fixed percent when set, else the measured share (None stays None)."""
+    """Business share in basis points: the fixed percent when set, else the measured share (whole minutes or usage,
+    already in measured_bp; None stays None)."""
     if r["share"] == "fixed":
         return int(round(r["fixed_pct"] * 100))
     return measured_bp
@@ -107,7 +150,8 @@ def describe(r):
     on = [names[k] for k in ("darkbloom", "sandbox", "own", "idle") if r["count"][k]]
     power = {"work_minutes": "the metered cost of business-use minutes", "share_of_total": "the whole power cost at the business share",
              "all": "all metered power", "none": "no power"}[r["power"]]
-    share = "fixed at %s%%" % r["fixed_pct"] if r["share"] == "fixed" else "measured from logged minutes"
+    share = {"fixed": "fixed at %s%%" % r["fixed_pct"], "measured": "measured from logged minutes",
+             "usage": "measured from each paid minute's CPU and GPU use (whole minutes where use was not logged)"}[r["share"]]
     return ["Business use counts: " + (", ".join(on) if on else "nothing") + ".",
             "Deductible power: " + power + ".",
             "Business share (used for depreciation): " + share + ".",

@@ -32,7 +32,7 @@ def test_power_fields_per_day():
     d = rows[1]
     assert d["earned_micro"] == 10 and d["tokens"] == 4
     assert d["wh"] == 8.0 and d["minutes"] == 3 and d["paid_minutes"] == 1
-    assert rows[0] == {"date": "2026-10-22", "earned_micro": 0, "gpu_micro": 0, "gpu_cost_micro": 0, "gpu_minutes": 1, "other_minutes": 0, "sandbox_micro": 0, "sandbox_cost_micro": 0, "sandbox_minutes": 0, "tokens": 0, "wh": 1.0, "minutes": 1, "paid_minutes": 1, "business_minutes": 1.0, "business_cost_micro": 0, "gpu_bytes_in": 0, "gpu_bytes_out": 0, "sandbox_bytes_in": 0, "sandbox_bytes_out": 0, "total_bytes_in": 0, "total_bytes_out": 0, "net_minutes": 0, "cost_micro": None}
+    assert rows[0] == {"date": "2026-10-22", "earned_micro": 0, "gpu_micro": 0, "gpu_cost_micro": 0, "gpu_minutes": 1, "other_minutes": 0, "sandbox_micro": 0, "sandbox_cost_micro": 0, "sandbox_minutes": 0, "tokens": 0, "wh": 1.0, "minutes": 1, "paid_minutes": 1, "business_minutes": 1.0, "business_cost_micro": 0, "gpu_bytes_in": 0, "gpu_bytes_out": 0, "sandbox_bytes_in": 0, "sandbox_bytes_out": 0, "total_bytes_in": 0, "total_bytes_out": 0, "net_minutes": 0, "usage_minutes": 0, "dbk_mj": 0, "sbx_mj": 0, "own_mj": 0, "cost_micro": None}
 
 
 def test_machine_filter_applies_to_power():

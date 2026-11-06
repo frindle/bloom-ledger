@@ -6,18 +6,25 @@ import datetime as dt
 import json
 import re
 
-TABLES = ("power_minutes", "sandbox_bridge", "net_bridge", "earnings", "account_totals", "acct_cursor", "acct_parse_errors")
+TABLES = ("power_minutes", "sandbox_bridge", "net_bridge", "usage_bridge", "earnings", "account_totals", "acct_cursor", "acct_parse_errors")
 
 _DDL = (
     "CREATE TABLE IF NOT EXISTS power_minutes (machine_id TEXT NOT NULL, ts INTEGER NOT NULL, wh REAL, interval_s REAL,"
     " power_ok INTEGER, dbk_state TEXT, other_work INTEGER, tokens_delta INTEGER, sandbox_jobs INTEGER NOT NULL DEFAULT 0,"
     " gpu_bytes_in INTEGER, gpu_bytes_out INTEGER, sandbox_bytes_in INTEGER, sandbox_bytes_out INTEGER,"
-    " total_bytes_in INTEGER, total_bytes_out INTEGER, active_frac REAL, PRIMARY KEY (machine_id, ts))",
+    " total_bytes_in INTEGER, total_bytes_out INTEGER, active_frac REAL,"
+    " usage_s REAL, dbk_cpu_ms INTEGER, dbk_cpu_mj INTEGER, dbk_gpu_ms INTEGER, sbx_cpu_ms INTEGER, sbx_cpu_mj INTEGER,"
+    " sbx_gpu_ms INTEGER, own_cpu_ms INTEGER, own_cpu_mj INTEGER, own_gpu_ms INTEGER, sys_gpu_ms INTEGER, cpu_mj INTEGER,"
+    " gpu_mj INTEGER, dbk_local INTEGER, PRIMARY KEY (machine_id, ts))",
     "CREATE TABLE IF NOT EXISTS sandbox_bridge (machine_id TEXT NOT NULL, ts INTEGER NOT NULL, jobs INTEGER NOT NULL,"
     " PRIMARY KEY (machine_id, ts))",
     "CREATE TABLE IF NOT EXISTS net_bridge (machine_id TEXT NOT NULL, ts INTEGER NOT NULL, gpu_bytes_in INTEGER,"
     " gpu_bytes_out INTEGER, sandbox_bytes_in INTEGER, sandbox_bytes_out INTEGER, total_bytes_in INTEGER,"
     " total_bytes_out INTEGER, PRIMARY KEY (machine_id, ts))",
+    "CREATE TABLE IF NOT EXISTS usage_bridge (machine_id TEXT NOT NULL, ts INTEGER NOT NULL, usage_s REAL,"
+    " dbk_cpu_ms INTEGER, dbk_cpu_mj INTEGER, dbk_gpu_ms INTEGER, sbx_cpu_ms INTEGER, sbx_cpu_mj INTEGER,"
+    " sbx_gpu_ms INTEGER, own_cpu_ms INTEGER, own_cpu_mj INTEGER, own_gpu_ms INTEGER, sys_gpu_ms INTEGER,"
+    " cpu_mj INTEGER, gpu_mj INTEGER, dbk_local INTEGER, PRIMARY KEY (machine_id, ts))",
     "CREATE TABLE IF NOT EXISTS earnings (ledger_id TEXT PRIMARY KEY, ts INTEGER NOT NULL, micro_usd INTEGER NOT NULL,"
     " kind TEXT, model TEXT, job_id TEXT, completion_tokens INTEGER, source_machine TEXT)",
     "CREATE TABLE IF NOT EXISTS account_totals (at TEXT PRIMARY KEY, count INTEGER, total_micro_usd INTEGER,"
@@ -29,7 +36,7 @@ _DDL = (
 )
 
 
-INDEX_VERSION = "5"  # bump to rebuild every derived table from the stored raw objects on next start
+INDEX_VERSION = "6"  # bump to rebuild every derived table from the stored raw objects on next start
 
 
 def create_schema(db):
@@ -56,6 +63,7 @@ _ROUTES = (
     (re.compile(r"^power/power-log-\d{4}-\d{2}\.csv\Z"), "power"),
     (re.compile(r"^power/sandbox-jobs-[a-z]*-?\d{4}-\d{2}\.csv\Z"), "sandbox"),
     (re.compile(r"^power/net-bytes-\d{4}-\d{2}\.csv\Z"), "net"),
+    (re.compile(r"^power/usage-\d{4}-\d{2}\.csv\Z"), "usage"),
     (re.compile(r"^earnings-archive/totals\.jsonl\Z"), "totals"),
     (re.compile(r"^earnings-archive/[^/]+\.jsonl\Z"), "earnings"),
 )
@@ -211,6 +219,26 @@ def net_bytes(r, col):
     return n if n >= 0 else None
 
 
+# Per-minute CPU/GPU use by bucket, from the sampler's usage sidecar (bloom_power_lib.USAGE_COLUMNS): ms of CPU or GPU
+# time, mJ of energy, dbk_local 0/1. None = not measured.
+USAGE_COLUMNS = ("usage_s", "dbk_cpu_ms", "dbk_cpu_mj", "dbk_gpu_ms", "sbx_cpu_ms", "sbx_cpu_mj", "sbx_gpu_ms",
+                 "own_cpu_ms", "own_cpu_mj", "own_gpu_ms", "sys_gpu_ms", "cpu_mj", "gpu_mj", "dbk_local")
+
+
+def usage_value(r, col):
+    """A usage sidecar value: None when absent, blank or not a number >= 0; usage_s stays a float, the rest are ints
+    (dbk_local is 1 for any value above 0)."""
+    try:
+        v = float((r.get(col) or "").strip())
+    except ValueError:
+        return None
+    if v != v or v < 0 or v == float("inf"):
+        return None
+    if col == "usage_s":
+        return v
+    return (1 if v > 0 else 0) if col == "dbk_local" else int(round(v))
+
+
 def active_frac(r):
     """The sampler's inference_active_frac clamped to 0..1, or None when the column is absent, blank or not a number."""
     try:
@@ -317,6 +345,32 @@ def apply_net_bridge(db):
     db.commit()
 
 
+def store_usage(db, machine_id, payload):
+    """Usage sidecar rows -> usage_bridge (by header name; a headerless increment uses the sidecar order), then
+    power_minutes."""
+    cols = ["ts_utc", *USAGE_COLUMNS]
+    for vals in csv.reader(payload.splitlines()):
+        if vals and vals[0] == "ts_utc":
+            cols = vals
+            continue
+        r = dict(zip(cols, vals))
+        try:
+            ts = int(dt.datetime.fromisoformat((r.get("ts_utc") or "").replace("Z", "+00:00")).timestamp())
+        except ValueError:
+            continue
+        db.execute("INSERT OR REPLACE INTO usage_bridge (machine_id, ts, " + ", ".join(USAGE_COLUMNS) + ") VALUES (?, ?"
+                   + ", ?" * len(USAGE_COLUMNS) + ")", (machine_id, ts, *[usage_value(r, c) for c in USAGE_COLUMNS]))
+    apply_usage_bridge(db)
+
+
+def apply_usage_bridge(db):
+    """Fill power_minutes usage columns that are still NULL from usage_bridge (same machine and minute)."""
+    for c in USAGE_COLUMNS:
+        db.execute(f"UPDATE power_minutes SET {c} = (SELECT b.{c} FROM usage_bridge b WHERE b.machine_id = power_minutes.machine_id"
+                   f" AND b.ts = power_minutes.ts) WHERE {c} IS NULL")
+    db.commit()
+
+
 def index_new(db, root):
     """Parse every not-yet-parsed `log` object into the derived tables; returns the number of objects handled."""
     n = 0
@@ -343,10 +397,13 @@ def index_new(db, root):
             store_power(db, machine_id, sha, path, offset, text)
             apply_sandbox_bridge(db)
             apply_net_bridge(db)
+            apply_usage_bridge(db)
         elif kind == "sandbox":
             store_sandbox(db, machine_id, text)
         elif kind == "net":
             store_net(db, machine_id, text)
+        elif kind == "usage":
+            store_usage(db, machine_id, text)
         mark_parsed(db, machine_id, sha)
         n += 1
     return n

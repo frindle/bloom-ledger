@@ -191,7 +191,7 @@
 <option value="none">No power</option>
 </select></div>
 <div><label for="wo-share">Business share (used for depreciation)</label>
-<select id="wo-share"><option value="measured">Measured from logged minutes</option><option value="fixed">A fixed percent</option></select></div>
+<select id="wo-share"><option value="measured">Measured from logged minutes</option><option value="usage">Measured from CPU and GPU use</option><option value="fixed">A fixed percent</option></select></div>
 <div><label for="wo-fixed">Fixed business share, percent</label>
 <input id="wo-fixed" type="number" min="0" max="100" step="0.1"></div>
 <div><label for="wo-lease">Lease deducted, percent</label>
@@ -580,7 +580,7 @@
                     all: "all metered power", none: "no power" }[r.power];
     return ["Business use: " + (on.length ? on.join(", ") : "nothing") + ".",
             "Deductible power: " + power + ".",
-            "Business share: " + (r.share === "fixed" ? r.fixed_pct + "% (fixed)" : "measured") + ".",
+            "Business share: " + (r.share === "fixed" ? r.fixed_pct + "% (fixed)" : r.share === "usage" ? "measured from CPU and GPU use" : "measured") + ".",
             "Lease deducted at " + r.lease_pct + "%."];
   }
 

@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 
 import bloom_accounting_rates as RT
 import bloom_accounting_writeoff as WO
-from bloom_accounting_index import NET_COLUMNS
+from bloom_accounting_index import NET_COLUMNS, USAGE_COLUMNS
 
 
 def ts_bounds(tz, start, end):
@@ -58,7 +58,7 @@ def _blank_row(d, settings):
     return {"date": d, "earned_micro": 0, "gpu_micro": 0, "sandbox_micro": 0,
             "gpu_cost_micro": 0, "sandbox_cost_micro": 0, "gpu_minutes": 0, "sandbox_minutes": 0, "other_minutes": 0,
             "tokens": 0, "wh": 0.0, "minutes": 0, "paid_minutes": 0, "business_minutes": 0.0, "business_cost_micro": 0, "cost_micro": 0 if settings else None,
-            **{c: 0 for c in NET_COLUMNS}, "net_minutes": 0}
+            **{c: 0 for c in NET_COLUMNS}, "net_minutes": 0, "usage_minutes": 0, "dbk_mj": 0, "sbx_mj": 0, "own_mj": 0}
 
 
 def day_rows(db, tz, start, end, machine=None, settings=None):
@@ -83,15 +83,16 @@ def day_rows(db, tz, start, end, machine=None, settings=None):
         row["earned_micro"] += micro
         row[stream_of_kind(kind) + "_micro"] += micro
         row["tokens"] += tokens or 0
-    psql = ("SELECT ts, wh, power_ok, tokens_delta, other_work, sandbox_jobs, dbk_state, active_frac, " + ", ".join(NET_COLUMNS)
-            + " FROM power_minutes WHERE ts >= ? AND ts < ?")
+    psql = ("SELECT ts, wh, power_ok, tokens_delta, other_work, sandbox_jobs, dbk_state, active_frac, "
+            + ", ".join(NET_COLUMNS + USAGE_COLUMNS) + " FROM power_minutes WHERE ts >= ? AND ts < ?")
     pargs = [lo, hi]
     if machine:
         psql += " AND machine_id = ?"
         pargs.append(machine)
-    for ts, wh, ok, tok, other, sbx, state, frac, *net in db.execute(psql, pargs):
+    for ts, wh, ok, tok, other, sbx, state, frac, *rest in db.execute(psql, pargs):
         row = row_for(dt.datetime.fromtimestamp(ts, zone).date().isoformat())
-        add_net_bytes(row, net)
+        add_net_bytes(row, rest[:len(NET_COLUMNS)])
+        usage = dict(zip(USAGE_COLUMNS, rest[len(NET_COLUMNS):]))
         if not ok:
             continue
         row["wh"] += wh or 0.0
@@ -101,10 +102,15 @@ def day_rows(db, tz, start, end, machine=None, settings=None):
             c = RT.interval_cost(settings, ts, wh or 0.0)
             row["cost_micro"] = None if c is None else row["cost_micro"] + c["total_micro"]
         st = minute_stream(ok, tok, other, sbx)
-        biz = WO.minute_counts(rules, st, state)
-        row["business_minutes"] += 1.0 if biz else 0.0
+        e = WO.usage_energy(usage)
+        if e is not None:
+            row["usage_minutes"] += 1
+            for k, col in (("darkbloom", "dbk_mj"), ("sandbox", "sbx_mj"), ("own", "own_mj")):
+                row[col] += int(round(e[k]))
+        biz = WO.minute_business(rules, st, state, (tok or 0) > 0 or (sbx or 0) > 0, usage)
+        row["business_minutes"] += biz
         if biz and c is not None:
-            row["business_cost_micro"] += c["total_micro"]
+            row["business_cost_micro"] += int(round(c["total_micro"] * biz))
         if st == "other":
             row["other_minutes"] += 1
         elif st in ("gpu", "sandbox"):
@@ -168,7 +174,8 @@ def totals(rows):
     """Aggregate day_rows into period figures."""
     earned_micro = 0
     split = {k: 0 for k in ("gpu_micro", "sandbox_micro", "gpu_cost_micro", "sandbox_cost_micro", "gpu_minutes",
-                            "sandbox_minutes", "other_minutes", *NET_COLUMNS, "net_minutes")}
+                            "sandbox_minutes", "other_minutes", *NET_COLUMNS, "net_minutes",
+                            "usage_minutes", "dbk_mj", "sbx_mj", "own_mj")}
     business_cost = 0
     tokens = 0
     wh = 0.0

@@ -16,19 +16,25 @@ Every minute appends ONE row to ~/.darkbloom/power/power-log-YYYY-MM.csv (new fi
     sandbox_jobs, gpu/sandbox/total_bytes_in/out   NOT in the power-log header: written to the sidecars
                           power/sandbox-jobs-YYYY-MM.csv and power/net-bytes-YYYY-MM.csv (L.bridge_row).
                           Bytes come from one long-running nettop (NettopReader) and netstat -ibn (NetProbe).
+    L.USAGE_COLUMNS       NOT in the header either: power/usage-YYYY-MM.csv. Per-process CPU time and energy
+                          (proc_pid_rusage, the operator's own processes, no root) and per-client GPU time (ioreg
+                          AGXDeviceUserClient), snapshotted each row (UsageProbe) and split into Darkbloom /
+                          Sandbox / own / system, plus macmon's whole-CPU and whole-GPU energy for the row.
 READ-ONLY toward Darkbloom: reads daemon-state.json, the sandbox status.json, lsof/ps/nettop/netstat; never calls the
-darkbloom CLI or writes provider.toml. macmon missing/crashing never exits the loop: rows say power_ok=0
+darkbloom CLI or writes provider.toml; ioreg and proc_pid_rusage only read counters. macmon missing/crashing never exits the loop: rows say power_ok=0
 note='power unavailable'; nettop/netstat missing leave the byte columns "".
 
 Usage: bloom-power-log.py            run forever (launchd KeepAlive)
        bloom-power-log.py --once [--seconds N]   sample N s (default 20), write one row, print it"""
 import argparse
+import ctypes
 import os
 import pty
 import queue
 import select
 import shutil
 import signal
+import struct
 import subprocess
 import sys
 import threading
@@ -73,8 +79,11 @@ class Window:
         self.net = None              # [gpu_in, gpu_out, sandbox_in, sandbox_out]; None = no nettop block came
         self.net_covered_s = 0.0
         self.net_total = None        # [in, out] on the physical interfaces; None = not measured
+        self.cpu_ws = 0.0            # macmon cpu_power / gpu_power integrated like energy_ws (joules)
+        self.gpu_ws = 0.0
+        self.parts_s = 0.0           # seconds those two cover (0 = macmon gave no cpu/gpu power)
 
-    def add_power(self, ts, watts, gpu):
+    def add_power(self, ts, watts, gpu, parts=None):
         dt = 1.0 if self.last_sample_ts is None else min(max(ts - self.last_sample_ts, 0.0), MAX_DT)
         if self.last_sample_ts is not None and ts - self.last_sample_ts > MAX_DT * 2:
             self.notes.add("power gap (sleep/stall)")
@@ -82,6 +91,10 @@ class Window:
         self.samples.append((ts, watts, gpu))
         self.energy_ws += watts * dt
         self.covered_s += dt
+        if parts:                    # (cpu_w, gpu_w) from L.parse_macmon_parts
+            self.cpu_ws += parts[0] * dt
+            self.gpu_ws += parts[1] * dt
+            self.parts_s += dt
 
     def add_poll(self, up, ds, other_names, sandbox=None):
         self.polls += 1
@@ -178,6 +191,9 @@ class Window:
             "sandbox_bytes_out": net[3],
             "total_bytes_in": tot[0],
             "total_bytes_out": tot[1],
+            "cpu_mj": int(round(self.cpu_ws * 1000)) if self.parts_s else "",
+            "gpu_mj": int(round(self.gpu_ws * 1000)) if self.parts_s else "",
+            "dbk_local": int(any(o.startswith("local-endpoint-client:") for o in other)),
         }
 
 
@@ -252,7 +268,7 @@ class MacmonReader:
                 for line in self.proc.stdout:
                     parsed = L.parse_macmon_line(line)
                     if parsed:
-                        self.q.put((time.time(), parsed[0], parsed[1]))
+                        self.q.put((time.time(), parsed[0], parsed[1], L.parse_macmon_parts(line)))
                         backoff = 5
                 self.proc.wait()
             except OSError:
@@ -535,10 +551,100 @@ class BoundedSandboxRead:
 _SANDBOX_READ = []
 
 
+IOREG_GPU_CMD = ["/usr/sbin/ioreg", "-a", "-r", "-d", "1", "-w", "0", "-c", "AGXDeviceUserClient"]
+RUSAGE_INFO_V6 = 6       # <sys/resource.h>: after ri_uuid[16], u64 fields; [0] user, [1] system time (mach ticks),
+RI_START, RI_ENERGY_NJ, RI_FIELDS = 8, 40, 42   # [8] proc_start_abstime, [40] energy_nj
+
+
+class _Timebase(ctypes.Structure):
+    _fields_ = [("numer", ctypes.c_uint32), ("denom", ctypes.c_uint32)]
+
+
+class UsageProbe:
+    """Snapshots per-process CPU time + energy (proc_pid_rusage, RUSAGE_INFO_V6: the operator's own processes, no root)
+    and per-client GPU time (ioreg AGXDeviceUserClient) once per row; L.usage_deltas turns two snapshots into the row's
+    USAGE_DELTA_COLUMNS. Every counter is cumulative, so nothing between two snapshots is missed except the last part of
+    a process that exited. A part that cannot be read is None in the snapshot ("" in the row). Never raises."""
+
+    def __init__(self, run=None, ioreg=None):
+        self.run = run or _run
+        self.ioreg = ioreg or (lambda: subprocess.run(IOREG_GPU_CMD, capture_output=True, timeout=5).stdout)
+        self.prev = None
+        self.lib = None
+        try:
+            lib = ctypes.CDLL("/usr/lib/libSystem.dylib")
+            tb = _Timebase()
+            lib.mach_timebase_info(ctypes.byref(tb))
+            lib.mach_absolute_time.restype = ctypes.c_uint64
+            lib.proc_pid_rusage.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_void_p]
+            self.tick_ns = tb.numer / tb.denom
+            self.buf = ctypes.create_string_buffer(1024)
+            self.lib = lib
+        except (OSError, AttributeError):
+            pass
+
+    def rusage(self, pid):
+        """(start_ticks, cpu_ns, energy_nj) of one process, or None when it cannot be read."""
+        if self.lib is None or self.lib.proc_pid_rusage(pid, RUSAGE_INFO_V6, self.buf) != 0:
+            return None
+        v = struct.unpack_from("<%dQ" % RI_FIELDS, self.buf.raw, 16)
+        return v[RI_START], int((v[0] + v[1]) * self.tick_ns), v[RI_ENERGY_NJ]
+
+    def snapshot(self):
+        procs, me_pid = {}, os.getpid()
+        meters = {me_pid}
+        for ln in self.run(["ps", "-axo", "pid=,ppid=,uid=,command="]).splitlines():
+            parts = ln.strip().split(None, 3)
+            try:
+                procs[int(parts[0])] = (int(parts[2]), parts[3] if len(parts) == 4 else "")
+                if int(parts[1]) == me_pid:
+                    meters.add(int(parts[0]))
+            except (IndexError, ValueError):
+                pass
+        snap = {"t": time.monotonic(), "abs": self.lib.mach_absolute_time() if self.lib else 0, "procs": procs,
+                "cpu": None, "gpu": None, "meters": meters}
+        if self.lib is not None and procs:
+            me, cpu = os.getuid(), {}
+            for pid, (uid, _cmd) in procs.items():
+                r = self.rusage(pid) if uid == me else None
+                if r:
+                    cpu[(pid, r[0])] = (r[1], r[2])
+            snap["cpu"] = cpu
+        try:
+            out = self.ioreg()
+            snap["gpu"] = L.parse_gpu_clients(out) if out else None
+        except (OSError, subprocess.SubprocessError):
+            pass
+        return snap
+
+    def prime(self):
+        """Take the first snapshot (the start of the first row)."""
+        try:
+            self.prev = self.snapshot()
+        except Exception:  # noqa: BLE001 - a probe failure must never kill the sampler
+            self.prev = None
+
+    def close_row(self, sandbox_jobs):
+        """The ending row's USAGE_DELTA_COLUMNS ("" when not measured); its end snapshot starts the next row."""
+        out = {c: "" for c in L.USAGE_DELTA_COLUMNS}
+        try:
+            cur = self.snapshot()
+        except Exception:  # noqa: BLE001
+            cur = None
+        try:
+            d = L.usage_deltas(self.prev, cur, sandbox_jobs)
+        except Exception:  # noqa: BLE001
+            d = None
+        self.prev = cur
+        if d:
+            out.update(d)
+        return out
+
+
 def sample_once(win, reader, sandbox_read=None, net=None):
     now = time.time()
-    for ts, w, g in reader.drain():
-        win.add_power(ts, w, g)
+    for ts, w, g, *parts in reader.drain():
+        win.add_power(ts, w, g, parts[0] if parts else None)
     ds = L.read_daemon_state(L.HOME_DIR / "daemon-state.json", now)
     up = dbk_process_up(ds.get("pid"))
     if sandbox_read is None:
@@ -563,7 +669,7 @@ def write_row(row):
     path = L.power_log_path(L.HOME_DIR, row["ts_utc"])
     L.append_csv_row(path, L.POWER_COLUMNS, row)
     try:
-        L.bridge_row(L.HOME_DIR, row)      # sandbox-jobs / net-bytes sidecars (the power-log header never carries them)
+        L.bridge_row(L.HOME_DIR, row)      # sandbox-jobs / net-bytes / usage sidecars (the power-log header never carries them)
     except OSError as e:
         print(f"bloom-power-log: sidecar write failed: {e}", file=sys.stderr, flush=True)
 
@@ -585,6 +691,8 @@ def main(argv=None):
     if not nettop.start():
         print("bloom-power-log: nettop not found; gpu/sandbox byte columns stay empty", file=sys.stderr, flush=True)
     net = NetProbe(nettop)
+    usage = UsageProbe()
+    usage.prime()
     prev = None
     try:
         if a.once:
@@ -595,6 +703,7 @@ def main(argv=None):
                 time.sleep(min(POLL_S, max(0.1, end - time.time())))
             sample_once(win, reader, net=net)
             row = win.row(time.time(), prev)
+            row.update(usage.close_row(win.sandbox_jobs))
             if not a.no_write:
                 write_row(row)
             print(row)
@@ -607,6 +716,7 @@ def main(argv=None):
             now = time.time()
             if now >= next_flush:
                 row = win.row(now, prev)
+                row.update(usage.close_row(win.sandbox_jobs))
                 try:
                     write_row(row)
                 except OSError as e:

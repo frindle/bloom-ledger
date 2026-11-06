@@ -23,7 +23,7 @@ SENT_DIRNAME = "sent"
 REJECTED_DIRNAME = "rejected"
 SEEN_KEEP = 20000                 # usage ids remembered (the ring holds 4096)
 MAX_INCREMENT = 8 * 1024 * 1024   # bytes of one log read per run; the rest follows next run
-LOG_GLOBS = ("provider.log", "power/power-log-*.csv", "power/sandbox-jobs-*.csv", "power/net-bytes-*.csv", "earnings-archive/*.jsonl")
+LOG_GLOBS = ("provider.log", "power/power-log-*.csv", "power/sandbox-jobs-*.csv", "power/net-bytes-*.csv", "power/usage-*.csv", "earnings-archive/*.jsonl")
 LIFECYCLE_DIRNAME = "lifecycle"
 RING_FILENAME = "usage-history.json"
 
