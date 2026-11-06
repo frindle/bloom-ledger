@@ -286,16 +286,23 @@ def csv_columns_for(path, columns):
 
 # ---------------------------------------------------------------- Darkbloom Sandbox
 def sandbox_plist_status(plist=SANDBOX_PLIST):
-    """status.json beside the --config value of the Sandbox LaunchAgent's ProgramArguments (only that key is read), or None."""
+    """status.json beside the Sandbox agent's config, from the LaunchAgent's ProgramArguments (only that key is read):
+    a `--config <path>` / `--config=<path>` argument, else an argument naming agent.json. The Sandbox installer's plist
+    is `/bin/sh -c '... --args agent --config "$config"' <exe> <app> <log> <agent.json>`, so there the path only
+    appears positionally. None when nothing matches."""
     try:
         import plistlib
         with open(os.path.expanduser(plist), "rb") as fh:
-            args = plistlib.load(fh).get("ProgramArguments") or []
+            args = [a for a in (plistlib.load(fh).get("ProgramArguments") or []) if isinstance(a, str)]
         for i, a in enumerate(args):
             if a == "--config" and i + 1 < len(args):
-                return Path(os.path.expanduser(str(args[i + 1]))).parent / "status.json"
-            if isinstance(a, str) and a.startswith("--config="):
+                return Path(os.path.expanduser(args[i + 1])).parent / "status.json"
+            if a.startswith("--config="):
                 return Path(os.path.expanduser(a[9:])).parent / "status.json"
+        for a in reversed(args):
+            p = Path(os.path.expanduser(a))
+            if p.name == "agent.json":
+                return p.parent / "status.json"
     except Exception:
         pass
     return None

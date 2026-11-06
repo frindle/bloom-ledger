@@ -46,6 +46,32 @@ def test_plist_config_dir(tmp_path, monkeypatch):
     assert p == s
 
 
+def test_plist_sh_wrapper_positional_config(tmp_path, monkeypatch):
+    # the real Sandbox installer plist: --config sits inside the sh -c script, the path is a positional argument
+    home(tmp_path, monkeypatch)
+    s = mk(tmp_path / "moved" / "agent" / "status.json")
+    mk(tmp_path / "h/DarkbloomSandbox/agent/status.json")
+    f = tmp_path / "real.plist"
+    script = ('exe=$0 app=$1 log=$2 config=$3; while pgrep -q -f "^$exe agent "; do sleep 5; done; '
+              'exec open -n -g -W --stdout "$log" --stderr "$log" "$app" --args agent --config "$config"')
+    f.write_bytes(plistlib.dumps({"ProgramArguments": [
+        "/bin/sh", "-c", script, "/x/DarkbloomSandbox.app/Contents/MacOS/darkbloom-sandbox", "/x/DarkbloomSandbox.app",
+        str(tmp_path / "moved/agent/agent.log"), str(tmp_path / "moved/agent/agent.json")]}))
+    assert L.sandbox_plist_status(str(f)) == s
+    p, _ = L.resolve_sandbox_status({}, str(f))
+    assert p == s
+
+
+def test_plist_without_config_falls_through(tmp_path, monkeypatch):
+    home(tmp_path, monkeypatch)
+    s = mk(tmp_path / "h/DarkbloomSandbox/agent/status.json")
+    f = tmp_path / "noconf.plist"
+    f.write_bytes(plistlib.dumps({"ProgramArguments": ["/bin/sh", "-c", "exec agent", "/x/agent.log"]}))
+    assert L.sandbox_plist_status(str(f)) is None
+    p, _ = L.resolve_sandbox_status({}, str(f))
+    assert p == s
+
+
 def test_home_default(tmp_path, monkeypatch):
     home(tmp_path, monkeypatch)
     s = mk(tmp_path / "h/DarkbloomSandbox/agent/status.json")
