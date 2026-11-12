@@ -167,7 +167,7 @@ plist ship 60 bloom-ship.py
 plist manifest daily bloom-manifest.py daily
 plist find 600 bloom-find.py
 if [ "$EARNINGS" = 1 ]; then
-  plist earnings 900 bloom-earnings-archive.py
+  plist earnings 300 bloom-earnings-archive.py
 else
   unload "$PREFIX.earnings"; rm -f "$AGENTS/$PREFIX.earnings.plist"
 fi

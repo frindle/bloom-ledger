@@ -2,7 +2,7 @@
 """Permanent, append-only archive of Darkbloom provider earnings (stdlib only).
 
 Darkbloom has no `darkbloom earnings` CLI (docs/provider/quickstart.md), and the account-earnings API
-returns only the latest N ledger entries, so this polls it (launchd, ~15 min) and appends every entry
+returns only the latest N ledger entries, so this polls it (launchd, every 5 min) and appends every entry
 not yet archived (deduped by ledger id) to ~/.darkbloom/earnings-archive/earnings-YYYY-MM.jsonl.
 It NEVER prunes or rewrites an archive file.
 
@@ -21,6 +21,7 @@ import argparse
 import datetime as dt
 import json
 import os
+import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -108,6 +109,20 @@ def poll_once(payload, base, now, threshold=GAP_THRESHOLD):
     return {"seen": len(entries), "new": new, "noid": noid, "gap": gap}
 
 
+def archive_now(state_dir, script_dir=None, run=subprocess.run):
+    """Spool new entries now (one bloom-archive.py pass) so the shipper (every minute) sends them right away,
+    instead of waiting up to 15 min for the archive's own schedule. Best effort: the scheduled archive still runs.
+    Returns True when the pass exited 0."""
+    script = Path(script_dir or Path(__file__).resolve().parent) / "bloom-archive.py"
+    if not script.exists():
+        return False
+    env = dict(os.environ, BLOOM_POWER_HOME=str(state_dir))
+    try:
+        return run([sys.executable, str(script)], env=env, timeout=120, capture_output=True).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--state-dir", default=str(L.HOME_DIR))
@@ -133,6 +148,8 @@ def main(argv=None):
         log("WARN: response contained 0 recognizable entries (schema change?). Nothing archived.", a.state_dir)
         return 1
     log(f"ok seen={r['seen']} new={r['new']} no_id={r['noid']}", a.state_dir)
+    if r["new"] and not archive_now(a.state_dir):
+        log("WARN: immediate archive pass failed; the scheduled archive will pick the entries up", a.state_dir)
     if r["noid"]:
         log(f"WARN: {r['noid']} entries had no id field; keyed by content hash", a.state_dir)
     if r["gap"]:
