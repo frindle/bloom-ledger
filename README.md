@@ -43,6 +43,18 @@ Tunnel access: settings writes that arrive through a public Cloudflare tunnel ne
 
 The optional `bloom-earnings` service archives Darkbloom earnings from the same image (`docker compose --profile earnings up -d`) and needs a `secrets/darkbloom_token` file. Run only one earnings poller per Darkbloom account.
 
+## Monthly tally (for the resell-tracker's books)
+
+Read-only, open on the LAN like the other reads; nothing in it is a token, key or secret.
+
+`GET /v1/tally/monthly?month=YYYY-MM` returns `month`, `timezone`, `day_boundary`, `rounding`, `generated_at`, `final`, `hash`, `balances`, `totals` and `machines`. `machines` has one row per machine that has data or an entry that month (every machine record in Settings, too), plus a row with `"shared": true` and `machine_id: null` for entries with no machine and for pre-tracking pay. Each row has `earnings_cents` (all Darkbloom pay, as the tax report's income), `other_income_cents`, `power_cost_cents` (deductible power under the write-off rules in effect), `depreciation_cents` and `lease_cents` (business share), `entries_deductible_cents` and `entries`. Each entry has `id, kind, date, category, vendor, purpose, business_pct, amount_cents, deductible_cents` and `effect`. An entry of kind `receipt` is money received (other income, Schedule C line 6), not a receipt file: it counts in `other_income_cents`, its `deductible_cents` is 0 and its `effect` is `income`. Hardware entries are `capitalized` (depreciated instead) and electricity entries are `metered_power` (already in the metered power cost), both with `deductible_cents` 0. Voided entries are left out. A column is `null` when the month's total cannot be computed (no rate schedule, an owned machine without a cost); legacy single-machine settings put depreciation and lease on the shared row.
+
+`balances` is the latest Darkbloom totals snapshot at or before the month's end, `{as_of, available_cents, withdrawable_cents}`, or `null`. `final` is true only when the month has ended and the newest earnings poll the ledger holds (latest totals snapshot, the server-side form of `archive_settled_until`) is at least the settle window (`SETTLE_S`, 15 minutes) past the month's end. `hash` is the sha256 of the canonical JSON (sorted keys, no spaces) of `machines` and `balances`; if it changes for a month you already booked, post a correction.
+
+`GET /v1/tally/months` lists the months with data as `{month, final, hash}`, oldest first. A missing or malformed `month` (or any unknown query parameter) is a 400.
+
+Conventions: a month is the local calendar month in the `local_timezone` setting effective on its last day (default America/Los_Angeles), from 00:00 on the 1st to 00:00 on the next 1st, the same day boundary as the tax report and packet; entries use their own date. The write-off rules and other settings are those effective on the month's last day (the tax report uses the year's December 31 settings for the whole year, so the two differ only after a mid-year rule change). Money is integer cents: each column's month total is converted from micro-USD to cents once, rounded down, equal to the report's month figure divided by 10000; the machine rows split that total by largest remainder, so they always add up. Twelve monthly tallies therefore sum to within a cent per month of the tax report's year total.
+
 ## Tests
 
 ```
