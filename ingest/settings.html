@@ -288,8 +288,10 @@
   const pairBox = document.getElementById("pair-box");
   const pairCmd = document.getElementById("pair-cmd");
 
-  function isLanHost(h) {
-    return /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.)/.test(h) || /\.local$/.test(h);
+  let lanUrl = null;  // the ledger's private-IP address, from the server (never the page's own origin when that is a public name)
+
+  function isPrivateIpv4(h) {
+    return /^(10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.)\d+\.\d+(\.\d+)?$/.test(h);
   }
 
   function showToken(title, token, reply) {
@@ -298,12 +300,15 @@
     const code = reply && reply.pair_code;
     pairBox.hidden = !code;
     if (code) {
-      pairCmd.textContent = "curl -fsSL " + location.origin + "/install.sh | sh -s -- --pair " + code;
-      document.getElementById("pair-ttl").textContent = Math.round((reply.pair_ttl_s || 1800) / 60) + " minutes";
       const host = new URL(location.origin).hostname;
+      const base = lanUrl || (isPrivateIpv4(host) ? location.origin : null);
+      pairCmd.textContent = base
+        ? "curl -fsSL " + base + "/install.sh | sh -s -- --pair " + code
+        : "No local network address is known: open Settings through the ledger's private IP (for example http://192.168.1.20:8787) or set BLOOM_LEDGER_LAN_URL on the ledger container, then add the machine again.";
+      document.getElementById("pair-ttl").textContent = Math.round((reply.pair_ttl_s || 1800) / 60) + " minutes";
       let note = "Add --earnings to also archive this Mac's Darkbloom earnings (one Mac per account). ";
       note += reply.darkbloom_key_saved ? "This Mac's Darkbloom key is saved." : "Live Sandbox status comes from the Mac.";
-      if (!isLanHost(host)) note = "This page is open through " + host + ": run the command with the ledger's local network address instead. " + note;
+      if (!isPrivateIpv4(host)) note = "This page is open through " + host + (lanUrl ? ", so the command uses the ledger's local network address " + lanUrl + ". " : " and the ledger has no local network address set (BLOOM_LEDGER_LAN_URL). ") + note;
       document.getElementById("pair-note").textContent = note;
     }
     tokenBox.hidden = false;
@@ -477,6 +482,7 @@
       if (!resp.ok) throw new Error("HTTP error");
       const data = await resp.json();
       const health = data.health || {};
+      lanUrl = typeof data.lan_url === "string" ? data.lan_url : null;
       renderHealth(health);
       if (!keyPosted) renderKey(data.darkbloom_key);
       if (!woDirty) renderWriteOff(data.write_off);
@@ -538,6 +544,12 @@
     let t = "Key saved.";
     if (st.probe) t += " Darkbloom status: " + probeText(st.probe.darkbloom) + ". Sandbox status: " + probeText(st.probe.sandbox) + ".";
     if (st.checked_at) t += " Checked " + formatServerTime(st.checked_at) + ".";
+    const sp = st.api_spend;
+    if (sp && sp.state) {
+      const names = { ok: "up to date", no_scope: "skipped: the key is not accepted for payments usage (it may lack that scope)",
+                      no_start: "waiting for the api_spend_from_ts setting", unreachable: "unreachable", bad_response: "unexpected reply", no_key: "no key" };
+      t += " API spend: " + (names[sp.state] || sp.state) + ".";
+    }
     dbkStatus.textContent = t;
   }
 

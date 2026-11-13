@@ -7,6 +7,7 @@ the token in the login Keychain and loads the LaunchAgents. Codes live in memory
 new one with New token). The server id lets a Mac find the ledger again if its address changes (GET /v1/hello)."""
 import hashlib
 import io
+import ipaddress
 import json
 import os
 import re
@@ -109,13 +110,54 @@ def client_version(client_dir=None, lib_dir=None):
     return h.hexdigest()[:12]
 
 
-def install_script(host_header, client_dir=None):
-    """install.sh with this ledger's address filled in from the request's Host header; None for a bad Host."""
+def private_ipv4(host):
+    """True when `host` (no port) is a literal IPv4 address in 10/8, 172.16/12 or 192.168/16."""
+    try:
+        a = ipaddress.IPv4Address(host)
+    except ValueError:
+        return False
+    return any(a in ipaddress.IPv4Network(n) for n in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"))
+
+
+def _split_hostport(hp):
+    m = re.fullmatch(r"([0-9.]+)(?::([0-9]{1,5}))?", hp or "")
+    return (m.group(1), m.group(2)) if m else (None, None)
+
+
+def lan_base(value):
+    """http://<private IPv4>[:port] from a BLOOM_LEDGER_LAN_URL value (a bare host:port also works), else None."""
+    v = (value or "").strip().rstrip("/")
+    if v.startswith("http://"):
+        v = v[len("http://"):]
+    host, port = _split_hostport(v)
+    return ("http://" + v) if host and private_ipv4(host) else None
+
+
+def ledger_base(host_header, lan_url=None):
+    """The address Macs must use to reach this ledger: the request's Host when that is a private IPv4 address, else the
+    BLOOM_LEDGER_LAN_URL setting, else None. Never a public or DNS name (it may sit behind a login proxy, which answers
+    pairing with HTML)."""
+    host, _port = _split_hostport((host_header or "").strip())
+    if host and private_ipv4(host):
+        return "http://" + (host_header or "").strip()
+    return lan_base(lan_url)
+
+
+NO_LAN_MESSAGE = ("The ledger does not know its local network address. Open Settings through the ledger's private IP address "
+                  "(for example http://192.168.1.20:8787) or set BLOOM_LEDGER_LAN_URL on the ledger container, then try again.")
+
+
+def install_script(host_header, client_dir=None, lan_url=None):
+    """install.sh with the ledger's private address filled in (ledger_base); None for a bad Host. With no private address
+    known, a short script that prints NO_LAN_MESSAGE and exits 1, so `curl | sh` explains itself instead of failing."""
     host = (host_header or "").strip()
     if not HOST_RE.match(host):
         return None
+    base = ledger_base(host, lan_url)
+    if base is None:
+        return "#!/bin/sh\necho 'bloom-ledger: %s' >&2\nexit 1\n" % NO_LAN_MESSAGE.replace("'", "")
     tpl = (Path(client_dir or CLIENT_DIR) / "install.sh").read_text()
-    return tpl.replace("@@LEDGER_BASE@@", "http://" + host)
+    return tpl.replace("@@LEDGER_BASE@@", base)
 
 
 def requested_key(path, body):

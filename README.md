@@ -61,3 +61,9 @@ Conventions: a month is the local calendar month in the `local_timezone` setting
 pip install pytest
 PYTHONPATH=lib python -m pytest ingest
 ```
+
+## Darkbloom API spend and the install address
+
+Every 15 minutes the ledger reads `GET /v1/payments/usage` with the account key saved in Settings and stores new rows in `api_spend` (request id is the key; reading stops at the first row already stored). Only rows at or after the `api_spend_from_ts` setting (epoch seconds, set through `/v1/accounting/settings`; env `BLOOM_API_SPEND_FROM_TS` as a fallback) are kept; with neither set nothing is read. A 401/403 is skipped and shown under the key status in Settings. Every usage row is treated as the owner's personal use: an owner draw from the Darkbloom balance, never an expense against Darkbloom income. A card top-up is entered by hand as an entry of type "Card top-up" (kind `contribution`). The monthly tally (`schema_version` 2) adds an `account` block with `api_spend_draw_cents`, `contribution_cents`, items with effect `draw` or `contribution`, and a balance reconcile.
+
+The Add a machine command and `/install.sh` always use a private IPv4 address (10/8, 172.16/12, 192.168/16): the request's Host when it is one, else `BLOOM_LEDGER_LAN_URL`; with neither, a message instead of a command. `install.sh` itself refuses any other address before pairing.

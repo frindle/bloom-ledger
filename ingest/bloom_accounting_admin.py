@@ -35,6 +35,10 @@ def accounting_post(path, headers, body, db, now):
         effective_from = data.get("effective_from")
         if not isinstance(effective_from, str) or len(effective_from) != 10:
             return (400, {"error": "bad effective_from"})
+        if key == "api_spend_from_ts":
+            v = data.get("value")
+            if v is not None and (isinstance(v, bool) or not isinstance(v, int) or v < 0):
+                return (400, {"error": "api_spend_from_ts must be epoch seconds or null"})
         if key == "write_off":
             import bloom_accounting_writeoff as WO
             errs = WO.validate(data.get("value"))

@@ -20,6 +20,7 @@ import re
 import urllib.parse
 
 import bloom_accounting_config as CF
+import bloom_api_spend as SP
 import bloom_accounting_entries as AE
 import bloom_accounting_report as RP
 import bloom_accounting_tax as TX
@@ -31,6 +32,9 @@ CONVENTION = ("local calendar month in settings local_timezone effective on the 
 ROUNDING = ("micro-USD to cents once per column per month, rounded down; machine rows split the month total by largest remainder")
 COLUMNS = ("earnings_cents", "other_income_cents", "power_cost_cents", "depreciation_cents", "lease_cents", "entries_deductible_cents")
 SHARED = "shared"
+SCHEMA_VERSION = 2   # 1 (no field): per-machine rows and balances only. 2: adds schema_version and the account-level block
+ACCOUNT_NOTE = ("Account level, not per machine. draw = the owner's personal use of the Darkbloom balance (API usage rows), "
+                "never an expense against Darkbloom income. contribution = money the owner put into the balance by card, entered by hand.")
 
 
 def apportion(total, weights):
@@ -91,7 +95,9 @@ def _entry_row(e, bp):
     it is that: "income" (kind receipt: money received, other income, never a deduction), "capitalized" (hardware, depreciated
     instead), "metered_power" (electricity, already in the metered power cost) or "expense"."""
     amt = TX.entry_amounts_micro([e], e["date"], e["date"], bp)
-    if e["kind"] == "receipt":
+    if e["kind"] == "contribution":
+        effect = "contribution"
+    elif e["kind"] == "receipt":
         effect = "income"
     elif e["category"] == "hardware":
         effect = "capitalized"
@@ -117,7 +123,9 @@ def build_month(db, month, now, today=None):
     tz = settings["local_timezone"]
     lo, hi = RP.ts_bounds(tz, start, end)
     everything = AE.current_entries(db)
-    entries = [e for e in everything if start <= e["date"] <= end]
+    in_month = [e for e in everything if start <= e["date"] <= end]
+    contribs = [e for e in in_month if e["kind"] == "contribution"]
+    entries = [e for e in in_month if e["kind"] != "contribution"]
     links = settings.get("entry_machine_links") or {}
 
     def mkey(e):
@@ -172,14 +180,31 @@ def build_month(db, month, now, today=None):
         row["entries"] = [r for e, r in zip(entries, rows_e) if mkey(e) == mid]
         if mid == SHARED or row["entries"] or any(row[c] for c in COLUMNS):
             machines.append(row)
+    account = account_block(db, lo, hi, contribs)
     bal = balances(db, hi)
     settled = settled_until(db)
     final = bool(now >= hi and settled is not None and settled >= hi + P.SETTLE_S)
-    body = {"machines": machines, "balances": bal}
+    body = {"machines": machines, "balances": bal, "account": account}
     digest = hashlib.sha256(json.dumps(body, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     totals = {c: (None if None in cols[c].values() else sum(cols[c].values())) for c in COLUMNS}
-    return {"month": month, "timezone": tz, "day_boundary": CONVENTION, "rounding": ROUNDING,
+    return {"schema_version": SCHEMA_VERSION, "month": month, "timezone": tz, "day_boundary": CONVENTION, "rounding": ROUNDING,
             "generated_at": P.utc_iso(now), "final": final, "hash": digest, "totals": totals, **body}
+
+
+def account_block(db, lo, hi, contribs):
+    """Account-level money moves of the month [lo, hi): API spend draws (one item) and the hand-entered card top-ups."""
+    n, ptok, ctok, micro = SP.month_totals(db, lo, hi)
+    items = []
+    if n:
+        items.append({"effect": "draw", "kind": "api_spend", "amount_cents": micro // 10000, "requests": n,
+                      "prompt_tokens": ptok, "completion_tokens": ctok})
+    for e in contribs:
+        items.append({"effect": "contribution", "kind": "contribution", "id": e["id"], "date": e["date"],
+                      "amount_cents": e["amount_cents"], "note": e.get("note")})
+    contrib = sum(e["amount_cents"] for e in contribs)
+    rec = SP.reconcile(db, lo, hi, contrib * 10000)
+    return {"api_spend_draw_cents": micro // 10000, "contribution_cents": contrib, "note": ACCOUNT_NOTE, "items": items,
+            "reconcile": rec}
 
 
 def months_with_data(db):
@@ -192,6 +217,10 @@ def months_with_data(db):
         a, b = db.execute(sql).fetchone()
         if a is not None:
             seen |= {dt.datetime.fromtimestamp(a, tz).strftime("%Y-%m"), dt.datetime.fromtimestamp(b, tz).strftime("%Y-%m")}
+    SP.create_table(db)
+    a, b = db.execute("SELECT MIN(ts), MAX(ts) FROM api_spend").fetchone()
+    if a is not None:
+        seen |= {dt.datetime.fromtimestamp(a, tz).strftime("%Y-%m"), dt.datetime.fromtimestamp(b, tz).strftime("%Y-%m")}
     a, b = db.execute("SELECT MIN(date), MAX(date) FROM acct_entries WHERE voided_at IS NULL").fetchone() if _has_entries(db) else (None, None)
     if a:
         seen |= {a[:7], b[:7]}
@@ -205,6 +234,7 @@ def months_with_data(db):
         lo, hi = RP.ts_bounds(tz.key, start, end)
         has = (db.execute("SELECT 1 FROM earnings WHERE ts >= ? AND ts < ? LIMIT 1", (lo, hi)).fetchone()
                or db.execute("SELECT 1 FROM power_minutes WHERE ts >= ? AND ts < ? LIMIT 1", (lo, hi)).fetchone()
+               or db.execute("SELECT 1 FROM api_spend WHERE ts >= ? AND ts < ? LIMIT 1", (lo, hi)).fetchone()
                or (_has_entries(db) and db.execute("SELECT 1 FROM acct_entries WHERE voided_at IS NULL AND date >= ? AND date <= ? LIMIT 1",
                                                    (start, end)).fetchone()))
         if has:

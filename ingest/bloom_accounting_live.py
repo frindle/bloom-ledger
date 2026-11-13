@@ -88,7 +88,7 @@ def key_post(root, body, now, get=http_get_json):
         return (400, {"error": "send {\"key\": ...}"})
     k = obj["key"]
     if k is None:
-        for p in (key_path(root), status_path(root)):
+        for p in (key_path(root), status_path(root), os.path.join(keys_dir(root), "darkbloom_api_spend.status.json")):
             try:
                 os.remove(p)
             except FileNotFoundError:
@@ -111,7 +111,14 @@ def key_status(root):
             st = json.load(f)
     except (OSError, ValueError):
         pass
-    return {"set": read_key(root) is not None, "checked_at": st.get("checked_at"), "probe": st.get("probe")}
+    spend = None
+    try:
+        with open(os.path.join(keys_dir(root), "darkbloom_api_spend.status.json")) as f:
+            spend = json.load(f)
+        spend = {k: spend.get(k) for k in ("checked_at", "state", "http", "added")} if isinstance(spend, dict) else None
+    except (OSError, ValueError):
+        pass
+    return {"set": read_key(root) is not None, "checked_at": st.get("checked_at"), "probe": st.get("probe"), "api_spend": spend}
 
 
 def _decode_tps(p):

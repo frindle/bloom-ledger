@@ -46,7 +46,7 @@ def test_saved_key_is_private_and_never_echoed(tmp_path):
     get = fake_get({LV.PROVIDERS_URL: (200, PROVIDERS), LV.SANDBOX_HOSTS_URL: (401, None)})
     code, obj = LV.key_post(tmp_path, json.dumps({"key": "  " + KEY + " "}).encode(), 1000, get)
     assert code == 200 and KEY not in json.dumps(obj)
-    assert obj == {"set": True, "checked_at": 1000, "probe": {"darkbloom": 200, "sandbox": 401}}
+    assert obj == {"set": True, "checked_at": 1000, "probe": {"darkbloom": 200, "sandbox": 401}, "api_spend": None}
     assert Path(LV.key_path(tmp_path)).read_text() == KEY
     assert stat.S_IMODE(os.stat(LV.key_path(tmp_path)).st_mode) == 0o600
     assert KEY not in json.dumps(LV.key_status(tmp_path))

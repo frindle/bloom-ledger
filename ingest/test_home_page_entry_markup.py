@@ -63,7 +63,7 @@ def test_form_fields_are_labelled():
     cats = re.findall(r'<option value="([^"]*)"', h[h.index('id="e-category"'):h.index('id="e-kind"')])
     assert sorted(cats) == ["electricity", "hardware", "interest", "internet", "other", "software", "supplies"]
     kinds = re.findall(r'<option value="([^"]*)"', h[h.index('id="e-kind"'):h.index('id="e-note"')])
-    assert kinds == ["cost", "receipt"]
+    assert kinds == ["cost", "receipt", "contribution"]
     assert 'role="status"' in h and '<button type="submit"' in h
     assert ".entry-form {" in css and "input:focus-visible" in css
 

@@ -4,7 +4,7 @@ Not tax advice. Money is integer cents; dates are YYYY-MM-DD."""
 import datetime as dt
 
 
-KINDS = ("cost", "receipt")
+KINDS = ("cost", "receipt", "contribution")  # contribution: a card top-up of the Darkbloom balance (owner money in; not income, not an expense)
 CATEGORIES = ("hardware", "software", "internet", "electricity", "supplies", "interest", "other")
 
 RECORD_COLUMNS = (("vendor", "TEXT"), ("purpose", "TEXT"), ("business_pct", "INTEGER NOT NULL DEFAULT 100"), ("receipt", "TEXT"))

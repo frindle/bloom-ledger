@@ -46,7 +46,7 @@ def body_html():
         '      <label for="e-category">Category</label>\n'
         '      <select id="e-category"><option value="hardware">Hardware</option><option value="software">Software or subscription</option><option value="internet">Internet service</option><option value="supplies" selected>Supplies</option><option value="electricity">Electricity bill</option><option value="interest">Loan interest (machine)</option><option value="other">Other</option></select>\n'
         '      <label for="e-kind">Type</label>\n'
-        '      <select id="e-kind"><option value="cost">Expense (write-off)</option><option value="receipt">Other income</option></select>\n'
+        '      <select id="e-kind"><option value="cost">Expense (write-off)</option><option value="receipt">Other income</option><option value="contribution">Card top-up of the Darkbloom balance (your own money in)</option></select>\n'
         '      <label for="e-note">Note</label>\n'
         '      <input id="e-note">\n'
         '      <label for="e-vendor">Paid to</label>\n'
@@ -327,6 +327,18 @@ def script_js():
     tokenSpan.setAttribute("title", fmtTokensFull(t.tokens));
     metaP.appendChild(tokenSpan);
     $("summary").replaceChildren(sumDl, metaP);
+    const rc = s.darkbloom_reconcile;
+    if (rc) {
+      const c = (v) => usd(v * 10000);
+      let txt;
+      if (rc.supported === "earnings_pay") txt = "Darkbloom balance: earnings pay for your API use. Withdrawable moved " + c(rc.withdrawable_change_cents) + " = earnings " + c(rc.earnings_cents) + " minus API use " + c(rc.draws_cents) + ".";
+      else if (rc.supported === "credit_pays") txt = "Darkbloom balance: card credit pays for your API use. Withdrawable moved with earnings alone (" + c(rc.withdrawable_change_cents) + ") while credits changed " + c(rc.credits_change_cents) + " (API use " + c(rc.draws_cents) + ").";
+      else txt = "Darkbloom balance: not enough data yet" + (rc.why ? " (" + rc.why + ")" : "") + ".";
+      const rp = document.createElement("p");
+      rp.className = "meta";
+      rp.textContent = txt;
+      $("summary").appendChild(rp);
+    }
     drawData(t);
     drawDays();
     const entryRows = $("entry-rows");

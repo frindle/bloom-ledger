@@ -9,6 +9,7 @@ import bloom_accounting_periods as PR
 import bloom_accounting_report as RP
 import bloom_accounting_tax as TX
 import bloom_accounting_writeoff as WO
+import bloom_api_spend as SP
 
 GRID_NOTE = "grid rates, solar credit not applied"
 RATE_KEYS = ("rate_schedule", "rate_adder_usd_per_kwh", "universal_charge_usd_per_kwh", "county_fee_pct")
@@ -40,7 +41,12 @@ def build(db, today, period, machine=None):
     net = None if None in parts else t["earned_micro"] + pre + amt["receipts_micro"] - power_biz - amt["expensed_micro"] - (lease_biz + depr_biz) * 10000
     net_missing = [k for k, v in (("lease", lease), ("depreciation", depr_biz)) if v is None]
     machines = machine_breakdown(settings, AE.current_entries(db), start, end)
-    return {"machines": machines, "lease_cents": lease, "depreciation_cents": depr, "depreciation_business_cents": depr_biz, "net_micro": net,
+    reconcile = None
+    if machine is None:
+        lo, hi = RP.ts_bounds(settings["local_timezone"], start, end)
+        contrib = sum(e["amount_cents"] for e in live if e["kind"] == "contribution" and start <= e["date"] <= end)
+        reconcile = SP.reconcile(db, lo, hi, contrib * 10000)
+    return {"darkbloom_reconcile": reconcile, "machines": machines, "lease_cents": lease, "depreciation_cents": depr, "depreciation_business_cents": depr_biz, "net_micro": net,
             "net_missing": net_missing, "period": period, "start": start, "end": end, "machine": machine, "days": rows, "totals": t, "entries": entries,
             "power": {"basis": "metered" if t["minutes"] else "none", "estimated": False, "note": GRID_NOTE},
             "not_set": not_set, "lease_business_cents": lease_biz, "write_off": WO.describe(rules), "power_business_micro": power_biz,

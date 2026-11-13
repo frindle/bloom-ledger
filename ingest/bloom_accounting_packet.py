@@ -81,6 +81,8 @@ def entry_row(e, bp):
     amount_cents, line, deduct_micro, receipt, needs (the missing or empty ones of vendor, purpose, receipt, in that order)."""
     if e["kind"] == "receipt":
         line, deduct = "6", e["amount_cents"] * 10000
+    elif e["kind"] == "contribution":   # owner money into the Darkbloom balance: on no tax line
+        line, deduct = "-", 0
     else:
         line = CATEGORY_LINE[e["category"]]
         if e["category"] == "hardware":
@@ -91,7 +93,7 @@ def entry_row(e, bp):
     return {"id": e["id"], "date": e["date"], "kind": e["kind"], "category": e["category"], "vendor": e.get("vendor"),
             "purpose": e.get("purpose"), "business_pct": 100 if pct is None else pct, "amount_cents": e["amount_cents"],
             "line": line, "deduct_micro": deduct, "receipt": e.get("receipt"),
-            "needs": [k for k in ("vendor", "purpose", "receipt") if not e.get(k)]}
+            "needs": [] if e["kind"] == "contribution" else [k for k in ("vendor", "purpose", "receipt") if not e.get(k)]}
 
 
 def packet_lines(totals, rows):

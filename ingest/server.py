@@ -27,6 +27,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import bloom_accounting_index as AX  # noqa: E402
 import bloom_accounting_live as LV
+import bloom_api_spend as SPD
 import bloom_accounting_writeoff as WO
 import bloom_pairing as PA  # noqa: E402
 import bloom_accounting_admin as AA  # noqa: E402
@@ -53,6 +54,7 @@ import bloom_summary as SM  # noqa: E402
 
 ROOT = Path(os.environ.get("BLOOM_DATA", "/data"))
 TOKENS_PATH = os.environ.get("BLOOM_TOKENS", "/run/secrets/bloom_tokens")
+LAN_URL = os.environ.get("BLOOM_LEDGER_LAN_URL", "")
 PORT = int(os.environ.get("BLOOM_PORT", "8787"))
 LISTEN = os.environ.get("BLOOM_LISTEN", "0.0.0.0")
 WEBHOOK = os.environ.get("ALERT_WEBHOOK_URL", "")
@@ -179,7 +181,7 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/v1/hello":
             self.reply(200, {"service": "bloom-ledger", "server_id": PA.server_id(ROOT), "client_version": PA.client_version()})
         elif self.path == "/install.sh":
-            script = PA.install_script(self.headers.get("Host"))
+            script = PA.install_script(self.headers.get("Host"), lan_url=LAN_URL)
             if script is None:
                 self.reply(400, {"error": "bad Host header"})
             else:
@@ -201,6 +203,7 @@ class Handler(BaseHTTPRequestHandler):
                     "machines": BS.machine_rows(self.server.db, ROOT, now, ids),
                     "health": BS.ledger_health(self.server.db, ROOT, now, self.server_version),
                     "darkbloom_key": LV.key_status(ROOT),
+                    "lan_url": PA.ledger_base(self.headers.get("Host"), LAN_URL),
                     "write_off": WO.rules(ACF.effective_settings(self.server.db, dt.date.today().isoformat())["values"]),
                 }
                 self.reply(200, data)
@@ -326,6 +329,7 @@ def days_to_close(root, db, today):
 
 def scheduler(db, stop):
     last_alerts = None
+    last_spend = 0.0
     while not stop.wait(1):
         now = time.time()
         today = time.strftime("%Y-%m-%d", time.gmtime(now))
@@ -341,6 +345,11 @@ def scheduler(db, stop):
                 if n:
                     log(f"accounting indexed {n} objects")
                 alerts = AL.evaluate_alerts(db, now)
+            if now - last_spend >= SPD.EVERY_S:
+                last_spend = now
+                res = SPD.ingest(db, ROOT, now, DB_LOCK)   # the HTTP call runs outside the lock; never logs the key
+                if res["added"] or res["state"] not in ("ok", "no_key", "no_start"):
+                    log(f"api spend {json.dumps(res, sort_keys=True)}")
             keys = sorted(AL.alert_key(a) for a in alerts)
             if keys != last_alerts:
                 log(f"alerts {json.dumps(keys)}")
