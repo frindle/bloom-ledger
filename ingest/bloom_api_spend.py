@@ -97,9 +97,11 @@ def clean(r):
 
 def ingest(db, root, now, lock=None, get=LV.http_get_json):
     """One pass. Returns {"state", "http", "added"}; the same is saved for the key status. The HTTP call runs before `lock`
-    (the caller's DB lock) is taken. state: ok, no_key, no_start, no_scope (401/403), unreachable, bad_response."""
+    (the caller's DB lock) is taken. state: ok, gap (stored rows but the response stopped short of them: some may be missing), no_key, no_start,
+    no_scope (401/403), unreachable, bad_response."""
     key = LV.read_key(root)
-    start = from_ts(db)
+    with (lock or _Null()):   # the connection is shared across threads: every read goes under the caller's lock too
+        start = from_ts(db)
     if not key:
         return {"state": "no_key", "http": 0, "added": 0}
     if start is None:
@@ -116,31 +118,40 @@ def ingest(db, root, now, lock=None, get=LV.http_get_json):
         if rows is None:
             res = {"state": "bad_response", "http": code, "added": 0}
         else:
-            res = {"state": "ok", "http": code, "added": _store(db, rows[:MAX_ROWS], start, lock)}
+            added, reached = _store(db, rows[:MAX_ROWS], start, lock)
+            # The response neither reached a stored row nor the start date: rows older than its oldest may be missing.
+            res = {"state": "ok" if reached else "gap", "http": code, "added": added}
     _set_status(root, now, **res)
     return res
 
 
+class _Null:
+    def __enter__(self): return self
+    def __exit__(self, *a): return False
+
+
 def _store(db, rows, start, lock):
-    class _Null:
-        def __enter__(self): return self
-        def __exit__(self, *a): return False
-    added = 0
+    """Store new rows (newest first). Returns (added, reached): reached is True when the walk stopped at a row older than
+    `start` or one already stored, or when the table was empty before (a first pass has nothing it could have skipped)."""
+    added, reached = 0, False
     with (lock or _Null()):
         create_table(db)
+        empty = db.execute("SELECT 1 FROM api_spend LIMIT 1").fetchone() is None
         for r in rows:
             c = clean(r)
             if c is None:
                 continue
             if c[1] < start:
+                reached = True
                 break   # newest first: everything after this is older too
             if db.execute("SELECT 1 FROM api_spend WHERE request_id = ?", (c[0],)).fetchone():
+                reached = True
                 break   # reached rows already stored
             cur = db.execute("INSERT OR IGNORE INTO api_spend (request_id, ts, model, prompt_tokens, completion_tokens, cost_micro_usd)"
                              " VALUES (?, ?, ?, ?, ?, ?)", c)
             added += cur.rowcount
         db.commit()
-    return added
+    return added, reached or empty
 
 
 def month_totals(db, lo, hi):

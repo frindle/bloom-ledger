@@ -415,3 +415,16 @@ def test_nettop_interval_is_one_constant_and_the_byte_totals_do_not_depend_on_it
     a, na = L.net_block_bytes(rows, 5.0, classify)
     b, nb = L.net_block_bytes(rows, float(L.NETTOP_INTERVAL_S), classify)
     assert a == b == {"gpu": [1000, 2000], "sandbox": [30, 40]} and na == nb == []
+
+
+def test_a_minute_holding_one_block_fewer_is_not_partial_but_two_fewer_is():
+    blk = float(L.NETTOP_INTERVAL_S)
+    per_min = int(60 // blk)
+    w = S.Window(NOW - 60)
+    for _ in range(per_min - 1):            # block edges don't line up with the minute: one block fewer is normal
+        w.add_net_block(blk - 0.2, {"gpu": [0, 0], "sandbox": [0, 0]})
+    assert "net bytes partial" not in w.row(NOW, None)["note"]
+    w = S.Window(NOW - 60)
+    for _ in range(per_min - 2):            # two missing blocks is a real gap (a nettop restart)
+        w.add_net_block(blk, {"gpu": [0, 0], "sandbox": [0, 0]})
+    assert "net bytes partial" in w.row(NOW, None)["note"]

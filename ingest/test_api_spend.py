@@ -204,3 +204,28 @@ def test_summary_carries_the_reconcile_line(tmp_path):
     s = AS.build(db, "2026-11-30", "month")
     assert s["darkbloom_reconcile"]["supported"] == "not_enough_data"
     assert AS.build(db, "2026-11-30", "month", machine="m4")["darkbloom_reconcile"] is None
+
+
+def test_a_reply_that_stops_short_of_the_stored_rows_is_a_gap(tmp_path):
+    db, root = make(tmp_path)
+    SP.ingest(db, root, T0 + 100, get=getter(200, [row("r2", T0 + 20, 2), row("r1", T0 + 10, 1)]))
+    res = SP.ingest(db, root, T0 + 200, get=getter(200, [row("r9", T0 + 90, 9), row("r8", T0 + 80, 8)]))
+    assert res == {"state": "gap", "http": 200, "added": 2}
+    assert json.load(open(SP.status_path(root)))["state"] == "gap"
+    # the next reply that reaches a stored row is up to date again
+    assert SP.ingest(db, root, T0 + 300, get=getter(200, [row("r9", T0 + 90, 9)]))["state"] == "ok"
+
+
+def test_the_settings_read_runs_under_the_callers_lock(tmp_path, monkeypatch):
+    db, root = make(tmp_path)
+    held = []
+
+    class Lock:
+        def __enter__(self):
+            held.append(True)
+        def __exit__(self, *a):
+            held.pop()
+            return False
+    real = SP.from_ts
+    monkeypatch.setattr(SP, "from_ts", lambda d: (held == [True] or (_ for _ in ()).throw(AssertionError("unlocked read"))) and real(d))
+    assert SP.ingest(db, root, T0 + 100, lock=Lock(), get=getter(200, []))["state"] == "ok"

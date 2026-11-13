@@ -147,7 +147,10 @@ class Window:
             td = L.counter_delta(self.counters_first[1], c_last[1])
         notes = set(self.notes)
         span = end_ts - self.start
-        if self.net is not None and span >= 30 and self.net_covered_s < 0.75 * span:
+        # Blocks don't line up with the minute, so a window holds one block fewer or more than span / interval;
+        # the slack is at least one block, or a 15 s interval reads every 3-block minute as partial.
+        slack = max(0.25 * span, L.NETTOP_INTERVAL_S + 2)
+        if self.net is not None and span >= 30 and self.net_covered_s < span - slack:
             notes.add(f"net bytes partial ({self.net_covered_s:.0f}s of {span:.0f}s)")
         net = self.net or [""] * 4
         tot = self.net_total or [""] * 2

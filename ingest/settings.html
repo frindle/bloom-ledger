@@ -547,7 +547,7 @@
     const sp = st.api_spend;
     if (sp && sp.state) {
       const names = { ok: "up to date", no_scope: "skipped: the key is not accepted for payments usage (it may lack that scope)",
-                      no_start: "waiting for the api_spend_from_ts setting", unreachable: "unreachable", bad_response: "unexpected reply", no_key: "no key" };
+                      no_start: "waiting for the api_spend_from_ts setting", gap: "the reply stopped short of the rows already saved, so some usage may be missing", unreachable: "unreachable", bad_response: "unexpected reply", no_key: "no key" };
       t += " API spend: " + (names[sp.state] || sp.state) + ".";
     }
     dbkStatus.textContent = t;
