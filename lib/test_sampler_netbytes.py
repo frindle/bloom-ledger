@@ -403,3 +403,15 @@ def test_a_killed_sampler_does_not_leave_nettop_running(tmp_path, monkeypatch):
 
 def test_reader_without_nettop_does_not_start(tmp_path):
     assert S.NettopReader(cmd=[str(tmp_path / "no-such-nettop")]).start() is False
+
+
+def test_nettop_interval_is_one_constant_and_the_byte_totals_do_not_depend_on_it():
+    i = L.NETTOP_CMD.index("-s")
+    assert L.NETTOP_CMD[i + 1] == str(L.NETTOP_INTERVAL_S) and L.NETTOP_INTERVAL_S >= 15
+    assert "-d" in L.NETTOP_CMD and L.NETTOP_CMD[L.NETTOP_CMD.index("-L") + 1] == "0"   # delta mode, no line limit
+    rows = [("darkbloom", 10, 1000, 2000), ("sandbox-macos-w", 11, 30, 40), ("Safari", 12, 5, 5)]
+    classify = lambda name, pid: {"darkbloom": "gpu", "sandbox-macos-w": "sandbox"}.get(name)   # noqa: E731
+    # the same bytes, whatever the block length: a 15 s block is not read as a glitch below the 40 Gbit/s cap
+    a, na = L.net_block_bytes(rows, 5.0, classify)
+    b, nb = L.net_block_bytes(rows, float(L.NETTOP_INTERVAL_S), classify)
+    assert a == b == {"gpu": [1000, 2000], "sandbox": [30, 40]} and na == nb == []

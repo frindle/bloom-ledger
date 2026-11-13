@@ -76,8 +76,14 @@ BRIDGES = ((SANDBOX_BRIDGE, SANDBOX_BRIDGE_COLUMNS), (NET_BRIDGE, NET_BRIDGE_COL
 # the given interface types, flows that closed in between included. Loopback is left out (the operator's own requests to
 # the provider's 127.0.0.1:8000 are not network traffic). nettop types the Cloudflare WARP tunnel (utun*, where
 # app traffic flows while WARP is on) as "undefined" and the physical NICs as "external".
-NETTOP_CMD = ["/usr/bin/nettop", "-P", "-x", "-n", "-d", "-L", "0", "-s", "5", "-t", "external", "-t", "undefined",
-              "-J", "bytes_in,bytes_out"]
+# The block interval is the one knob that changes nothing about the byte numbers (delta mode: each block holds every
+# process's bytes since the previous block, closed flows included; the sampler weights by the block's own dt_s) and
+# cuts how often nettop formats and writes a block. 2026-11-12 on the M4 Studio: the long-running nettop used 20-55% of
+# a core while the python sampler used 1-2%, so the cost is nettop's own (60 s trials of other -s values and -t/-m filters
+# showed no difference on a fresh process; the effect of 15 s on a long-running one is to be measured after install).
+NETTOP_INTERVAL_S = 15
+NETTOP_CMD = ["/usr/bin/nettop", "-P", "-x", "-n", "-d", "-L", "0", "-s", str(NETTOP_INTERVAL_S), "-t", "external",
+              "-t", "undefined", "-J", "bytes_in,bytes_out"]
 NETSTAT_CMD = ["/usr/sbin/netstat", "-ibn"]   # -n: address-to-name lookups made -ib take 6.7 s (past the 5 s probe timeout)
 NET_NAME_MAX = 15              # nettop prints at most 15 characters of a process name ("sandbox-macos-w")
 NET_SANDBOX_NAMES = tuple(sorted({p[:NET_NAME_MAX] for p in SANDBOX_PROCS + (VM_SERVICE,)}))

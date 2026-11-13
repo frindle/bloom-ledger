@@ -305,7 +305,7 @@ NETTOP_CTTY = ("import fcntl, os, sys, termios\n"
 
 
 class NettopReader:
-    """Keeps ONE `nettop` (L.NETTOP_CMD: delta mode, a block every 5 s) running in a background thread and queues
+    """Keeps ONE `nettop` (L.NETTOP_CMD: delta mode, a block every L.NETTOP_INTERVAL_S = 15 s) running in a background thread and queues
     its blocks as (ts, dt_s, rows). Never raises.
 
     - nettop block-buffers into a pipe (nothing arrived for 20 s+), so its stdout is a pseudo-terminal.
@@ -313,7 +313,7 @@ class NettopReader:
     - A block ends at the next header, or after quiet_s with no output (nettop writes a block at once), so a block
       is queued about a second after nettop wrote it. dt_s is the time since the previous block's header.
     - nettop is restarted with backoff when it exits, and after max_age_s as a precaution against slow growth;
-      the restart loses the block in progress (5-10 s of per-process bytes; the row notes "net bytes partial").
+      the restart loses the block in progress (up to one block, 15-30 s of per-process bytes; the row notes "net bytes partial").
     - The pty is nettop's controlling terminal (NETTOP_CTTY, in a session of its own), so if the sampler dies, even
       by SIGKILL, the pty hangs up and nettop gets SIGHUP. Without that an orphaned nettop kept writing to the dead
       pty at 146% CPU (2026-11-03 test)."""
