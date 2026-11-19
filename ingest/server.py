@@ -7,6 +7,8 @@
   GET  /v1/summary 200 {generated_at, machines: [per-machine day ribbon, last 90 UTC days]}  (metadata only)
   GET  /            the static dashboard page (dashboard.html)
   GET  /v1/tally/monthly?month=YYYY-MM, /v1/tally/months   read-only monthly books tally (see README)
+  GET  /v1/invoice/monthly?month=YYYY-MM, /v1/invoice/months   read-only monthly invoice for the resell-tracker
+  GET  /v1/earnings/series   daily earnings with a running total and a month roll-up (the home page graph)
   GET  /v1/alerts    200 [open alerts]  (machine silent > 30 min, ring snapshot > 12 h)
 
 Background: every 10 min closes every finished UTC day since the last manifest (per machine, hash-chained);
@@ -38,6 +40,8 @@ import bloom_accounting_report as RP  # noqa: E402
 import bloom_accounting_summary as AS  # noqa: E402
 import bloom_accounting_tax as AT  # noqa: E402
 import bloom_accounting_tally as TL  # noqa: E402
+import bloom_invoice as INV  # noqa: E402
+import bloom_earnings_series as ES  # noqa: E402
 import bloom_accounting_settings_form as SF  # noqa: E402
 import bloom_accounting_deprpage as DPG  # noqa: E402
 import bloom_accounting_config as ACF  # noqa: E402
@@ -141,6 +145,26 @@ class Handler(BaseHTTPRequestHandler):
             with DB_LOCK:
                 AX.create_schema(self.server.db)
                 code, ctype, data = TL.tally_response(self.server.db, self.path, time.time())
+            self.send_response(code)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(data)
+        elif self.path.split("?", 1)[0] in ("/v1/invoice/monthly", "/v1/invoice/months"):
+            with DB_LOCK:
+                AX.create_schema(self.server.db)
+                code, ctype, data = INV.invoice_response(self.server.db, self.path, time.time())
+            self.send_response(code)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(data)
+        elif self.path.split("?", 1)[0] == "/v1/earnings/series":
+            with DB_LOCK:
+                AX.create_schema(self.server.db)
+                code, ctype, data = ES.series_response(self.server.db, self.path)
             self.send_response(code)
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(data)))

@@ -55,6 +55,14 @@ Read-only, open on the LAN like the other reads; nothing in it is a token, key o
 
 Conventions: a month is the local calendar month in the `local_timezone` setting effective on its last day (default America/Los_Angeles), from 00:00 on the 1st to 00:00 on the next 1st, the same day boundary as the tax report and packet; entries use their own date. The write-off rules and other settings are those effective on the month's last day (the tax report uses the year's December 31 settings for the whole year, so the two differ only after a mid-year rule change). Money is integer cents: each column's month total is converted from micro-USD to cents once, rounded down, equal to the report's month figure divided by 10000; the machine rows split that total by largest remainder, so they always add up. Twelve monthly tallies therefore sum to within a cent per month of the tax report's year total.
 
+## Monthly invoice (for the resell-tracker's side-hustle P&L)
+
+Read-only and open on the LAN like the tally; no secrets in it. `GET /v1/invoice/monthly?month=YYYY-MM` returns a mock invoice built on that month's tally: `invoice_id` (`BL-YYYY-MM`), `issue_date` (the 1st of the next month), `gross_cents`, `lines` (inference, sandbox, base reward, plus "other earlier pay" when the day rows do not carry all of the pay; they always add up to `gross_cents`), `other_income_cents`, `costs` (metered power, depreciation, lease, purchases; an amount is `null` when it cannot be computed and is listed in `costs_unknown`), `net_cents`, `usage` (`tokens`, `jobs`, `inference_minutes`, `sandbox_minutes`), `final` and `hash`. `fees_cents` is always `null` (Darkbloom pays out net; the ledger has no fee figure) and `usage.vcpu_seconds` is always `null` (the earnings feed has no vCPU seconds). `GET /v1/invoice/months` lists `{month, final, hash}` for the months with data. The resell-tracker pulls these and keeps one invoice per month.
+
+## Earnings graph
+
+The home page's **Earnings over time** section draws `GET /v1/earnings/series` as inline SVG: stacked daily or monthly bars (inference, sandbox, base reward) and a running-total line on the right-hand axis, with a table of the same figures under it. Days are local days in the books' timezone, zero-filled up to today.
+
 ## Tests
 
 ```

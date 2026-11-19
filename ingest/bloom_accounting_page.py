@@ -3,6 +3,9 @@
 Bookkeeping view, not tax advice."""
 
 
+import bloom_earnings_graph as GR
+
+
 def body_html():
     """The page <main> markup as a string."""
     return (
@@ -16,6 +19,7 @@ def body_html():
         '    <dl id="live" class="live-grid"></dl>\n'
         '    <p id="live-note" class="meta" role="status"></p>\n'
         '  </section>\n'
+        + GR.section_html() +
         '  <div class="picker">\n'
         '    <label for="period">Period</label>\n'
         '    <select id="period"><option value="day">Today</option><option value="week">This week</option><option value="month" selected>This month</option><option value="quarter">This quarter</option><option value="ytd">Year to date</option><option value="last_year">Last year</option></select>\n'
@@ -184,7 +188,7 @@ def bytes_format_js():
 
 def script_js():
     """The inline JavaScript: fetches the summary, draws both streams and the days, and opens a day's logs on request."""
-    return tokens_format_js() + kwh_format_js() + bytes_format_js() + """(() => {
+    return tokens_format_js() + kwh_format_js() + bytes_format_js() + GR.script_js() + """(() => {
   "use strict";
   const $ = id => document.getElementById(id);
   const NAMES = { gpu: "Darkbloom GPU", sandbox: "Sandbox", other: "Your own work", idle: "Idle", gap: "No reading" };
@@ -706,6 +710,7 @@ def style_block():
         '  section { margin-top: 2.5rem; }\n'
         '  .top { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: .25rem 1rem; }\n'
         '  .top nav a { display: inline-block; padding: .35rem .5rem; }\n'
+        + GR.style() +
         '  .meta { color: var(--muted); font-size: .9rem; margin: .5rem 0 0; max-width: 42rem; }\n'
         '  .banner { margin: 1rem 0 0; padding: .7rem 1rem; border-left: 4px solid var(--bad); background: #f3dede; }\n'
         '  .banner[hidden] { display: none; }\n'
