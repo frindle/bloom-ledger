@@ -81,6 +81,14 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):  # keep the access log free of headers; status + path only
         log(f"{self.address_string()} {fmt % args}")
 
+    def handle_one_request(self):
+        # A client that hangs up before the reply is written (a probe with a short timeout) is not a server
+        # error. The access line is already logged; stop quietly instead of printing a traceback each time.
+        try:
+            super().handle_one_request()
+        except (BrokenPipeError, ConnectionResetError):
+            self.close_connection = True
+
     def reply(self, code, obj):
         data = json.dumps(obj, sort_keys=True).encode()
         self.send_response(code)
