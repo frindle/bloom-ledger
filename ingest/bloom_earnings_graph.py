@@ -1,7 +1,8 @@
 """The "Earnings over time" section of the home page: markup, style and inline script (no external assets).
 
 Draws /v1/earnings/series as inline SVG: stacked bars (inference, sandbox, base reward) per day or per month, plus a running-total
-line on its own right-hand axis. A table of the same figures sits under the chart for screen readers and keyboards."""
+line on its own right-hand axis. Hovering (or tapping) a day or month shows its date, earnings by kind and running total. A table
+of the same figures sits under the chart for screen readers and keyboards."""
 
 
 def section_html():
@@ -13,7 +14,8 @@ def section_html():
         '<button type="button" id="graph-month" aria-pressed="false">Monthly</button></span>\n'
         '    </div>\n'
         '    <p id="graph-total" class="meta" role="status"></p>\n'
-        '    <figure class="graph"><div id="graph" role="img" aria-label="Earnings over time"></div>\n'
+        '    <figure class="graph"><div id="graph" role="img" aria-label="Earnings over time"></div>'
+        '<div id="graph-tip" class="tip" aria-hidden="true" hidden></div>\n'
         '      <figcaption id="graph-legend" class="legend"></figcaption></figure>\n'
         '    <details class="graph-table"><summary>Table of the same figures</summary>\n'
         '      <div class="scroll"><table class="days"><thead><tr><th scope="col" id="gt-first">Day</th><th scope="col" class="num">Earned</th>'
@@ -24,7 +26,13 @@ def section_html():
 
 def style():
     return (
-        '  .graph { margin: .75rem 0 0; background: var(--card); padding: .75rem .75rem .5rem; }\n'
+        '  .graph { position: relative; margin: .75rem 0 0; background: var(--card); padding: .75rem .75rem .5rem; }\n'
+        '  .graph svg { touch-action: pan-y; } .graph .hl { fill: var(--rule); opacity: .6; }\n'
+        '  .graph .tip { position: absolute; z-index: 1; pointer-events: none; background: var(--card); color: var(--ink); border: 2px solid var(--ink); '
+        'padding: .4rem .6rem; font-size: .9rem; line-height: 1.4; white-space: nowrap; }\n'
+        '  .graph .tip strong { display: block; margin-bottom: .15rem; } .graph .tip .r { display: flex; justify-content: space-between; gap: 1.25rem; }\n'
+        '  .graph .tip .r b { font-weight: 400; font-variant-numeric: tabular-nums; } .graph .tip .r.sum { border-top: 1px solid var(--rule); margin-top: .15rem; padding-top: .15rem; }\n'
+        '  .graph .tip i { display: inline-block; width: .7rem; height: .7rem; margin-right: .35rem; vertical-align: -.05rem; }\n'
         '  .graph svg { display: block; width: 100%; height: auto; }\n'
         '  .graph text { font: 12px var(--serif); fill: var(--muted); }\n'
         '  .graph .axis { stroke: var(--rule); stroke-width: 1; }\n'
@@ -43,7 +51,7 @@ def script_js():
   const $ = id => document.getElementById(id);
   const NS = "http" + ":" + "//www.w3.org/2000/svg";   // an XML namespace id, not a link; the page test forbids a literal URL
   const SERIES = [["inference_micro", "Inference", "var(--gpu)"], ["sandbox_micro", "Sandbox", "var(--sandbox)"], ["base_micro", "Base reward", "var(--other)"]];
-  let data = null, view_ = "day";
+  let data = null, view_ = "day", hideTip = () => {};
   const usd = m => "$" + (m / 1e6).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const short = m => { const v = m / 1e6; return "$" + (v >= 100 ? Math.round(v).toLocaleString("en-US") : v.toFixed(v >= 10 ? 0 : 2)); };
   function node(tag, attrs, text) {
@@ -64,7 +72,22 @@ def script_js():
     return data.days.map(d => ({ label: d.date, earned: d.earned_micro, cum: d.cumulative_micro,
       parts: { inference_micro: d.inference_micro, sandbox_micro: d.sandbox_micro, base_micro: d.base_micro } }));
   }
+  // Today in the ledger's timezone, so the open day or month reads "so far".
+  function todayLocal() {
+    try { return new Intl.DateTimeFormat("en-CA", { timeZone: data.timezone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date()); }
+    catch (e) { return ""; }
+  }
+  function when(p, view) {
+    const today = todayLocal();
+    if (view === "month") {
+      const s = new Date(p.label + "-01T12:00:00Z").toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
+      return s + (today.slice(0, 7) === p.label ? " (so far)" : "");
+    }
+    const s = new Date(p.label + "T12:00:00Z").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+    return s + (today === p.label ? " (today, so far)" : "");
+  }
   function draw() {
+    hideTip();
     const view = view_, pts = points(view), box = $("graph");
     box.replaceChildren();
     $("graph-rows").replaceChildren();
@@ -76,6 +99,8 @@ def script_js():
     const bmax = niceMax(Math.max(...pts.map(p => p.earned))), cmax = niceMax(pts[pts.length - 1].cum);
     const svg = node("svg", { viewBox: "0 0 " + W + " " + H, "aria-hidden": "true", focusable: "false" });
     const slot = pw / pts.length, bw = Math.max(1, Math.min(28, slot * 0.7));
+    const hl = node("rect", { class: "hl", x: L, y: T, width: slot, height: ph, visibility: "hidden" });
+    svg.append(hl);
     for (let i = 0; i <= 4; i++) {
       const y = T + ph - ph * i / 4;
       svg.append(node("line", { x1: L, x2: W - R, y1: y, y2: y, class: "axis" }));
@@ -91,13 +116,47 @@ def script_js():
         if (h > 0) g.append(node("rect", { x, y: y - h, width: bw, height: h, fill }));
         y -= h;
       }
-      g.append(node("title", {}, p.label + ": " + usd(p.earned) + ", running total " + usd(p.cum)));
       svg.append(g);
     });
     const step = Math.max(1, Math.ceil(pts.length / 6));
     pts.forEach((p, i) => { if (i % step === 0) svg.append(node("text", { x: L + slot * i + slot / 2, y: H - 12, "text-anchor": "middle" }, view === "month" ? p.label : p.label.slice(5))); });
     svg.append(node("polyline", { class: "cum", points: pts.map((p, i) => (L + slot * i + slot / 2).toFixed(1) + "," + (T + ph - ph * p.cum / cmax).toFixed(1)).join(" ") }));
     box.append(svg);
+    const tip = $("graph-tip");
+    let shown = -1;
+    function row(name, v, fill, cls) {
+      const r = document.createElement("div"), n = document.createElement("span"), b = document.createElement("b");
+      r.className = "r" + (cls ? " " + cls : "");
+      if (fill) { const i = document.createElement("i"); i.style.background = fill; n.append(i); }
+      n.append(name); b.textContent = usd(v); r.append(n, b);
+      return r;
+    }
+    function show(i) {
+      const p = pts[i];
+      hl.setAttribute("x", L + slot * i); hl.setAttribute("visibility", "visible");
+      if (i !== shown) {
+        const h = document.createElement("strong");
+        h.textContent = when(p, view);
+        tip.replaceChildren(h, row("Earned", p.earned), ...SERIES.filter(([k]) => p.parts[k]).map(([k, name, fill]) => row(name, p.parts[k], fill)),
+          row("Running total", p.cum, null, "sum"));
+        shown = i;
+      }
+      tip.hidden = false;
+      const fr = tip.parentNode.getBoundingClientRect(), sr = svg.getBoundingClientRect(), k = sr.width / W;
+      const cx = sr.left - fr.left + (L + slot * (i + 0.5)) * k, tw = tip.offsetWidth;
+      let left = cx + 14;
+      if (left + tw > fr.width) left = cx - 14 - tw;
+      tip.style.left = Math.max(0, left) + "px";
+      tip.style.top = (sr.top - fr.top + T * k) + "px";
+    }
+    hideTip = () => { tip.hidden = true; hl.setAttribute("visibility", "hidden"); shown = -1; };
+    const at = e => {
+      const r = svg.getBoundingClientRect(), i = Math.floor(((e.clientX - r.left) * W / r.width - L) / slot);
+      if (i >= 0 && i < pts.length) show(i); else hideTip();
+    };
+    svg.addEventListener("pointermove", at);
+    svg.addEventListener("pointerdown", at);
+    svg.addEventListener("pointerleave", e => { if (e.pointerType === "mouse") hideTip(); });
     const lg = $("graph-legend");
     for (const [, name, fill] of SERIES) {
       const s = document.createElement("span"), i = document.createElement("i");
@@ -128,5 +187,7 @@ def script_js():
     for (const w of ["day", "month"]) $("graph-" + w).setAttribute("aria-pressed", String(w === v));
     if (data) draw();
   });
+  // A tap anywhere off the chart closes the readout on touch screens.
+  document.addEventListener("pointerdown", e => { if (!$("graph").contains(e.target)) hideTip(); });
   load();
 })();"""
