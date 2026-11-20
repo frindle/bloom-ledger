@@ -101,7 +101,8 @@ NET_SANDBOX_NAMES = tuple(sorted({p[:NET_NAME_MAX] for p in SANDBOX_PROCS + (VM_
 DARKBLOOM_SERVICE_CMDS = ("start", "watchdog")     # the `darkbloom <cmd>` processes that are the provider service
 NET_MAX_BPS = 5e9              # 40 Gbit/s, above any link here (en0 is 10GbE): more in a block is a glitch, counts 0
 # Interfaces that carry another interface's traffic or none off the machine: a flow on one is never "the wire".
-NET_TUNNEL_IFACE_RE = re.compile(r"^(?:utun|ipsec|ppp|gif|stf|lo|awdl|llw|bridge|ap|anpi|vmenet|vmnet|feth)\d*$")
+# idx-N is what nettop prints when the interface index no longer exists (a socket left on a torn-down tunnel).
+NET_TUNNEL_IFACE_RE = re.compile(r"^(?:utun|ipsec|ppp|gif|stf|lo|awdl|llw|bridge|ap|anpi|vmenet|vmnet|feth)\d*$|^idx-\d+$")
 # Remote addresses that are not the internet: this host, "this network", RFC1918, CGNAT, link-local, ULA, multicast,
 # reserved/broadcast. (Documentation ranges are deliberately NOT here: tests use them as stand-in public addresses.)
 NET_NOT_INTERNET = tuple(ipaddress.ip_network(n) for n in (

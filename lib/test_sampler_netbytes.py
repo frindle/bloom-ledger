@@ -164,7 +164,7 @@ def test_only_public_remote_addresses_are_the_internet(addr, want):
 
 
 @pytest.mark.parametrize("iface, want", [("utun4", True), ("utun0", True), ("ipsec0", True), ("lo0", True),
-                                         ("awdl0", True), ("bridge0", True), ("en0", False), ("en12", False),
+                                         ("awdl0", True), ("bridge0", True), ("idx-22", True), ("idx-7", True), ("idx-", False), ("en0", False), ("en12", False),
                                          ("", False), (None, False)])
 def test_tunnel_interfaces(iface, want):
     assert L.is_tunnel_iface(iface) is want
@@ -238,6 +238,11 @@ def test_warp_counts_each_byte_once():
     # WARP off: the same app flows are on en0 and count once, directly
     rows = [("Safari", 3, [flow(PUB, "en0", 700, 600)]), ("darkbloom", 1, [flow(PUB, "en0", 150, 120)])]
     assert blk(rows, cls={1: "gpu"})[0] == {"gpu": [150, 120], "sandbox": [0, 0], "total": [850, 720]}
+
+
+def test_flows_on_a_vanished_interface_are_not_the_wire_but_still_count_for_their_process():
+    rows = [("darkbloom", 1, [flow(PUB6, "idx-22", 24, 6)]), ("Safari", 3, [flow(PUB6, "idx-22", 900, 90)])]
+    assert blk(rows, cls={1: "gpu"})[0] == {"gpu": [24, 6], "sandbox": [0, 0], "total": [0, 0]}
 
 
 def test_a_flow_with_no_interface_counts_as_the_wire():
