@@ -166,7 +166,7 @@ def test_response_codes_and_months_listing():
     code, _, body = TL.tally_response(db, "/v1/tally/months", NOW)
     months = json.loads(body)["months"]
     assert [m["month"] for m in months] == ["2026-09", "2026-10", "2026-11"] and all(set(m) == {"month", "final", "hash"} for m in months)
-    assert months[0]["hash"] == TL.build_month(db, "2026-10", NOW)["hash"]
+    assert months[1]["hash"] == TL.build_month(db, "2026-10", NOW)["hash"]
 
 
 def test_apportion_sums_exactly():
