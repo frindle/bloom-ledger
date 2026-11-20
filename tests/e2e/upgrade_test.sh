@@ -47,8 +47,8 @@ H='-H Content-Type:application/json'
 RESP=$(curl -fsS -X POST $H -H "Origin: $BASE" --data '{"id":"mac-old"}' "$BASE/v1/settings/machines") || { bad "old version adds a machine"; exit 1; }
 CODE=$(echo "$RESP" | jget pair_code 2>/dev/null)
 TOKEN=$(curl -fsS -X POST $H --data "{\"code\":\"$CODE\"}" "$BASE/v1/pair" | jget token) || { bad "old pairing"; exit 1; }
-python3 "$HERE/sample.py" post "$BASE" "$TOKEN" && ok "sample data shipped to the old version" || bad "sample data shipped to the old version"
-python3 "$HERE/sample.py" wait "$BASE" mac-old 90 || true
+SAMPLE_NOW=2026-11-15T12:00:00 python3 "$HERE/sample.py" post "$BASE" "$TOKEN" && ok "sample data shipped to the old version" || bad "sample data shipped to the old version"
+for _ in $(seq 1 30); do [ "$(curl -fsS "$BASE/v1/earnings/series" | jget total_micro)" -gt 0 ] && break; sleep 2; done
 before=$(curl -fsS "$BASE/v1/earnings/series" | jget total_micro)
 echo "old series: $(curl -fsS "$BASE/v1/earnings/series" | cut -c1-400)"
 echo "old status: $(curl -fsS "$BASE/v1/status" | cut -c1-600)"

@@ -10,6 +10,7 @@ Python 3.9+, standard library only."""
 import datetime as dt
 import hashlib
 import json
+import os
 import sys
 import time
 import urllib.error
@@ -21,9 +22,15 @@ POWER_COLS = ["ts_utc", "interval_s", "samples", "power_ok", "avg_w", "max_w", "
               "gpu_pct", "other_work", "other_procs", "note"]
 
 
+def utcnow():
+    """Now, or the moment in SAMPLE_NOW (ISO, UTC). The upgrade test uses it: the previous release only keeps data dated after 2026-10-13."""
+    raw = os.environ.get("SAMPLE_NOW", "")
+    return dt.datetime.fromisoformat(raw).replace(tzinfo=dt.timezone.utc) if raw else dt.datetime.now(dt.timezone.utc)
+
+
 def power_csv(days=3):
     """One row a minute for a few hours on each of the last `days` days, ending now."""
-    now = dt.datetime.now(dt.timezone.utc).replace(second=0, microsecond=0)
+    now = utcnow().replace(second=0, microsecond=0)
     rows = [",".join(POWER_COLS)]
     for d in range(days):
         for m in range(0, 180, 1):
@@ -33,7 +40,7 @@ def power_csv(days=3):
 
 
 def earnings_jsonl(days=3):
-    now = dt.datetime.now(dt.timezone.utc)
+    now = utcnow()
     out = []
     for d in range(days):
         for i in range(5):
@@ -47,7 +54,7 @@ def write_home(home):
     home = Path(home)
     (home / "power").mkdir(parents=True, exist_ok=True)
     (home / "earnings-archive").mkdir(parents=True, exist_ok=True)
-    now = dt.datetime.now(dt.timezone.utc)
+    now = utcnow()
     (home / "power" / ("power-log-%s.csv" % now.strftime("%Y-%m"))).write_text(power_csv())
     (home / "earnings-archive" / "earnings.jsonl").write_text(earnings_jsonl())
     (home / "provider.log").write_text("".join("%s fake provider line %d\n" % (now.strftime("%Y-%m-%dT%H:%M:%SZ"), i) for i in range(5)))
@@ -99,7 +106,7 @@ def main(argv):
         print(body["pair_code"])
     elif cmd == "post":
         base, token = argv[2:4]
-        for kind, meta, payload in (("log", {"path": "power/power-log-%s.csv" % dt.datetime.now(dt.timezone.utc).strftime("%Y-%m"), "offset": 0}, power_csv()),
+        for kind, meta, payload in (("log", {"path": "power/power-log-%s.csv" % utcnow().strftime("%Y-%m"), "offset": 0}, power_csv()),
                                     ("log", {"path": "earnings-archive/earnings.jsonl", "offset": 0}, earnings_jsonl())):
             body = object_bytes(kind, meta, payload)
             r = urllib.request.Request(base + "/v1/objects", data=body, method="POST", headers={
