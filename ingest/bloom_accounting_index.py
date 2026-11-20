@@ -12,7 +12,7 @@ _DDL = (
     "CREATE TABLE IF NOT EXISTS power_minutes (machine_id TEXT NOT NULL, ts INTEGER NOT NULL, wh REAL, interval_s REAL,"
     " power_ok INTEGER, dbk_state TEXT, other_work INTEGER, tokens_delta INTEGER, sandbox_jobs INTEGER NOT NULL DEFAULT 0,"
     " gpu_bytes_in INTEGER, gpu_bytes_out INTEGER, sandbox_bytes_in INTEGER, sandbox_bytes_out INTEGER,"
-    " total_bytes_in INTEGER, total_bytes_out INTEGER, active_frac REAL,"
+    " total_bytes_in INTEGER, total_bytes_out INTEGER, net_scope TEXT, active_frac REAL,"
     " usage_s REAL, dbk_cpu_ms INTEGER, dbk_cpu_mj INTEGER, dbk_gpu_ms INTEGER, sbx_cpu_ms INTEGER, sbx_cpu_mj INTEGER,"
     " sbx_gpu_ms INTEGER, own_cpu_ms INTEGER, own_cpu_mj INTEGER, own_gpu_ms INTEGER, sys_gpu_ms INTEGER, cpu_mj INTEGER,"
     " gpu_mj INTEGER, dbk_local INTEGER, PRIMARY KEY (machine_id, ts))",
@@ -20,7 +20,7 @@ _DDL = (
     " PRIMARY KEY (machine_id, ts))",
     "CREATE TABLE IF NOT EXISTS net_bridge (machine_id TEXT NOT NULL, ts INTEGER NOT NULL, gpu_bytes_in INTEGER,"
     " gpu_bytes_out INTEGER, sandbox_bytes_in INTEGER, sandbox_bytes_out INTEGER, total_bytes_in INTEGER,"
-    " total_bytes_out INTEGER, PRIMARY KEY (machine_id, ts))",
+    " total_bytes_out INTEGER, net_scope TEXT, PRIMARY KEY (machine_id, ts))",
     "CREATE TABLE IF NOT EXISTS usage_bridge (machine_id TEXT NOT NULL, ts INTEGER NOT NULL, usage_s REAL,"
     " dbk_cpu_ms INTEGER, dbk_cpu_mj INTEGER, dbk_gpu_ms INTEGER, sbx_cpu_ms INTEGER, sbx_cpu_mj INTEGER,"
     " sbx_gpu_ms INTEGER, own_cpu_ms INTEGER, own_cpu_mj INTEGER, own_gpu_ms INTEGER, sys_gpu_ms INTEGER,"
@@ -50,6 +50,9 @@ def create_schema(db):
         db.execute(ddl)
     if "sandbox_jobs" not in [r[1] for r in db.execute("PRAGMA table_info(power_minutes)")]:
         db.execute("ALTER TABLE power_minutes ADD COLUMN sandbox_jobs INTEGER NOT NULL DEFAULT 0")
+    for t in ("power_minutes", "net_bridge"):      # net_scope (2026-11-19): NULL on rows stored before = all traffic incl. LAN
+        if "net_scope" not in [r[1] for r in db.execute(f"PRAGMA table_info({t})")]:
+            db.execute(f"ALTER TABLE {t} ADD COLUMN net_scope TEXT")
     db.commit()
 
 
@@ -210,6 +213,15 @@ def other_work_flag(ts, r):
 NET_COLUMNS = ("gpu_bytes_in", "gpu_bytes_out", "sandbox_bytes_in", "sandbox_bytes_out", "total_bytes_in", "total_bytes_out")
 
 
+NET_SCOPE_INTERNET = "internet"
+
+
+def net_scope(r):
+    """'internet' for a sidecar row marked net_scope=internet (written since 2026-11-19), else 'all': an older row,
+    whose figures include LAN traffic (Time Machine, file shares)."""
+    return NET_SCOPE_INTERNET if (r.get("net_scope") or "").strip() == NET_SCOPE_INTERNET else "all"
+
+
 def net_bytes(r, col):
     """A byte count from a sampler row: None when the column is absent, blank (not measured) or not a whole number >= 0."""
     try:
@@ -322,7 +334,7 @@ def apply_sandbox_bridge(db):
 
 def store_net(db, machine_id, payload):
     """Net-bytes sidecar rows -> net_bridge (by header name; a headerless increment uses the sidecar order), then power_minutes."""
-    cols = ["ts_utc", *NET_COLUMNS]
+    cols = ["ts_utc", *NET_COLUMNS, "net_scope"]     # a headerless increment: the current layout; older rows are shorter
     for vals in csv.reader(payload.splitlines()):
         if vals and vals[0] == "ts_utc":
             cols = vals
@@ -332,8 +344,8 @@ def store_net(db, machine_id, payload):
             ts = int(dt.datetime.fromisoformat((r.get("ts_utc") or "").replace("Z", "+00:00")).timestamp())
         except ValueError:
             continue
-        db.execute("INSERT OR REPLACE INTO net_bridge (machine_id, ts, " + ", ".join(NET_COLUMNS) + ") VALUES (?, ?"
-                   + ", ?" * len(NET_COLUMNS) + ")", (machine_id, ts, *[net_bytes(r, c) for c in NET_COLUMNS]))
+        db.execute("INSERT OR REPLACE INTO net_bridge (machine_id, ts, " + ", ".join(NET_COLUMNS) + ", net_scope) VALUES (?, ?"
+                   + ", ?" * (len(NET_COLUMNS) + 1) + ")", (machine_id, ts, *[net_bytes(r, c) for c in NET_COLUMNS], net_scope(r)))
     apply_net_bridge(db)
 
 
@@ -342,6 +354,8 @@ def apply_net_bridge(db):
     for c in NET_COLUMNS:
         db.execute(f"UPDATE power_minutes SET {c} = (SELECT b.{c} FROM net_bridge b WHERE b.machine_id = power_minutes.machine_id"
                    f" AND b.ts = power_minutes.ts) WHERE {c} IS NULL")
+    db.execute("UPDATE power_minutes SET net_scope = (SELECT b.net_scope FROM net_bridge b WHERE b.machine_id = power_minutes.machine_id"
+               " AND b.ts = power_minutes.ts) WHERE net_scope IS NULL")
     db.commit()
 
 

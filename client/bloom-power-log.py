@@ -15,14 +15,16 @@ Every minute appends ONE row to ~/.darkbloom/power/power-log-YYYY-MM.csv (new fi
                           processes, and one busy VM per running sandbox job, are not other work.
     sandbox_jobs, gpu/sandbox/total_bytes_in/out   NOT in the power-log header: written to the sidecars
                           power/sandbox-jobs-YYYY-MM.csv and power/net-bytes-YYYY-MM.csv (L.bridge_row).
-                          Bytes come from one long-running nettop (NettopReader) and netstat -ibn (NetProbe).
+                          Bytes come from one long-running per-flow nettop (NettopReader, NetProbe) and count INTERNET
+                          traffic only (public remote addresses; LAN, loopback, CGNAT, link-local and multicast
+                          flows are left out). Rows carry net_scope=internet; older sidecar rows lack it (= all traffic).
     L.USAGE_COLUMNS       NOT in the header either: power/usage-YYYY-MM.csv. Per-process CPU time and energy
                           (proc_pid_rusage, the operator's own processes, no root) and per-client GPU time (ioreg
                           AGXDeviceUserClient), snapshotted each row (UsageProbe) and split into Darkbloom /
                           Sandbox / own / system, plus macmon's whole-CPU and whole-GPU energy for the row.
-READ-ONLY toward Darkbloom: reads daemon-state.json, the sandbox status.json, lsof/ps/nettop/netstat; never calls the
+READ-ONLY toward Darkbloom: reads daemon-state.json, the sandbox status.json, lsof/ps/nettop; never calls the
 darkbloom CLI or writes provider.toml; ioreg and proc_pid_rusage only read counters. macmon missing/crashing never exits the loop: rows say power_ok=0
-note='power unavailable'; nettop/netstat missing leave the byte columns "".
+note='power unavailable'; nettop missing leaves the byte columns "".
 
 Usage: bloom-power-log.py            run forever (launchd KeepAlive)
        bloom-power-log.py --once [--seconds N]   sample N s (default 20), write one row, print it"""
@@ -78,7 +80,7 @@ class Window:
         self.sandbox_jobs = 0        # most Darkbloom Sandbox jobs running at any poll
         self.net = None              # [gpu_in, gpu_out, sandbox_in, sandbox_out]; None = no nettop block came
         self.net_covered_s = 0.0
-        self.net_total = None        # [in, out] on the physical interfaces; None = not measured
+        self.net_total = None        # [in, out] internet bytes of the whole machine; None = not measured
         self.cpu_ws = 0.0            # macmon cpu_power / gpu_power integrated like energy_ws (joules)
         self.gpu_ws = 0.0
         self.parts_s = 0.0           # seconds those two cover (0 = macmon gave no cpu/gpu power)
@@ -119,19 +121,15 @@ class Window:
 
 
     def add_net_block(self, dt_s, by_class):
-        """One nettop delta block's bytes (L.net_block_bytes) covering dt_s seconds."""
+        """One nettop delta block's internet bytes (L.net_block_bytes) covering dt_s seconds."""
         if self.net is None:
             self.net = [0, 0, 0, 0]
+            self.net_total = [0, 0]
         for i, v in enumerate(by_class["gpu"] + by_class["sandbox"]):
             self.net[i] += int(v)
+        for i, v in enumerate(by_class["total"]):
+            self.net_total[i] += int(v)
         self.net_covered_s += max(float(dt_s), 0.0)
-
-    def add_net_total(self, b_in, b_out):
-        """Bytes the physical interfaces moved since the previous netstat reading (L.iface_bytes_delta)."""
-        if self.net_total is None:
-            self.net_total = [0, 0]
-        self.net_total[0] += int(b_in)
-        self.net_total[1] += int(b_out)
 
     def row(self, end_ts, prev_counters):
         n = len(self.samples)
@@ -194,6 +192,7 @@ class Window:
             "sandbox_bytes_out": net[3],
             "total_bytes_in": tot[0],
             "total_bytes_out": tot[1],
+            L.NET_SCOPE_COLUMN: L.NET_SCOPE_INTERNET,
             "cpu_mj": int(round(self.cpu_ws * 1000)) if self.parts_s else "",
             "gpu_mj": int(round(self.gpu_ws * 1000)) if self.parts_s else "",
             "dbk_local": int(any(o.startswith("local-endpoint-client:") for o in other)),
@@ -309,7 +308,7 @@ NETTOP_CTTY = ("import fcntl, os, sys, termios\n"
 
 class NettopReader:
     """Keeps ONE `nettop` (L.NETTOP_CMD: delta mode, a block every L.NETTOP_INTERVAL_S = 15 s) running in a background thread and queues
-    its blocks as (ts, dt_s, rows). Never raises.
+    its blocks as (ts, dt_s, rows), rows = [(process name, pid, [(remote, iface, bytes_in, bytes_out), ...])]. Never raises.
 
     - nettop block-buffers into a pipe (nothing arrived for 20 s+), so its stdout is a pseudo-terminal.
     - The first block after every (re)start holds each flow's total so far, not a delta: it is dropped.
@@ -366,7 +365,7 @@ class NettopReader:
         self.runs += 1
         started = time.time()
         buf = b""
-        st = {"n": 0, "rows": None, "ts": None, "prev_ts": None, "got": False}
+        st = {"n": 0, "rows": None, "ts": None, "prev_ts": None, "got": False, "proc": None}
         aged = False
         try:
             while not self.stop.is_set():
@@ -392,9 +391,12 @@ class NettopReader:
                     kind, val = L.parse_nettop_line(raw.decode("utf-8", "replace"))
                     if kind == "header":
                         self._finish(st)
-                        st["rows"], st["ts"] = [], time.time()
-                    elif kind == "row" and st["rows"] is not None:
-                        st["rows"].append(val)
+                        st["rows"], st["ts"], st["proc"] = [], time.time(), None
+                    elif kind == "proc" and st["rows"] is not None:
+                        st["proc"] = (val[0], val[1], [])      # the process row's own sum is ignored: it holds LAN too
+                        st["rows"].append(st["proc"])
+                    elif kind == "flow" and st["proc"] is not None and st["rows"] is not None:
+                        st["proc"][2].append(val)
         finally:
             self._kill()
             try:
@@ -411,7 +413,7 @@ class NettopReader:
             self.q.put((st["ts"], st["ts"] - st["prev_ts"], st["rows"]))
             st["got"] = True
         st["n"] += 1
-        st["prev_ts"], st["rows"] = st["ts"], None
+        st["prev_ts"], st["rows"], st["proc"] = st["ts"], None, None
 
     def _kill(self):
         p = self.proc
@@ -440,19 +442,16 @@ class NettopReader:
 
 
 class NetProbe:
-    """Per poll (main thread): nettop blocks -> gpu/sandbox bytes, netstat -ibn -> the physical-interface total.
+    """Per poll (main thread): nettop per-flow blocks -> internet bytes by class (gpu, sandbox, whole machine).
 
     Processes are classified with L.classify_net_proc against the latest ps run (_PS) and the provider pid from
     daemon-state.json. A pid once seen as the provider service stays gpu for gpu_memory_s, so the bytes of a
     provider's last block still count after it exits (the next ps no longer lists it)."""
 
-    def __init__(self, reader, netstat=None, gpu_memory_s=600.0):
+    def __init__(self, reader, gpu_memory_s=600.0):
         self.reader = reader
-        self.netstat = netstat or (lambda: L.parse_netstat_ib(_run(L.NETSTAT_CMD)))
         self.gpu_memory_s = gpu_memory_s
         self.gpu_pids = {}           # (pid, name) -> last time it was seen as the provider service
-        self.prev_if = None
-        self.prev_if_ts = None
 
     def classify(self, name, pid, provider_pid, cmds, now):
         key = (pid, name)
@@ -473,14 +472,6 @@ class NetProbe:
         for key, seen in list(self.gpu_pids.items()):
             if now - seen > self.gpu_memory_s:
                 del self.gpu_pids[key]
-        cur = self.netstat()
-        if not cur:
-            return                       # unreadable: the next good reading covers the gap
-        if self.prev_if is not None:
-            b_in, b_out, notes = L.iface_bytes_delta(self.prev_if, cur, now - self.prev_if_ts)
-            win.add_net_total(b_in, b_out)
-            win.notes.update(notes)
-        self.prev_if, self.prev_if_ts = cur, now
 
 
 SANDBOX_READ_WAIT_S = 2.0

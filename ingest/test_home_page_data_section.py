@@ -25,3 +25,18 @@ def test_unmeasured_period(tmp_path):
     out = run(tmp_path, dict(SUM, totals=dict(TOT, net_minutes=0)))
     arts, box = tiles(out["dom"])
     assert arts == [] and "Not measured" in box["text"], box["text"]
+
+
+def whole_label(out):
+    arts, _ = tiles(out["dom"])
+    return arts[2]["text"], find(out["dom"], "data-note")["text"]
+
+
+def test_period_labels_say_what_the_whole_machine_figure_counts(tmp_path):
+    """Since 2026-11-19 the sampler counts internet traffic only; older minutes include LAN traffic. The tile says which."""
+    old, note = whole_label(run(tmp_path, dict(SUM, totals=dict(TOT, net_minutes=2800))))      # no net_internet_minutes
+    assert "Whole machine (all traffic incl. LAN)" in old and "local network traffic" in note, (old, note)
+    new, note = whole_label(run(tmp_path, dict(SUM, totals=dict(TOT, net_minutes=2800, net_internet_minutes=2800))))
+    assert "Whole machine (internet)" in new and "Internet traffic only" in note, (new, note)
+    mixed, note = whole_label(run(tmp_path, dict(SUM, totals=dict(TOT, net_minutes=2800, net_internet_minutes=600))))
+    assert "Whole machine (mixed)" in mixed and "Mixed: 36.7 h" in note and "10.0 h are internet only" in note, (mixed, note)

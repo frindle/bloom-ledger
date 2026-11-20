@@ -44,21 +44,25 @@ def stream_of_kind(kind):
     return "sandbox" if kind == "sandbox" else "gpu"
 
 
-def add_net_bytes(row, net):
+def add_net_bytes(row, net, scope=None):
     """Add one minute's byte counts (values in NET_COLUMNS order; None = not measured) to the day row.
 
-    Bytes count whether or not the power reading was good. net_minutes counts minutes with a measured total_bytes_in."""
+    Bytes count whether or not the power reading was good. net_minutes counts minutes with a measured total_bytes_in;
+    net_internet_minutes those among them recorded as internet-only (scope 'internet'). The rest, net_minutes minus
+    net_internet_minutes, are older minutes whose figures include LAN traffic."""
     for c, n in zip(NET_COLUMNS, net):
         row[c] += n or 0
     if net[NET_COLUMNS.index("total_bytes_in")] is not None:
         row["net_minutes"] += 1
+        if scope == "internet":
+            row["net_internet_minutes"] += 1
 
 
 def _blank_row(d, settings):
     return {"date": d, "earned_micro": 0, "gpu_micro": 0, "sandbox_micro": 0,
             "gpu_cost_micro": 0, "sandbox_cost_micro": 0, "gpu_minutes": 0, "sandbox_minutes": 0, "other_minutes": 0,
             "tokens": 0, "wh": 0.0, "minutes": 0, "paid_minutes": 0, "business_minutes": 0.0, "business_cost_micro": 0, "cost_micro": 0 if settings else None,
-            **{c: 0 for c in NET_COLUMNS}, "net_minutes": 0, "usage_minutes": 0, "dbk_mj": 0, "sbx_mj": 0, "own_mj": 0}
+            **{c: 0 for c in NET_COLUMNS}, "net_minutes": 0, "net_internet_minutes": 0, "usage_minutes": 0, "dbk_mj": 0, "sbx_mj": 0, "own_mj": 0}
 
 
 def day_rows(db, tz, start, end, machine=None, settings=None):
@@ -84,14 +88,14 @@ def day_rows(db, tz, start, end, machine=None, settings=None):
         row[stream_of_kind(kind) + "_micro"] += micro
         row["tokens"] += tokens or 0
     psql = ("SELECT ts, wh, power_ok, tokens_delta, other_work, sandbox_jobs, dbk_state, active_frac, "
-            + ", ".join(NET_COLUMNS + USAGE_COLUMNS) + " FROM power_minutes WHERE ts >= ? AND ts < ?")
+            + ", ".join(("net_scope",) + NET_COLUMNS + USAGE_COLUMNS) + " FROM power_minutes WHERE ts >= ? AND ts < ?")
     pargs = [lo, hi]
     if machine:
         psql += " AND machine_id = ?"
         pargs.append(machine)
-    for ts, wh, ok, tok, other, sbx, state, frac, *rest in db.execute(psql, pargs):
+    for ts, wh, ok, tok, other, sbx, state, frac, scope, *rest in db.execute(psql, pargs):
         row = row_for(dt.datetime.fromtimestamp(ts, zone).date().isoformat())
-        add_net_bytes(row, rest[:len(NET_COLUMNS)])
+        add_net_bytes(row, rest[:len(NET_COLUMNS)], scope)
         usage = dict(zip(USAGE_COLUMNS, rest[len(NET_COLUMNS):]))
         if not ok:
             continue
@@ -174,7 +178,7 @@ def totals(rows):
     """Aggregate day_rows into period figures."""
     earned_micro = 0
     split = {k: 0 for k in ("gpu_micro", "sandbox_micro", "gpu_cost_micro", "sandbox_cost_micro", "gpu_minutes",
-                            "sandbox_minutes", "other_minutes", *NET_COLUMNS, "net_minutes",
+                            "sandbox_minutes", "other_minutes", *NET_COLUMNS, "net_minutes", "net_internet_minutes",
                             "usage_minutes", "dbk_mj", "sbx_mj", "own_mj")}
     business_cost = 0
     tokens = 0

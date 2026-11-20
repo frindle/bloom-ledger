@@ -51,3 +51,40 @@ def test_day_rows_and_totals(tmp_path):
     assert both["total_bytes_in"] == 2689 and both["net_minutes"] == 4
     assert RP.totals([{"date": "x", "earned_micro": 0, "tokens": 0, "wh": 0.0, "minutes": 0, "paid_minutes": 0,
                        "cost_micro": 0}])["total_bytes_out"] == 0, "a row without byte keys adds nothing"
+
+
+def test_internet_minutes_are_counted_apart_from_older_all_traffic_minutes(tmp_path):
+    row = {c: 0 for c in NET}
+    row["net_minutes"] = row["net_internet_minutes"] = 0
+    RP.add_net_bytes(row, [1, 1, 1, 1, 5, 5], "internet")
+    RP.add_net_bytes(row, [1, 1, 1, 1, 5, 5], "all")
+    RP.add_net_bytes(row, [1, 1, 1, 1, 5, 5], None)
+    RP.add_net_bytes(row, [1, 1, 1, 1, None, None], "internet")      # not measured: counts in neither
+    assert row["net_minutes"] == 3 and row["net_internet_minutes"] == 1
+
+
+def test_scope_flows_from_the_sidecar_to_the_day_row(tmp_path):
+    db = I.open_db(tmp_path / "i.sqlite")
+    A.create_schema(db)
+    for ts in (T0, T0 + 60, T0 + 120):
+        db.execute("INSERT INTO power_minutes (machine_id, ts, wh, interval_s, power_ok, other_work, tokens_delta, sandbox_jobs)"
+                   " VALUES ('m1', ?, 1.0, 60, 1, 0, 0, 0)", (ts,))
+    db.commit()
+    A.store_net(db, "m1", "ts_utc,gpu_bytes_in,gpu_bytes_out,sandbox_bytes_in,sandbox_bytes_out,total_bytes_in,total_bytes_out\n"
+                          "2026-12-01T00:00:00Z,1,1,1,1,100,100\n"
+                          "ts_utc,gpu_bytes_in,gpu_bytes_out,sandbox_bytes_in,sandbox_bytes_out,total_bytes_in,total_bytes_out,net_scope\n"
+                          "2026-12-01T00:01:00Z,1,1,1,1,10,10,internet\n"
+                          "2026-12-01T00:02:00Z,1,1,1,1,10,10,internet\n")
+    day = RP.day_rows(db, "UTC", "2026-12-01", "2026-12-01")[0]
+    assert day["net_minutes"] == 3 and day["net_internet_minutes"] == 2 and day["total_bytes_in"] == 120
+    assert RP.totals([day])["net_internet_minutes"] == 2
+
+
+def test_an_index_stored_before_the_scope_column_is_upgraded_in_place(tmp_path):
+    db = I.open_db(tmp_path / "i.sqlite")
+    A.create_schema(db)
+    for t in ("power_minutes", "net_bridge"):
+        db.execute(f"ALTER TABLE {t} DROP COLUMN net_scope")
+    A.create_schema(db)
+    for t in ("power_minutes", "net_bridge"):
+        assert "net_scope" in [r[1] for r in db.execute(f"PRAGMA table_info({t})")]

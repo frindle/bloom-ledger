@@ -286,11 +286,20 @@ def script_js():
       if (note) note.textContent = "";
       return;
     }
-    box.replaceChildren(dataTile("gpu", NAMES.gpu, t), dataTile("sandbox", NAMES.sandbox, t), dataTile("total", "Whole machine", t));
+    // Since 2026-11-19 the sampler counts internet traffic only; older minutes also include LAN traffic (Time Machine,
+    // file shares). net_internet_minutes are the measured minutes recorded as internet-only.
+    const inet = t.net_internet_minutes || 0;
+    const legacy = t.net_minutes - inet;
+    const scope = legacy <= 0 ? "internet" : inet <= 0 ? "all traffic incl. LAN" : "mixed";
+    box.replaceChildren(dataTile("gpu", NAMES.gpu, t), dataTile("sandbox", NAMES.sandbox, t), dataTile("total", "Whole machine (" + scope + ")", t));
     if (note) {
       const mh = (t.net_minutes / 60).toFixed(1);
       const of = t.minutes ? " of " + (t.minutes / 60).toFixed(1) + " h" : "";
-      note.textContent = "Measured over " + mh + " h" + of + " in this period. The whole machine includes idle time and your own work.";
+      let txt = "Measured over " + mh + " h" + of + " in this period. The whole machine includes idle time and your own work.";
+      if (scope === "internet") txt += " Internet traffic only: Time Machine, file shares and other local traffic are not counted.";
+      else if (scope === "all traffic incl. LAN") txt += " All traffic, including local network traffic such as Time Machine and file shares (recorded before internet-only counting started).";
+      else txt += " Mixed: " + (legacy / 60).toFixed(1) + " h were recorded before internet-only counting started and include local network traffic; " + (inet / 60).toFixed(1) + " h are internet only. Do not compare them directly.";
+      note.textContent = txt;
     }
   }
   function render(s) {
