@@ -104,7 +104,7 @@ def test_clean_install_to_data(server):
         # 2. setup in the browser
         page = browser.new_page()
         page.goto(base + "/setup")
-        page.fill("#code", (Path(data) / "setup-code").read_text().strip())     # setup always asks for the code from the server log
+        assert page.locator("#code").count() == 0       # first setup from the local network needs no code
         page.fill("#u", "owner")
         page.fill("#p", "correct-horse-1")
         page.fill("#p2", "correct-horse-1")
