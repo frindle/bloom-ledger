@@ -18,9 +18,9 @@ def test_dockerfile_installs_nothing_and_keeps_the_bloom_user():
 def test_readme_describes_hash_chained_manifests_without_ots():
     src = (ROOT / "README.md").read_text()
     assert BANNED.search(src) is None, BANNED.search(src).group(0)
-    assert "closes each UTC day into a hash-chained manifest." in src
-    assert "`/v1/alerts` reports silent machines and stale ring snapshots." in src
-    assert "## Settings page" in src and "## Tests" in src
+    # README was rewritten for new users (share-ready); it keeps the tamper-evident claim in plain words.
+    assert "tamper-evident record" in src
+    assert "## Privacy and security" in src and "## Developing" in src
 
 
 def test_compose_comment_mentions_manifests_only():
