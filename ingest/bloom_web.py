@@ -71,13 +71,18 @@ def setup_page(needs_code=False, keep_settings=False):
                 '<span class="bl-hint">Creating the account needs the one-time code the server printed in its log, on the line that says "Setup code". '
                 'Docker: <code>docker compose logs bloom-ledger</code>. Mac install: <code>~/Library/Application Support/bloom-ledger-server/logs/server.log</code>. '
                 'Or read the file <code>setup-code</code> in the data folder.</span></div>') if needs_code else ""
-    money = ('<p class="bl-hint" style="margin-top:1.5rem">Your time zone and electricity price are already set from before. '
-             'Setup leaves them as they are; change them in Accounting settings.</p>') if keep_settings else """<h2 style="margin-top:1.5rem">Where and what you pay</h2>
-<div class="bl-field"><label for="tz">Time zone</label><input id="tz" list="tzs" autocomplete="off" required><datalist id="tzs">%(tz)s</datalist>
-<span class="bl-hint">Days and months are cut at midnight in this zone.</span></div>
+    money = """<h2 style="margin-top:1.5rem">Where and what you pay</h2>
+%(keepnote)s<div class="bl-field"><label for="tz">Time zone</label><input id="tz" list="tzs" autocomplete="off" %(req)s><datalist id="tzs">%(tz)s</datalist>
+<span class="bl-hint">Days and months are cut at midnight in this zone.%(keeptz)s</span></div>
 <div class="bl-field"><label for="rate">Electricity price per kWh (US dollars)</label><input id="rate" inputmode="decimal" placeholder="0.15">
 <span class="bl-hint">Optional. Leave it empty and power cost stays "not computed" until you enter it in Accounting settings. Darkbloom pays in US dollars, so every figure here is in USD.</span></div>
-"""
+%(retro)s"""
+    keepnote = ('<p class="bl-hint">Your time zone and electricity price are already set from before. Leave these two empty to keep them. '
+                'A change made here applies from today on; your past days and figures stay as they are.</p>') if keep_settings else ""
+    retro = ('<div class="bl-field"><label><input type="checkbox" id="retro" style="min-height:auto"> Apply to past days too</label>'
+             '<span class="bl-hint">Off by default. Ticked, the new time zone and price also replace the old ones for days already recorded, and past figures change.</span></div>') if keep_settings else ""
+    money = money % {"keepnote": keepnote, "req": "" if keep_settings else "required", "tz": tz, "retro": retro,
+                     "keeptz": " Leave empty to keep the current one." if keep_settings else ""}
     body = """<main><div class="bl-narrow"><h1>Set up bloom-ledger</h1>
 <p class="meta">Three short steps. Nothing leaves your network.</p>
 <ol class="bl-steps" aria-label="Steps"><li id="s1" class="on">Your account</li><li id="s2">Electricity</li><li id="s3">Add a Mac</li></ol>
@@ -110,17 +115,17 @@ def setup_page(needs_code=False, keep_settings=False):
 <p class="bl-hint">The code works once and expires in 30 minutes. It usually takes one to three minutes after install for data to arrive.</p>
 <p><button type="button" id="another">Add another Mac</button> <a class="btn primary" href="/status">Finish</a></p>
 </div></section>
-</div></main>""" % {"code": code_row, "tz": tz, "money": money % {"tz": tz} if not keep_settings else money}
+</div></main>""" % {"code": code_row, "tz": tz, "money": money}
     js = COMMON_JS + """
 var mac = null, timer = null;
-if ($("tz")) { try { $("tz").value = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; } catch (e) { $("tz").value = "UTC"; } }
+if (!$("retro")) { try { $("tz").value = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; } catch (e) { $("tz").value = "UTC"; } }
 function show2(){ $("f1").hidden = true; $("p2s").hidden = false; $("s1").className = "done"; $("s2").className = "done"; $("s3").className = "on"; }
 api("GET", "/v1/auth/me").then(function(r){ if (r.body.mode === "login" && r.body.logged_in) show2(); else if (r.body.mode === "login") location.href = "/login?next=/setup"; });
 $("f1").addEventListener("submit", function(e){
   e.preventDefault(); $("err1").textContent = "";
   if ($("p").value !== $("p2").value) { $("err1").textContent = "The two passwords do not match."; return; }
   $("go1").disabled = true;
-  var body = {username: $("u").value, password: $("p").value, timezone: $("tz") ? $("tz").value : "", rate: $("rate") ? $("rate").value : "", bloomgauge: $("gauge").checked};
+  var body = {username: $("u").value, password: $("p").value, timezone: $("tz") ? $("tz").value : "", rate: $("rate") ? $("rate").value : "", bloomgauge: $("gauge").checked, retroactive: !!($("retro") && $("retro").checked)};
   if ($("code")) body.setup_code = $("code").value;
   api("POST", "/v1/auth/setup", body).then(function(r){
     if (r.status === 200) { show2(); } else { $("err1").textContent = r.body.error || "Setup failed."; $("go1").disabled = false; }

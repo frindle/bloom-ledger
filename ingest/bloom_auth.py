@@ -161,9 +161,14 @@ def _has_meta(db):
     return db.execute("SELECT 1 FROM sqlite_master WHERE name = 'acct_meta'").fetchone() is not None
 
 
+def setup_code_needed(client_is_private):
+    """A client that is not on a private address must show the one-time code from the server log before it may create the admin.
+    Initial setup from the local network is open by design."""
+    return not client_is_private
+
+
 def setup_code_ok(root, given):
-    """Creating the admin always needs the one-time code from the server log, whoever asks (a private address proves nothing:
-    anyone on the LAN, or a DNS-rebinding page, looks local). Compared in constant time."""
+    """True when `given` is the one-time code from the server log. Compared in constant time."""
     return hmac.compare_digest(str(given or "").strip().encode(), setup_code(root).encode())
 
 

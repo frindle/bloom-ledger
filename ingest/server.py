@@ -146,7 +146,8 @@ class Handler(BaseHTTPRequestHandler):
             with DB_LOCK:
                 mode = AU.auth_mode(self.server.db)
                 keep = mode == "lan" or AU.has_settings(self.server.db)
-            self.send_html(WEB.setup_page(needs_code=mode in ("setup", "lan"), keep_settings=keep))
+            needs = AU.setup_code_needed(LAN.is_private_ip(self.client_address[0]) and LAN.forwarded_ok(self.headers))
+            self.send_html(WEB.setup_page(needs_code=needs and mode in ("setup", "lan"), keep_settings=keep))
             return True
         if path == "/status":
             self.send_html(WEB.status_page())
@@ -227,46 +228,51 @@ class Handler(BaseHTTPRequestHandler):
         with DB_LOCK:
             if AU.has_admin(db):
                 return (409, {"error": "Setup is already done. Log in instead."})
-            if AU.locked(self.client_address[0]):
-                return (429, {"error": "Too many wrong codes or passwords. Wait a minute, then try again."})
-            if not AU.setup_code_ok(ROOT, body.get("setup_code")):
-                AU.note_fail(self.client_address[0])
-                return (403, {"error": "That setup code is not right. It is printed in the server log."})
-            # An install that already has history (migrated, or any time zone / price on record) only gets its admin account:
-            # a 1970-dated row here would override the time zone the migration pinned and re-bucket past days.
+            local = LAN.is_private_ip(self.client_address[0]) and LAN.forwarded_ok(self.headers)
+            if AU.setup_code_needed(local):
+                if AU.locked(self.client_address[0]):
+                    return (429, {"error": "Too many wrong codes or passwords. Wait a minute, then try again."})
+                if not AU.setup_code_ok(ROOT, body.get("setup_code")):
+                    AU.note_fail(self.client_address[0])
+                    return (403, {"error": "That setup code is not right. It is printed in the server log."})
+            # An install that already has history (migrated, or any time zone / price on record) keeps it: a change made here
+            # applies from today, and only rewrites the past when the user ticks "apply to past days too".
             keep = AU.auth_mode(db) == "lan" or AU.has_settings(db)
-            tz, rate = None, None
-            if not keep:
-                tz = str(body.get("timezone") or "UTC").strip()
+            retro = bool(body.get("retroactive")) and keep
+            since = "1970-01-01" if (retro or not keep) else dt.date.today().isoformat()
+            tz = str(body.get("timezone") or ("" if keep else "UTC")).strip() or None
+            if tz is not None:
                 try:
                     ZoneInfo(tz)
                 except Exception:
                     return (400, {"error": "Unknown time zone. Use a name like America/Chicago or UTC."})
-                raw = str(body.get("rate") or "").strip().lstrip("$")
-                if raw:
-                    try:
-                        rate = decimal.Decimal(raw)
-                        if not (0 <= rate <= 10):
-                            raise ValueError
-                    except (decimal.InvalidOperation, ValueError):
-                        return (400, {"error": "The electricity price should be a number like 0.15 (dollars per kWh)."})
+                if keep and tz == ACF.effective_settings(db, "9999-12-31")["values"]["local_timezone"]:
+                    tz = None
+            rate = None
+            raw = str(body.get("rate") or "").strip().lstrip("$")
+            if raw:
+                try:
+                    rate = decimal.Decimal(raw)
+                    if not (0 <= rate <= 10):
+                        raise ValueError
+                except (decimal.InvalidOperation, ValueError):
+                    return (400, {"error": "The electricity price should be a number like 0.15 (dollars per kWh)."})
             try:
                 AU.create_admin(db, body.get("username"), body.get("password"))
             except ValueError as e:
                 return (400, {"error": str(e)})
             now = int(time.time())
             if tz is not None:
-                ACF.set_setting(db, "local_timezone", tz, "1970-01-01", now)
+                ACF.set_setting(db, "local_timezone", tz, since, now)
             if rate is not None:
                 sched = [{"months": list(range(1, 13)), "periods": [{"start": "00:00", "end": "24:00", "rate": str(rate)}]}]
-                ACF.set_setting(db, "rate_schedule", sched, "1970-01-01", now)
-                for k in ("rate_adder_usd_per_kwh", "universal_charge_usd_per_kwh", "county_fee_pct"):
-                    ACF.set_setting(db, k, 0, "1970-01-01", now)
+                ACF.set_setting(db, "rate_schedule", sched, since, now)
+                if not keep:
+                    for k in ("rate_adder_usd_per_kwh", "universal_charge_usd_per_kwh", "county_fee_pct"):
+                        ACF.set_setting(db, k, 0, since, now)
             if body.get("bloomgauge"):
                 IG.set_bloomgauge(db, True)
             tok = AU.new_session(db)
-        AU.rotate_setup_code(ROOT)
-        AU.clear_fails(self.client_address[0])
         AU.rotate_setup_code(ROOT)
         AU.clear_fails(self.client_address[0])
         log("setup finished: admin created")

@@ -45,10 +45,8 @@ must "/healthz still answers on the same port (flags were kept)" curl -fsS "$BAS
 step "2 /setup and the admin"
 curl -fsS "$BASE/setup" | grep -qi "setup" && ok "/setup page loads" || bad "/setup page loads"
 curl -fsS "$BASE/v1/auth/me" | grep -q '"mode": *"setup"' && ok "fresh server reports setup mode" || bad "fresh server reports setup mode"
-SETUP_CODE=$(grep -o 'Setup code: [0-9a-f]*' "$SDATA/logs/server.log" | tail -1 | awk '{print $3}')
-[ -n "$SETUP_CODE" ] && ok "setup code is in server.log" || bad "setup code is in server.log"
-mustnot "setup without the code is refused" python3 "$HERE/sample.py" setup "$BASE" intruder "correct-horse-1" "$WORK/cookie-no" 000000000000
-must "admin created" python3 "$HERE/sample.py" setup "$BASE" owner "correct-horse-1" "$COOKIE" "$SETUP_CODE"
+grep -q 'Setup code: [0-9a-f]' "$SDATA/logs/server.log" && ok "setup code is in server.log (for remote browsers)" || bad "setup code is in server.log"
+must "admin created (local setup needs no code)" python3 "$HERE/sample.py" setup "$BASE" owner "correct-horse-1" "$COOKIE"
 [ ! -e "$SDATA/setup-code" ] && ok "setup code rotated after setup (file removed)" || bad "setup code rotated after setup"
 CODE=$(python3 "$HERE/sample.py" paircode "$BASE" mac-ci "$COOKIE") && ok "pairing code made" || { bad "pairing code made"; CODE=""; }
 
@@ -101,12 +99,14 @@ must "install.sh --uninstall --delete-data" sh "$WORK/install.sh" --uninstall --
 curl -fsS "$BASE/healthz" >/dev/null && ok "uninstalling the client leaves the server running" || bad "uninstalling the client leaves the server running"
 
 step "8 uninstall the server"
+mkdir -p "$SDATA/backups" && echo keep-me > "$SDATA/backups/index-backup.sqlite"
 must "uninstall-server.sh" sh "$REPO/deploy/mac/uninstall-server.sh"
 launchctl print "gui/$UIDN/dev.bloom-ledger.server" >/dev/null 2>&1 && bad "server job gone" || ok "server job gone"
 [ -e "$HOME/Library/LaunchAgents/dev.bloom-ledger.server.plist" ] && bad "server plist removed" || ok "server plist removed"
 sleep 2
 curl -fsS -m 3 "$BASE/healthz" >/dev/null 2>&1 && bad "server stopped answering" || ok "server stopped answering"
 [ -f "$SDATA/index.sqlite" ] && ok "data kept without --delete-data" || bad "data kept without --delete-data"
+[ "$(cat "$SDATA/backups/index-backup.sqlite" 2>/dev/null)" = keep-me ] && ok "backups kept without --delete-data" || bad "backups kept without --delete-data"
 must "uninstall-server.sh --delete-data" sh "$REPO/deploy/mac/uninstall-server.sh" --delete-data
 [ -e "$SDATA" ] && bad "server data removed" || ok "server data removed"
 launchctl list 2>/dev/null | grep -qi bloom && bad "no bloom job in launchctl list" || ok "no bloom job in launchctl list"

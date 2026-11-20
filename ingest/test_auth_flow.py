@@ -32,17 +32,17 @@ def test_fresh_install_refuses_writes_until_setup(web):
 
 
 def test_setup_validates_input(web):
-    assert post(web, "/v1/auth/setup", {"username": "me", "password": "short", "setup_code": code_of()})[0] == 400
-    s, o = post(web, "/v1/auth/setup", {"username": "me", "password": "longenough1", "timezone": "Nope/Zone", "setup_code": code_of()})
+    assert post(web, "/v1/auth/setup", {"username": "me", "password": "short"})[0] == 400
+    s, o = post(web, "/v1/auth/setup", {"username": "me", "password": "longenough1", "timezone": "Nope/Zone"})
     assert s == 400 and "time zone" in o["error"]
-    s, o = post(web, "/v1/auth/setup", {"username": "me", "password": "longenough1", "rate": "abc", "setup_code": code_of()})
+    s, o = post(web, "/v1/auth/setup", {"username": "me", "password": "longenough1", "rate": "abc"})
     assert s == 400 and "electricity" in o["error"]
     assert not AU.has_admin(web.db)
 
 
 def test_setup_login_logout_and_protected_write(web):
     AU._fails.clear()
-    s, _o = post(web, "/v1/auth/setup", {"username": "me", "password": "longenough1", "timezone": "America/Chicago", "rate": "0.15", "bloomgauge": False, "setup_code": code_of()})
+    s, _o = post(web, "/v1/auth/setup", {"username": "me", "password": "longenough1", "timezone": "America/Chicago", "rate": "0.15", "bloomgauge": False})
     assert s == 200
     assert "HttpOnly" in web.last_headers["set-cookie"] and "SameSite=Lax" in web.last_headers["set-cookie"]
     ck = cookie_of(web)
@@ -95,32 +95,32 @@ def test_whoami_checks_the_machine_token(web):
     assert web("GET", "/v1/whoami")[0] == 401
 
 
-def test_setup_always_needs_the_code_even_from_the_local_network(web):
-    # 127.0.0.1 is as private as an address gets; it still gets no shortcut. Neither does a Tailscale/LAN peer.
-    for extra in ({}, {"X-Forwarded-For": "8.8.8.8"}, {"X-Forwarded-For": "100.64.1.2"}, {"X-Forwarded-For": "192.168.1.9"}):
-        AU._fails.clear()
-        s, o = post(web, "/v1/auth/setup", {"username": "me", "password": "longenough1"}, extra=extra)
-        assert s == 403 and "setup code" in o["error"]
-        s, _o = post(web, "/v1/auth/setup", {"username": "me", "password": "longenough1", "setup_code": "wrong-code"}, extra=extra)
-        assert s == 403
-    assert not AU.has_admin(web.db)
-    s, _o = post(web, "/v1/auth/setup", {"username": "me", "password": "longenough1", "setup_code": code_of()})
+def test_initial_setup_from_the_local_network_needs_no_code(web):
+    # By design: first setup from a private address is open. Only a public-looking client must show the code.
+    s, _o = post(web, "/v1/auth/setup", {"username": "me", "password": "longenough1"})
     assert s == 200 and AU.has_admin(web.db)
 
 
-def test_setup_code_is_rotated_after_use_and_guesses_lock_out(web):
+def test_public_client_needs_the_code_and_guesses_lock_out(web):
     AU._fails.clear()
+    pub = {"X-Forwarded-For": "8.8.8.8"}
     old = code_of()
-    for _ in range(5):
-        assert post(web, "/v1/auth/setup", {"username": "me", "password": "longenough1", "setup_code": "nope"})[0] == 403
-    assert post(web, "/v1/auth/setup", {"username": "me", "password": "longenough1", "setup_code": old})[0] == 429
+    s, o = post(web, "/v1/auth/setup", {"username": "me", "password": "longenough1"}, extra=pub)
+    assert s == 403 and "setup code" in o["error"]
+    for _ in range(4):
+        assert post(web, "/v1/auth/setup", {"username": "me", "password": "longenough1", "setup_code": "nope"}, extra=pub)[0] == 403
+    assert post(web, "/v1/auth/setup", {"username": "me", "password": "longenough1", "setup_code": old}, extra=pub)[0] == 429
     AU._fails.clear()
-    assert post(web, "/v1/auth/setup", {"username": "me", "password": "longenough1", "setup_code": old})[0] == 200
-    assert code_of() != old
+    assert post(web, "/v1/auth/setup", {"username": "me", "password": "longenough1", "setup_code": old}, extra=pub)[0] == 200
+    assert code_of() != old           # rotated: a copy of the old log line is worthless
+    assert post(web, "/v1/auth/setup", {"username": "x", "password": "longenough1"})[0] == 409   # no re-claim
 
 
-def test_setup_page_asks_for_the_code_and_says_where_it_is(web):
-    page = web("GET", "/setup")[2].decode()
+def test_setup_page_shows_the_code_field_only_to_public_clients(web):
+    assert 'id="code"' not in web("GET", "/setup")[2].decode()
+    # (the page for a public client is rendered by the same function)
+    import bloom_web as W
+    page = W.setup_page(needs_code=True)
     assert 'id="code"' in page and "Setup code" in page and "docker compose logs" in page and "server.log" in page
 
 
@@ -144,43 +144,63 @@ def _migrated(web):
     MIG.run(web.db, lambda m: None)
 
 
-def test_setup_on_a_migrated_install_only_creates_the_admin(web):
+def _tz(web, day):
     import bloom_accounting_config as CF
+    return CF.effective_settings(web.db, day)["values"]["local_timezone"]
+
+
+def test_upgraded_setup_changes_apply_from_today_only(web):
+    import datetime as dt
     _migrated(web)
     assert AU.auth_mode(web.db) == "lan"
-    before = _rows(web)
-    assert CF.effective_settings(web.db, "2026-11-01")["values"]["local_timezone"] == "America/Los_Angeles"
     page = web("GET", "/setup")[2].decode()
-    assert 'id="code"' in page and 'id="tz"' not in page and "leaves them as they are" in page
-    s, _o = post(web, "/v1/auth/setup", {"username": "me", "password": "longenough1", "timezone": "Asia/Tokyo", "rate": "0.30",
-                                         "setup_code": code_of()})
+    assert 'id="tz"' in page and 'id="retro"' in page and "Apply to past days too" in page
+    assert 'id="retro" style="min-height:auto" checked' not in page          # off by default
+    s, _o = post(web, "/v1/auth/setup", {"username": "me", "password": "longenough1", "timezone": "Asia/Tokyo", "rate": "0.30"})
     assert s == 200 and AU.has_admin(web.db)
-    assert _rows(web) == before     # no time zone, price or adder row written
-    v = CF.effective_settings(web.db, "2026-11-01")["values"]
-    assert v["local_timezone"] == "America/Los_Angeles" and CF.effective_settings(web.db, "2020-01-01")["values"]["local_timezone"] == "America/Los_Angeles"
+    today = dt.date.today().isoformat()
+    assert _tz(web, "2026-01-01") == "America/Los_Angeles" and _tz(web, "1999-01-01") == "America/Los_Angeles"
+    assert _tz(web, today) == "Asia/Tokyo"
+    rows = _rows(web)
+    assert not any(r[1] == "1970-01-01" and r[0] in ("local_timezone", "rate_schedule") and "0.30" in r[2] for r in rows)
+    assert ("local_timezone", today, '"Asia/Tokyo"') in rows
 
 
-def test_setup_with_a_time_zone_already_on_record_leaves_it_alone(web):
-    import bloom_accounting_config as CF
-    CF.set_setting(web.db, "local_timezone", "Europe/Berlin", "2026-01-01", 1)
+def test_upgraded_setup_with_apply_to_past_rewrites_history(web):
+    _migrated(web)
+    s, _o = post(web, "/v1/auth/setup", {"username": "me", "password": "longenough1", "timezone": "Asia/Tokyo", "rate": "0.30", "retroactive": True})
+    assert s == 200
+    assert _tz(web, "2026-01-01") == "Asia/Tokyo" and _tz(web, "1999-01-01") == "Asia/Tokyo"
+    assert any(r[0] == "rate_schedule" and r[1] == "1970-01-01" for r in _rows(web))
+
+
+def test_upgraded_setup_with_empty_fields_changes_nothing(web):
+    _migrated(web)
     before = _rows(web)
-    s, _o = post(web, "/v1/auth/setup", {"username": "me", "password": "longenough1", "timezone": "Asia/Tokyo", "rate": "0.30",
-                                         "setup_code": code_of()})
+    s, _o = post(web, "/v1/auth/setup", {"username": "me", "password": "longenough1", "timezone": "", "rate": "", "retroactive": True})
     assert s == 200 and _rows(web) == before
-    assert CF.effective_settings(web.db, "2026-11-01")["values"]["local_timezone"] == "Europe/Berlin"
+
+
+def test_setup_with_a_time_zone_already_on_record_applies_forward_only(web):
+    import bloom_accounting_config as CF
+    import datetime as dt
+    CF.set_setting(web.db, "local_timezone", "Europe/Berlin", "2026-01-01", 1)
+    s, _o = post(web, "/v1/auth/setup", {"username": "me", "password": "longenough1", "timezone": "Asia/Tokyo"})
+    assert s == 200
+    assert _tz(web, "2026-06-01") == "Europe/Berlin" and _tz(web, dt.date.today().isoformat()) == "Asia/Tokyo"
 
 
 def test_fresh_install_setup_still_writes_its_choices(web):
-    s, _o = post(web, "/v1/auth/setup", {"username": "me", "password": "longenough1", "timezone": "Asia/Tokyo", "rate": "0.30",
-                                         "setup_code": code_of()})
+    s, _o = post(web, "/v1/auth/setup", {"username": "me", "password": "longenough1", "timezone": "Asia/Tokyo", "rate": "0.30"})
     assert s == 200
     assert {r[0] for r in _rows(web)} >= {"local_timezone", "rate_schedule"}
+    assert _tz(web, "1999-01-01") == "Asia/Tokyo"
 
 
 def test_optional_integration_switch(web):
     import bloom_integrations as IG
     assert IG.bloomgauge_state(web.db, {}) == "not set up"
     assert IG.bloomgauge_state(web.db, {"BLOOM_BLOOMGAUGE": "1"}) == "enabled"
-    post(web, "/v1/auth/setup", {"username": "me", "password": "longenough1", "bloomgauge": True, "setup_code": code_of()})
+    post(web, "/v1/auth/setup", {"username": "me", "password": "longenough1", "bloomgauge": True})
     assert IG.bloomgauge_state(web.db, {}) == "enabled"
     assert json.loads(web("GET", "/v1/status")[2])["integrations"][0]["state"] == "enabled"

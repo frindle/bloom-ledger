@@ -71,7 +71,7 @@ check_data() {
   [ "$(find data/objects -type f | wc -l)" = "$objs_before" ] && ok "$label: same files in data/objects" || bad "$label: same files in data/objects"
   [ "$(curl -fsS -H "Authorization: Bearer $TOKEN" "$BASE/v1/whoami" | jget machine_id)" = mac-old ] && ok "$label: the old Mac's token still works" || bad "$label: the old Mac's token still works"
   curl -fsS "$BASE/v1/status" | jget machines.0.objects | grep -q '^[1-9]' && ok "$label: /status lists the Mac with its files" || bad "$label: /status lists the Mac with its files"
-  [ "$(curl -fsS "$BASE/v1/status" | jget timezone)" = America/Los_Angeles ] && ok "$label: old time zone kept" || bad "$label: old time zone kept"
+  [ "$(curl -fsS "$BASE/v1/accounting/day?date=2020-01-15" | jget tz)" = America/Los_Angeles ] && ok "$label: old time zone kept for past days" || bad "$label: old time zone kept for past days"
   [ "$(curl -fsS "$BASE/v1/auth/me" | jget mode)" = lan ] && ok "$label: still open to the local network until an admin is made" || bad "$label: auth mode stays lan"
 }
 check_data "after first update"
@@ -84,12 +84,9 @@ wait_up && check_data "after second update" || bad "server up after second updat
 docker compose up -d --build >/dev/null 2>&1 && wait_up && check_data "after plain docker compose up" || bad "plain docker compose up"
 
 echo "== create the admin on the upgraded server, update again, login must survive"
-SETUP_CODE=$(docker compose logs bloom-ledger 2>&1 | grep -o 'Setup code: [0-9a-f]*' | tail -1 | awk '{print $3}')
-[ -n "$SETUP_CODE" ] && ok "upgraded server in lan mode logged a setup code" || bad "upgraded server in lan mode logged a setup code"
-python3 "$HERE/sample.py" setup "$BASE" nobody correct-horse-1 "$WORK/cookie0" 000000000000 2>/dev/null && bad "setup without the right code is refused" || ok "setup without the right code is refused"
-curl -fsS "$BASE/v1/auth/me" | jget mode | grep -q '^lan$' && ok "still no admin after the refused attempt" || bad "still no admin after the refused attempt"
-python3 "$HERE/sample.py" setup "$BASE" owner correct-horse-1 "$WORK/cookie" "$SETUP_CODE" && ok "admin created after upgrade" || bad "admin created after upgrade"
-[ "$(curl -fsS "$BASE/v1/status" | jget timezone)" = America/Los_Angeles ] && ok "time zone unchanged after setup (setup asked for America/Chicago)" || bad "time zone unchanged after setup"
+python3 "$HERE/sample.py" setup "$BASE" owner correct-horse-1 "$WORK/cookie" && ok "admin created after upgrade (from the local network, no code needed)" || bad "admin created after upgrade"
+[ "$(curl -fsS "$BASE/v1/status" | jget timezone)" = America/Chicago ] && ok "time zone chosen at setup applies from today" || bad "time zone chosen at setup applies from today"
+[ "$(curl -fsS "$BASE/v1/accounting/day?date=2020-01-15" | jget tz)" = America/Los_Angeles ] && ok "past days keep the old time zone (setup did not rewrite history)" || bad "past days keep the old time zone"
 [ "$(curl -fsS "$BASE/v1/earnings/series" | jget total_micro)" = "$before" ] && ok "earnings unchanged after setup" || bad "earnings unchanged after setup"
 ./update.sh > update.out 2>&1 && wait_up && [ "$(curl -fsS "$BASE/v1/auth/me" | jget mode)" = login ] && ok "admin survives another update" || bad "admin survives another update"
 
