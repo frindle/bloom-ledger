@@ -60,6 +60,12 @@ if launchctl bootout "gui/$(id -u)/$LABEL" >/dev/null 2>&1; then
     [ "$w" -lt 20 ] || break
     sleep 1
   done
+  w=0
+  while launchctl print "gui/$(id -u)/$LABEL" >/dev/null 2>&1; do
+    w=$((w + 1))
+    [ "$w" -lt 20 ] || break
+    sleep 1
+  done
 fi
 n=0
 until launchctl bootstrap "gui/$(id -u)" "$PLIST"; do
@@ -70,8 +76,8 @@ done
 i=0
 until curl -fsS -m 2 -o /dev/null "http://127.0.0.1:$PORT/healthz" 2>/dev/null; do
   i=$((i + 1))
-  if [ "$i" -ge 20 ]; then tail -n 15 "$DATA/logs/server.log" 2>/dev/null >&2 || true; fi
-  [ "$i" -lt 20 ] || die "the server did not answer in 20 seconds. Look at $DATA/logs/server.log, then run: PYTHONPATH=$HERE/lib:$HERE/ingest BLOOM_DATA=\"$DATA\" $PY $HERE/ingest/server.py doctor"
+  if [ "$i" -ge 30 ]; then tail -n 15 "$DATA/logs/server.log" 2>/dev/null >&2 || true; launchctl print "gui/$(id -u)/$LABEL" 2>&1 | grep -E "state|last exit|pid" >&2 || true; fi
+  [ "$i" -lt 30 ] || die "the server did not answer in 30 seconds. Look at $DATA/logs/server.log, then run: PYTHONPATH=$HERE/lib:$HERE/ingest BLOOM_DATA=\"$DATA\" $PY $HERE/ingest/server.py doctor"
   sleep 1
 done
 printf '%s\n' "bloom-ledger: running. Open http://localhost:$PORT/setup to finish setup." \
