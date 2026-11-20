@@ -37,7 +37,6 @@ jobs:
   browser:
     name: browser new-user path (compose)
     runs-on: ubuntu-latest
-    needs: test
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -63,7 +62,6 @@ jobs:
   upgrade:
     name: upgrade keeps data (old update.sh install)
     runs-on: ubuntu-latest
-    needs: test
     steps:
       - uses: actions/checkout@v4
         with:
@@ -74,7 +72,6 @@ jobs:
   mac:
     name: mac install, pair, doctor, uninstall
     runs-on: macos-latest
-    needs: test
     steps:
       - uses: actions/checkout@v4
       - run: bash tests/e2e/mac_path.sh

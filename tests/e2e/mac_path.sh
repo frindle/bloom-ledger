@@ -27,7 +27,8 @@ dump_logs() {
   for f in "$SDATA"/logs/server.log "$APP"/logs/*.log; do [ -f "$f" ] && { echo "## $f"; tail -30 "$f"; }; done
   launchctl list 2>/dev/null | grep -i bloom
 }
-trap 'rc=$?; [ "$FAILS" = 0 ] || dump_logs; exit $rc' EXIT
+onexit() { code=$?; [ "$FAILS" = 0 ] || dump_logs; exit "$code"; }
+trap onexit EXIT
 
 step "0 fake Darkbloom folder (sample data only)"
 python3 "$HERE/sample.py" home "$DBK"
@@ -99,7 +100,7 @@ curl -fsS -m 3 "$BASE/healthz" >/dev/null 2>&1 && bad "server stopped answering"
 must "uninstall-server.sh --delete-data" sh "$REPO/deploy/mac/uninstall-server.sh" --delete-data
 [ -e "$SDATA" ] && bad "server data removed" || ok "server data removed"
 launchctl list 2>/dev/null | grep -qi bloom && bad "no bloom job in launchctl list" || ok "no bloom job in launchctl list"
-ls "$HOME"/Library/LaunchAgents 2>/dev/null | grep -qi bloom && bad "no bloom file in LaunchAgents" || ok "no bloom file in LaunchAgents"
+if find "$HOME/Library/LaunchAgents" -iname '*bloom*' 2>/dev/null | grep -q .; then bad "no bloom file in LaunchAgents"; else ok "no bloom file in LaunchAgents"; fi
 
 echo; echo "failures: $FAILS"
 [ "$FAILS" = 0 ]

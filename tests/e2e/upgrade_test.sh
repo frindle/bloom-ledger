@@ -17,8 +17,14 @@ jget() { python3 -c "import json,sys; d=json.load(sys.stdin)
 for k in sys.argv[1].split('.'): d=d[int(k)] if k.isdigit() else d[k]
 print(d)" "$1"; }
 dump() { echo "---- diagnostics"; (cd "$WORK/deploy" 2>/dev/null && docker compose logs --tail 40 bloom-ledger; cat update.out 2>/dev/null | tail -40); }
-trap 'rc=$?; [ "$FAILS" = 0 ] || dump; (cd "$WORK/deploy" 2>/dev/null && COMPOSE_FILE=compose.yaml:compose.paths.yaml docker compose down -v >/dev/null 2>&1); exit $rc' EXIT
-wait_up() { for i in $(seq 1 40); do curl -fsS "$BASE/healthz" >/dev/null 2>&1 && return 0; sleep 2; done; return 1; }
+onexit() {
+  code=$?
+  [ "$FAILS" = 0 ] || dump
+  (cd "$WORK/deploy" 2>/dev/null && COMPOSE_FILE=compose.yaml:compose.paths.yaml docker compose down -v >/dev/null 2>&1)
+  exit "$code"
+}
+trap onexit EXIT
+wait_up() { for _ in $(seq 1 40); do curl -fsS "$BASE/healthz" >/dev/null 2>&1 && return 0; sleep 2; done; return 1; }
 
 OLD=$(git -C "$REPO" rev-parse origin/main) || exit 2
 NEW=$(git -C "$REPO" rev-parse HEAD)
