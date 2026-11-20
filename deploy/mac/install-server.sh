@@ -70,6 +70,7 @@ done
 i=0
 until curl -fsS -m 2 -o /dev/null "http://127.0.0.1:$PORT/healthz" 2>/dev/null; do
   i=$((i + 1))
+  if [ "$i" -ge 20 ]; then tail -n 15 "$DATA/logs/server.log" 2>/dev/null >&2 || true; fi
   [ "$i" -lt 20 ] || die "the server did not answer in 20 seconds. Look at $DATA/logs/server.log, then run: PYTHONPATH=$HERE/lib:$HERE/ingest BLOOM_DATA=\"$DATA\" $PY $HERE/ingest/server.py doctor"
   sleep 1
 done
