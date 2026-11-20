@@ -3,7 +3,9 @@
 # shown in Settings > Add a machine is all a new Mac needs:
 #   curl -fsSL http://<ledger>:8787/install.sh | sh -s -- --pair <code>
 # Options:
-#   --pair CODE     pair this Mac (the code from Settings; single use, 30 minutes)
+#   --pair CODE     pair this Mac (the code from Settings; single use, 30 minutes). Without it you are asked.
+#   --server URL    the ledger's address, when you downloaded this file by hand instead of from the ledger
+#   --bloomgauge / --no-bloomgauge   answer the optional BloomGauge question up front (default: asked once, or skipped)
 #   --earnings      also archive this Mac's Darkbloom earnings (one Mac per Darkbloom account is enough)
 #   --replace-old   stop the older LaunchAgents this client replaces (com.*.bloom-{power-log,archive,ship,earnings-archive})
 #                   and move their plists aside (kept, not deleted); other com.*.bloom-* jobs are left running
@@ -18,7 +20,7 @@ AGENTS="$HOME/Library/LaunchAgents"
 DBK="$HOME/.darkbloom"
 PREFIX="dev.bloom-ledger"
 JOBS="power archive ship manifest earnings find"
-CODE="" EARNINGS=0 REPLACE_OLD=0 UNINSTALL=0
+CODE="" SERVER="" BG="" EARNINGS=0 REPLACE_OLD=0 UNINSTALL=0
 
 say() { printf '%s\n' "bloom-ledger: $*"; }
 die() { printf '%s\n' "bloom-ledger: $*" >&2; exit 1; }
@@ -26,6 +28,9 @@ die() { printf '%s\n' "bloom-ledger: $*" >&2; exit 1; }
 while [ $# -gt 0 ]; do
   case "$1" in
     --pair) [ $# -ge 2 ] || die "--pair needs the code from Settings"; CODE="$2"; shift 2 ;;
+    --server) [ $# -ge 2 ] || die "--server needs the ledger address, like http://192.168.1.20:8787"; SERVER="$2"; shift 2 ;;
+    --bloomgauge) BG=yes; shift ;;
+    --no-bloomgauge) BG=no; shift ;;
     --earnings) EARNINGS=1; shift ;;
     --replace-old) REPLACE_OLD=1; shift ;;
     --uninstall) UNINSTALL=1; shift ;;
@@ -64,7 +69,16 @@ if [ "$UNINSTALL" = 1 ]; then
   exit 0
 fi
 
-case "$BASE" in http://*|https://*) ;; *) die "download this script from your ledger (Settings > Add a machine)" ;; esac
+[ -z "$SERVER" ] || BASE=$SERVER
+case "$BASE" in http://*|https://*) ;; *) BASE="" ;; esac
+# ask(VAR, question): read from the keyboard even when this script is piped from curl. Empty when there is no keyboard.
+ask() { if [ -r /dev/tty ] && [ -w /dev/tty ]; then printf '%s ' "$2" >/dev/tty; read -r _a </dev/tty || _a=""; else _a=""; fi; eval "$1=\$_a"; }
+if [ -z "$BASE" ]; then
+  ask BASE "Ledger address (like http://192.168.1.20:8787):"
+  case "$BASE" in http://*|https://*) ;; *) die "no ledger address. Rerun with --server http://<ledger>:8787 --pair <code>, or copy the command from the ledger's Setup page" ;; esac
+fi
+BASE=${BASE%/}
+if [ -z "$CODE" ]; then ask CODE "Pairing code (from the ledger's Setup page):"; fi
 # The shipper talks to a private address or a hostname, never a public IP literal. Checked before pairing so a code is never used up.
 BASE_HOST=${BASE#*://}; BASE_HOST=${BASE_HOST%%/*}; BASE_HOST=${BASE_HOST%%:*}
 acceptable_host "$BASE_HOST" || die "'$BASE_HOST' is not a private address or a hostname: use the ledger's LAN address or name, e.g. curl -fsSL http://192.168.1.20:8787/install.sh | sh -s -- --pair <code> (Settings > Add a machine shows the exact command)"
@@ -79,7 +93,7 @@ for c in /opt/homebrew/bin/python3 /usr/local/bin/python3 /usr/bin/python3; do
 done
 [ -n "$PY" ] || die "needs Python 3.9+: run 'xcode-select --install' or 'brew install python', then try again"
 
-curl -fsS -o /dev/null "$BASE/v1/hello" || die "can't reach the ledger at $BASE: check the address, that the Mac is on the same network (or VPN), and that the server is running"
+curl -fsS -m 10 -o /dev/null "$BASE/v1/hello" || die "can't reach the ledger at $BASE: check the address, that the Mac is on the same network (or VPN), and that the server is running"
 URL=${BASE%/}
 
 say "downloading the client from $BASE"
@@ -197,6 +211,31 @@ else
   unload "$PREFIX.earnings"; rm -f "$AGENTS/$PREFIX.earnings.plist"
 fi
 
+# Optional BloomGauge: never needed. Offered only when the app is found, or asked once on a keyboard; the answer is stored beside the pairing.
+if [ -z "$BG" ]; then
+  if [ -d /Applications/BloomGauge.app ] || [ -d "$HOME/Applications/BloomGauge.app" ]; then
+    ask BG "BloomGauge found. Use it with the ledger? Optional, press Enter to skip [y/N]:"
+    case "$BG" in y|Y|yes) BG=yes ;; *) BG=no ;; esac
+  else
+    BG=no
+  fi
+fi
+"$PY" - "$DBK/ledger.json" "$BG" <<'PYEOF'
+import json, os, sys
+p, bg = sys.argv[1], sys.argv[2] == "yes"
+try:
+    cfg = json.load(open(p))
+except (OSError, ValueError):
+    cfg = {}
+cfg["bloomgauge"] = bg
+open(p + ".tmp", "w").write(json.dumps(cfg, indent=2, sort_keys=True) + "\n")
+os.replace(p + ".tmp", p)
+PYEOF
+HAVE_DB=0
+for _f in "$DBK"/*; do [ -e "$_f" ] && [ "${_f##*/}" != "ledger.json" ] && HAVE_DB=1; done
+if [ "$HAVE_DB" = 0 ]; then
+  say "note: no Darkbloom data found in $DBK yet. Run Darkbloom once on this Mac; the ledger only reads what it writes."
+fi
 say "installed as machine '$MID', shipping to $URL"
-"$PY" "$BIN/bloom-ship.py" --check || true
+"$PY" "$BIN/bloom-doctor.py" || say "some checks above need attention; the lines starting with fix: say what to do. Rerun: $PY \"$BIN/bloom-doctor.py\""
 say "done. Power minutes appear on the ledger within a few minutes. Uninstall: rerun with --uninstall"
