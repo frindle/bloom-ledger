@@ -48,6 +48,8 @@ RESP=$(curl -fsS -X POST $H -H "Origin: $BASE" --data '{"id":"mac-old"}' "$BASE/
 CODE=$(echo "$RESP" | jget pair_code 2>/dev/null)
 TOKEN=$(curl -fsS -X POST $H --data "{\"code\":\"$CODE\"}" "$BASE/v1/pair" | jget token) || { bad "old pairing"; exit 1; }
 SAMPLE_NOW=2026-11-15T12:00:00 python3 "$HERE/sample.py" post "$BASE" "$TOKEN" && ok "sample data shipped to the old version" || bad "sample data shipped to the old version"
+# the previous release indexes new data every 5 minutes and right after a start: restart it so the test does not wait
+docker compose restart bloom-ledger >/dev/null 2>&1; wait_up || bad "old server back after restart"
 for _ in $(seq 1 30); do [ "$(curl -fsS "$BASE/v1/earnings/series" | jget total_micro)" -gt 0 ] && break; sleep 2; done
 before=$(curl -fsS "$BASE/v1/earnings/series" | jget total_micro)
 echo "old logs:"; docker compose logs bloom-ledger 2>&1 | grep -v 'GET /' | tail -25 | cut -c1-300
