@@ -152,7 +152,7 @@ def test_tally_account_block_schema_and_old_fields(tmp_path):
     db, root = make(tmp_path)
     SP.ingest(db, root, T0 + 50, get=getter(200, [row("b", T0 + 20, 123456, p=7, c=3), row("a", T0 + 10, 100000, p=1, c=2)]))
     t = TL.build_month(db, "2026-11", T0 + 10**7)
-    assert t["schema_version"] == 2 == TL.SCHEMA_VERSION
+    assert t["schema_version"] == 3 == TL.SCHEMA_VERSION
     for k in ("month", "timezone", "day_boundary", "rounding", "generated_at", "final", "hash", "totals", "machines", "balances"):
         assert k in t
     acct = t["account"]
