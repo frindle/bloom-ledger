@@ -65,12 +65,19 @@ $("f").addEventListener("submit", function(e){
     return shell("Log in - bloom-ledger", body, js)
 
 
-def setup_page(needs_code=False):
+def setup_page(needs_code=False, keep_settings=False):
     tz = "".join('<option value="%s">' % t for t in TZ_CHOICES)
     code_row = ('<div class="bl-field"><label for="code">Setup code</label><input id="code" autocomplete="off" required>'
                 '<span class="bl-hint">Creating the account needs the one-time code the server printed in its log, on the line that says "Setup code". '
                 'Docker: <code>docker compose logs bloom-ledger</code>. Mac install: <code>~/Library/Application Support/bloom-ledger-server/logs/server.log</code>. '
                 'Or read the file <code>setup-code</code> in the data folder.</span></div>') if needs_code else ""
+    money = ('<p class="bl-hint" style="margin-top:1.5rem">Your time zone and electricity price are already set from before. '
+             'Setup leaves them as they are; change them in Accounting settings.</p>') if keep_settings else """<h2 style="margin-top:1.5rem">Where and what you pay</h2>
+<div class="bl-field"><label for="tz">Time zone</label><input id="tz" list="tzs" autocomplete="off" required><datalist id="tzs">%(tz)s</datalist>
+<span class="bl-hint">Days and months are cut at midnight in this zone.</span></div>
+<div class="bl-field"><label for="rate">Electricity price per kWh (US dollars)</label><input id="rate" inputmode="decimal" placeholder="0.15">
+<span class="bl-hint">Optional. Leave it empty and power cost stays "not computed" until you enter it in Accounting settings. Darkbloom pays in US dollars, so every figure here is in USD.</span></div>
+"""
     body = """<main><div class="bl-narrow"><h1>Set up bloom-ledger</h1>
 <p class="meta">Three short steps. Nothing leaves your network.</p>
 <ol class="bl-steps" aria-label="Steps"><li id="s1" class="on">Your account</li><li id="s2">Electricity</li><li id="s3">Add a Mac</li></ol>
@@ -82,11 +89,7 @@ def setup_page(needs_code=False):
 <div class="bl-field"><label for="u">Username</label><input id="u" autocomplete="username" required autofocus></div>
 <div class="bl-field"><label for="p">Password (8 or more characters)</label><input id="p" type="password" autocomplete="new-password" minlength="8" required></div>
 <div class="bl-field"><label for="p2">Repeat the password</label><input id="p2" type="password" autocomplete="new-password" required></div>
-<h2 style="margin-top:1.5rem">Where and what you pay</h2>
-<div class="bl-field"><label for="tz">Time zone</label><input id="tz" list="tzs" autocomplete="off" required><datalist id="tzs">%(tz)s</datalist>
-<span class="bl-hint">Days and months are cut at midnight in this zone.</span></div>
-<div class="bl-field"><label for="rate">Electricity price per kWh (US dollars)</label><input id="rate" inputmode="decimal" placeholder="0.15">
-<span class="bl-hint">Optional. Leave it empty and power cost stays "not computed" until you enter it in Accounting settings. Darkbloom pays in US dollars, so every figure here is in USD.</span></div>
+%(money)s
 <div class="bl-field"><label><input type="checkbox" id="gauge" style="min-height:auto"> I also use BloomGauge (optional)</label>
 <span class="bl-hint">Not needed. bloom-ledger reads Darkbloom directly. This only records the choice.</span></div>
 <p id="err1" class="bl-err" role="alert"></p>
@@ -107,17 +110,17 @@ def setup_page(needs_code=False):
 <p class="bl-hint">The code works once and expires in 30 minutes. It usually takes one to three minutes after install for data to arrive.</p>
 <p><button type="button" id="another">Add another Mac</button> <a class="btn primary" href="/status">Finish</a></p>
 </div></section>
-</div></main>""" % {"code": code_row, "tz": tz}
+</div></main>""" % {"code": code_row, "tz": tz, "money": money % {"tz": tz} if not keep_settings else money}
     js = COMMON_JS + """
 var mac = null, timer = null;
-try { $("tz").value = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; } catch (e) { $("tz").value = "UTC"; }
+if ($("tz")) { try { $("tz").value = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; } catch (e) { $("tz").value = "UTC"; } }
 function show2(){ $("f1").hidden = true; $("p2s").hidden = false; $("s1").className = "done"; $("s2").className = "done"; $("s3").className = "on"; }
 api("GET", "/v1/auth/me").then(function(r){ if (r.body.mode === "login" && r.body.logged_in) show2(); else if (r.body.mode === "login") location.href = "/login?next=/setup"; });
 $("f1").addEventListener("submit", function(e){
   e.preventDefault(); $("err1").textContent = "";
   if ($("p").value !== $("p2").value) { $("err1").textContent = "The two passwords do not match."; return; }
   $("go1").disabled = true;
-  var body = {username: $("u").value, password: $("p").value, timezone: $("tz").value, rate: $("rate").value, bloomgauge: $("gauge").checked};
+  var body = {username: $("u").value, password: $("p").value, timezone: $("tz") ? $("tz").value : "", rate: $("rate") ? $("rate").value : "", bloomgauge: $("gauge").checked};
   if ($("code")) body.setup_code = $("code").value;
   api("POST", "/v1/auth/setup", body).then(function(r){
     if (r.status === 200) { show2(); } else { $("err1").textContent = r.body.error || "Setup failed."; $("go1").disabled = false; }

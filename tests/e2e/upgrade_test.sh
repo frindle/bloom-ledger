@@ -89,6 +89,8 @@ SETUP_CODE=$(docker compose logs bloom-ledger 2>&1 | grep -o 'Setup code: [0-9a-
 python3 "$HERE/sample.py" setup "$BASE" nobody correct-horse-1 "$WORK/cookie0" 000000000000 2>/dev/null && bad "setup without the right code is refused" || ok "setup without the right code is refused"
 curl -fsS "$BASE/v1/auth/me" | jget mode | grep -q '^lan$' && ok "still no admin after the refused attempt" || bad "still no admin after the refused attempt"
 python3 "$HERE/sample.py" setup "$BASE" owner correct-horse-1 "$WORK/cookie" "$SETUP_CODE" && ok "admin created after upgrade" || bad "admin created after upgrade"
+[ "$(curl -fsS "$BASE/v1/status" | jget timezone)" = America/Los_Angeles ] && ok "time zone unchanged after setup (setup asked for America/Chicago)" || bad "time zone unchanged after setup"
+[ "$(curl -fsS "$BASE/v1/earnings/series" | jget total_micro)" = "$before" ] && ok "earnings unchanged after setup" || bad "earnings unchanged after setup"
 ./update.sh > update.out 2>&1 && wait_up && [ "$(curl -fsS "$BASE/v1/auth/me" | jget mode)" = login ] && ok "admin survives another update" || bad "admin survives another update"
 
 echo; echo "failures: $FAILS"

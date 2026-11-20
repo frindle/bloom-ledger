@@ -149,6 +149,14 @@ def auth_mode(db, env=None):
     return "lan" if r and r[0] == "1" else "setup"
 
 
+def has_settings(db):
+    """True when a time zone or electricity price is already on record (setup must then leave both alone)."""
+    try:
+        return db.execute("SELECT 1 FROM acct_settings WHERE key IN ('local_timezone', 'rate_schedule') LIMIT 1").fetchone() is not None
+    except Exception:
+        return False
+
+
 def _has_meta(db):
     return db.execute("SELECT 1 FROM sqlite_master WHERE name = 'acct_meta'").fetchone() is not None
 

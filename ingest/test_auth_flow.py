@@ -132,6 +132,51 @@ def test_old_install_keeps_working_without_an_admin(web, monkeypatch):
     assert s == 201          # same rule as before: private address plus same-origin
 
 
+def _rows(web):
+    return web.db.execute("SELECT key, effective_from, value_json FROM acct_settings ORDER BY rowid").fetchall()
+
+
+def _migrated(web):
+    import bloom_migrate as MIG
+    web.db.execute("CREATE TABLE IF NOT EXISTS earnings (ledger_id TEXT, ts INTEGER, micro_usd INTEGER, kind TEXT, model TEXT,"
+                   " job_id TEXT, completion_tokens INTEGER, source_machine TEXT)")
+    web.db.execute("INSERT INTO earnings VALUES ('L1', 1791900000, 5, 'inference', 'm', 'j', 0, 'm1')")
+    MIG.run(web.db, lambda m: None)
+
+
+def test_setup_on_a_migrated_install_only_creates_the_admin(web):
+    import bloom_accounting_config as CF
+    _migrated(web)
+    assert AU.auth_mode(web.db) == "lan"
+    before = _rows(web)
+    assert CF.effective_settings(web.db, "2026-11-01")["values"]["local_timezone"] == "America/Los_Angeles"
+    page = web("GET", "/setup")[2].decode()
+    assert 'id="code"' in page and 'id="tz"' not in page and "leaves them as they are" in page
+    s, _o = post(web, "/v1/auth/setup", {"username": "me", "password": "longenough1", "timezone": "Asia/Tokyo", "rate": "0.30",
+                                         "setup_code": code_of()})
+    assert s == 200 and AU.has_admin(web.db)
+    assert _rows(web) == before     # no time zone, price or adder row written
+    v = CF.effective_settings(web.db, "2026-11-01")["values"]
+    assert v["local_timezone"] == "America/Los_Angeles" and CF.effective_settings(web.db, "2020-01-01")["values"]["local_timezone"] == "America/Los_Angeles"
+
+
+def test_setup_with_a_time_zone_already_on_record_leaves_it_alone(web):
+    import bloom_accounting_config as CF
+    CF.set_setting(web.db, "local_timezone", "Europe/Berlin", "2026-01-01", 1)
+    before = _rows(web)
+    s, _o = post(web, "/v1/auth/setup", {"username": "me", "password": "longenough1", "timezone": "Asia/Tokyo", "rate": "0.30",
+                                         "setup_code": code_of()})
+    assert s == 200 and _rows(web) == before
+    assert CF.effective_settings(web.db, "2026-11-01")["values"]["local_timezone"] == "Europe/Berlin"
+
+
+def test_fresh_install_setup_still_writes_its_choices(web):
+    s, _o = post(web, "/v1/auth/setup", {"username": "me", "password": "longenough1", "timezone": "Asia/Tokyo", "rate": "0.30",
+                                         "setup_code": code_of()})
+    assert s == 200
+    assert {r[0] for r in _rows(web)} >= {"local_timezone", "rate_schedule"}
+
+
 def test_optional_integration_switch(web):
     import bloom_integrations as IG
     assert IG.bloomgauge_state(web.db, {}) == "not set up"
