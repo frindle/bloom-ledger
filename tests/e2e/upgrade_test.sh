@@ -50,6 +50,7 @@ TOKEN=$(curl -fsS -X POST $H --data "{\"code\":\"$CODE\"}" "$BASE/v1/pair" | jge
 SAMPLE_NOW=2026-11-15T12:00:00 python3 "$HERE/sample.py" post "$BASE" "$TOKEN" && ok "sample data shipped to the old version" || bad "sample data shipped to the old version"
 for _ in $(seq 1 30); do [ "$(curl -fsS "$BASE/v1/earnings/series" | jget total_micro)" -gt 0 ] && break; sleep 2; done
 before=$(curl -fsS "$BASE/v1/earnings/series" | jget total_micro)
+echo "old logs:"; docker compose logs --tail 25 bloom-ledger 2>&1 | cut -c1-300
 echo "old series: $(curl -fsS "$BASE/v1/earnings/series" | cut -c1-400)"
 echo "old status: $(curl -fsS "$BASE/v1/status" | cut -c1-600)"
 echo "old settings: $(curl -fsS "$BASE/v1/settings" 2>&1 | cut -c1-600)"
