@@ -55,3 +55,28 @@ def export_api_enabled(db, env=None):
         return bool(r and r[0] == "1")
     except Exception:
         return False
+
+
+def _has_data(folder):
+    try:
+        return (folder / "index.sqlite").exists() or (folder / "objects").is_dir()
+    except OSError:
+        return False
+
+
+def legacy_bind_data(root, legacy):
+    """Compose installs from before named volumes kept their data in ./data next to compose.yaml, with no .env. Compose now
+    mounts the project folder read-only at `legacy` (BLOOM_LEGACY_DIR). When that folder has a ./data with a ledger in it and
+    the real data folder (`root`) is empty, starting would silently show an empty ledger: return the message to print instead
+    (None when all is well or when the legacy folder is not readable)."""
+    from pathlib import Path
+    if not legacy:
+        return None
+    root, old = Path(root), Path(legacy) / "data"
+    if _has_data(root) or not _has_data(old):
+        return None
+    return ("refusing to start: found data from an older install in ./data, but this container is using an empty data volume, "
+            "so you would see an empty ledger. Keep your data: put these lines in a file named .env next to compose.yaml "
+            "(or run ./update.sh, which writes them) and start again:\n"
+            "  BLOOM_DATA_DIR=./data\n  BLOOM_KEYS_DIR=./data/secrets\n  BLOOM_SECRETS_DIR=./secrets\n  BLOOM_EARNINGS_DIR=./data/earnings\n"
+            "Your data was not touched.")

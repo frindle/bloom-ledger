@@ -6,6 +6,9 @@
 # Installs made with ./update.sh have host folders named in .env (BLOOM_DATA_DIR, BLOOM_KEYS_DIR, BLOOM_SECRETS_DIR,
 # BLOOM_EARNINGS_DIR, BLOOM_UID, BLOOM_GID). When those are set they are used instead of the named volumes, so an update
 # never starts on an empty volume. Leave them unset on a new install.
+# Older plain-compose installs kept data in ./data with no .env. Those would now start on an empty volume, so the
+# container looks at ./data (the project folder is mounted read-only at /legacy) and refuses to start, with a message that
+# says which .env lines keep the data, when it finds a ledger there and the volume is empty.
 services:
   bloom-ledger:
     build: .
@@ -28,11 +31,13 @@ services:
       BLOOM_ACCESS_TEAM_DOMAIN: ${BLOOM_ACCESS_TEAM_DOMAIN:-}
       BLOOM_ACCESS_AUD: ${BLOOM_ACCESS_AUD:-}
       BLOOM_KEYS: /keys
+      BLOOM_LEGACY_DIR: /legacy
       BLOOM_TOKENS: /run/secrets/bloom_tokens
     volumes:
       - ${BLOOM_DATA_DIR:-bloom-data}:/data
       - ${BLOOM_KEYS_DIR:-bloom-keys}:/keys
       - ${BLOOM_SECRETS_DIR:-bloom-secrets}:/run/secrets:ro
+      - .:/legacy:ro
 
   # Optional: run the Darkbloom earnings archiver here instead of on a Mac. Needs a Darkbloom token file.
   #   docker compose --profile earnings up -d
@@ -47,7 +52,7 @@ services:
     user: "${BLOOM_UID:-99}:${BLOOM_GID:-100}"
     volumes:
       - ${BLOOM_EARNINGS_DIR:-bloom-earnings}:/state
-      - ${BLOOM_SECRETS_DIR:-./secrets}:/run/secrets:ro
+      - ${BLOOM_SECRETS_DIR:-bloom-secrets}:/run/secrets:ro
 
 volumes:
   bloom-data:

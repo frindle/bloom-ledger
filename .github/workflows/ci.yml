@@ -71,6 +71,7 @@ jobs:
           fetch-depth: 0
       - run: git fetch origin main:refs/remotes/origin/main || true
       - run: bash tests/e2e/upgrade_test.sh
+      - run: bash tests/e2e/upgrade_plain_compose_test.sh
 
   mac:
     name: mac install, pair, doctor, uninstall

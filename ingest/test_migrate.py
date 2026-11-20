@@ -51,3 +51,23 @@ def test_ingest_cutoff_follows_setting():
     assert AX.resolve_since(db) == 0
     CF.set_setting(db, "ingest_from", "2026-10-13", "1970-01-01", 1)
     assert AX.resolve_since(db) == 1791849600 or AX.resolve_since(db) > 0
+
+
+def test_old_bind_mount_data_with_an_empty_volume_refuses_to_start(tmp_path):
+    root, project = tmp_path / "data-volume", tmp_path / "project"
+    root.mkdir()
+    (project / "data" / "objects").mkdir(parents=True)
+    msg = MIG.legacy_bind_data(root, project)
+    assert msg and "BLOOM_DATA_DIR=./data" in msg and "BLOOM_KEYS_DIR=./data/secrets" in msg and "not touched" in msg
+    # the volume already holds a ledger: nothing to say
+    (root / "index.sqlite").write_text("")
+    assert MIG.legacy_bind_data(root, project) is None
+
+
+def test_fresh_install_and_unset_legacy_dir_start_normally(tmp_path):
+    root = tmp_path / "data-volume"
+    root.mkdir()
+    assert MIG.legacy_bind_data(root, tmp_path / "project-without-data") is None
+    assert MIG.legacy_bind_data(root, "") is None
+    (tmp_path / "project" / "data").mkdir(parents=True)     # an empty ./data (docker made it) is not a ledger
+    assert MIG.legacy_bind_data(root, tmp_path / "project") is None

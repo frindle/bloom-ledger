@@ -605,6 +605,10 @@ def main():
         print("usage: server.py [doctor | reset-admin]   (no argument starts the server)")
         sys.exit(2)
     ROOT.mkdir(parents=True, exist_ok=True)
+    why = MIG.legacy_bind_data(ROOT, os.environ.get("BLOOM_LEGACY_DIR", ""))
+    if why:
+        log(why)
+        sys.exit(3)
     db = I.open_db(ROOT / "index.sqlite")
     MIG.run(db, log)
     mode = AU.auth_mode(db)
