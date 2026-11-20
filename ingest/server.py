@@ -145,8 +145,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/setup":
             with DB_LOCK:
                 mode = AU.auth_mode(self.server.db)
-            needs = AU.setup_code_needed(LAN.is_private_ip(self.client_address[0]) and LAN.forwarded_ok(self.headers))
-            self.send_html(WEB.setup_page(needs_code=needs and mode in ("setup", "lan")))
+            self.send_html(WEB.setup_page(needs_code=mode in ("setup", "lan")))
             return True
         if path == "/status":
             self.send_html(WEB.status_page())
@@ -227,8 +226,10 @@ class Handler(BaseHTTPRequestHandler):
         with DB_LOCK:
             if AU.has_admin(db):
                 return (409, {"error": "Setup is already done. Log in instead."})
-            local = LAN.is_private_ip(self.client_address[0]) and LAN.forwarded_ok(self.headers)
-            if AU.setup_code_needed(local) and str(body.get("setup_code") or "").strip() != AU.setup_code(ROOT):
+            if AU.locked(self.client_address[0]):
+                return (429, {"error": "Too many wrong codes or passwords. Wait a minute, then try again."})
+            if not AU.setup_code_ok(ROOT, body.get("setup_code")):
+                AU.note_fail(self.client_address[0])
                 return (403, {"error": "That setup code is not right. It is printed in the server log."})
             tz = str(body.get("timezone") or "UTC").strip()
             try:
@@ -258,6 +259,10 @@ class Handler(BaseHTTPRequestHandler):
             if body.get("bloomgauge"):
                 IG.set_bloomgauge(db, True)
             tok = AU.new_session(db)
+        AU.rotate_setup_code(ROOT)
+        AU.clear_fails(self.client_address[0])
+        AU.rotate_setup_code(ROOT)
+        AU.clear_fails(self.client_address[0])
         log("setup finished: admin created")
         return (200, {"ok": True}, {"Set-Cookie": AU.cookie_header(tok, self.secure())})
 
@@ -582,7 +587,7 @@ def reset_admin():
     db.execute("DELETE FROM bl_admin")
     db.execute("DELETE FROM bl_sessions")
     db.commit()
-    print("Admin removed. Open /setup in the browser to create a new one.")
+    print("Admin removed. Open /setup in the browser to create a new one. Setup code: %s" % AU.setup_code(ROOT))
 
 
 def main():
@@ -598,9 +603,9 @@ def main():
     MIG.run(db, log)
     mode = AU.auth_mode(db)
     if mode == "setup":
-        log(f"first run: open http://<this machine>:{PORT}/setup to create the admin login (setup code for remote browsers: {AU.setup_code(ROOT)})")
+        log(f"first run: open http://<this machine>:{PORT}/setup to create the admin login. Setup code: {AU.setup_code(ROOT)}")
     elif mode == "lan":
-        log("no admin login yet: settings are open to the local network only. Open /setup to create one.")
+        log(f"no admin login yet: settings are open to the local network only. Open http://<this machine>:{PORT}/setup to create one. Setup code: {AU.setup_code(ROOT)}")
     if not I.load_tokens(TOKENS_PATH, MACHINES_PATH):
         log("no Macs added yet: add one at /setup or Settings. Data posts are refused until then.")
     stop = threading.Event()

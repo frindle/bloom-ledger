@@ -44,7 +44,10 @@ must "/healthz still answers" curl -fsS "$BASE/healthz"
 step "2 /setup and the admin"
 curl -fsS "$BASE/setup" | grep -qi "setup" && ok "/setup page loads" || bad "/setup page loads"
 curl -fsS "$BASE/v1/auth/me" | grep -q '"mode": *"setup"' && ok "fresh server reports setup mode" || bad "fresh server reports setup mode"
-must "admin created" python3 "$HERE/sample.py" setup "$BASE" owner "correct-horse-1" "$COOKIE"
+SETUP_CODE=$(grep -o 'Setup code: [0-9a-f]*' "$SDATA/logs/server.log" | tail -1 | awk '{print $3}')
+[ -n "$SETUP_CODE" ] && ok "setup code is in server.log" || bad "setup code is in server.log"
+mustnot "setup without the code is refused" python3 "$HERE/sample.py" setup "$BASE" intruder "correct-horse-1" "$WORK/cookie-no" 000000000000
+must "admin created" python3 "$HERE/sample.py" setup "$BASE" owner "correct-horse-1" "$COOKIE" "$SETUP_CODE"
 CODE=$(python3 "$HERE/sample.py" paircode "$BASE" mac-ci "$COOKIE") && ok "pairing code made" || { bad "pairing code made"; CODE=""; }
 
 step "3 install the client with the pairing code"

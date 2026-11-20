@@ -66,6 +66,18 @@ def locked(ip, now=None):
     return until > now
 
 
+def note_fail(ip, now=None):
+    """Count one wrong guess from `ip`; five lock it for a minute (same counter as wrong passwords)."""
+    now = time.time() if now is None else now
+    n, _until = _fails.get(ip, (0, 0))
+    n += 1
+    _fails[ip] = (0, now + LOCK_S) if n >= MAX_FAILS else (n, 0)
+
+
+def clear_fails(ip):
+    _fails.pop(ip, None)
+
+
 def check_login(db, ip, user, password, now=None):
     """True when the credentials match. Five misses from one address lock it for a minute."""
     now = time.time() if now is None else now
@@ -80,9 +92,7 @@ def check_login(db, ip, user, password, now=None):
     if ok:
         _fails.pop(ip, None)
         return True
-    n, until = _fails.get(ip, (0, 0))
-    n += 1
-    _fails[ip] = (0, now + LOCK_S) if n >= MAX_FAILS else (n, 0)
+    note_fail(ip, now)
     return False
 
 
@@ -143,9 +153,19 @@ def _has_meta(db):
     return db.execute("SELECT 1 FROM sqlite_master WHERE name = 'acct_meta'").fetchone() is not None
 
 
-def setup_code_needed(client_is_private):
-    """A public client must show the one-time code printed in the server log before it may create the admin."""
-    return not client_is_private
+def setup_code_ok(root, given):
+    """Creating the admin always needs the one-time code from the server log, whoever asks (a private address proves nothing:
+    anyone on the LAN, or a DNS-rebinding page, looks local). Compared in constant time."""
+    return hmac.compare_digest(str(given or "").strip().encode(), setup_code(root).encode())
+
+
+def rotate_setup_code(root):
+    """Forget the code once it has been used, so a copy of the old log line is worthless."""
+    from pathlib import Path
+    try:
+        (Path(root) / "setup-code").unlink()
+    except OSError:
+        pass
 
 
 def setup_code(root):

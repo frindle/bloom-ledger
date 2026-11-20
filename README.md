@@ -46,7 +46,7 @@ It starts at login and restarts if it stops. **Keep the `bloom-ledger` folder wh
 
 Open `/setup`. It takes three short steps: create a login, set your time zone and electricity price (optional), name your first Mac. It then shows one command to paste on that Mac and waits for data to arrive. Visiting the home page of a brand-new server sends you there by itself.
 
-If you open `/setup` from a different machine than the server, it asks for a one-time setup code printed in the server log (`docker compose logs bloom-ledger`, or the file `setup-code` in the data folder on a Mac install).
+Creating the login always asks for a one-time setup code, so nobody else on your network can claim the server first. It is printed in the server log on the line "Setup code" (`docker compose logs bloom-ledger`, or `~/Library/Application Support/bloom-ledger-server/logs/server.log` on a Mac install; it is also the file `setup-code` in the data folder). It stops working once the login exists.
 
 The command it shows uses the address you opened the page with. If that was `localhost`, the command only works on the server itself: to add a different Mac, open `/setup` (or Machines) using the server's network address and copy the command from there.
 

@@ -68,8 +68,9 @@ $("f").addEventListener("submit", function(e){
 def setup_page(needs_code=False):
     tz = "".join('<option value="%s">' % t for t in TZ_CHOICES)
     code_row = ('<div class="bl-field"><label for="code">Setup code</label><input id="code" autocomplete="off" required>'
-                '<span class="bl-hint">You are not on the local network, so the server asks for the code it printed in its log '
-                '(<code>docker compose logs bloom-ledger</code>, or the file <code>setup-code</code> in the data folder).</span></div>') if needs_code else ""
+                '<span class="bl-hint">Creating the account needs the one-time code the server printed in its log, on the line that says "Setup code". '
+                'Docker: <code>docker compose logs bloom-ledger</code>. Mac install: <code>~/Library/Application Support/bloom-ledger-server/logs/server.log</code>. '
+                'Or read the file <code>setup-code</code> in the data folder.</span></div>') if needs_code else ""
     body = """<main><div class="bl-narrow"><h1>Set up bloom-ledger</h1>
 <p class="meta">Three short steps. Nothing leaves your network.</p>
 <ol class="bl-steps" aria-label="Steps"><li id="s1" class="on">Your account</li><li id="s2">Electricity</li><li id="s3">Add a Mac</li></ol>

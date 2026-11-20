@@ -2,7 +2,7 @@
 """Fake data and small HTTP helpers shared by the end-to-end tests (CI only; nothing here is real provider data).
 
   sample.py home DIR                      write a fake Darkbloom folder (power minutes, earnings, provider log, usage ring)
-  sample.py setup BASE USER PASSWORD COOKIEFILE    create the admin through /v1/auth/setup (saves the session cookie)
+  sample.py setup BASE USER PASSWORD COOKIEFILE SETUPCODE    create the admin through /v1/auth/setup (saves the session cookie)
   sample.py paircode BASE MACHINE COOKIEFILE       add a machine and print its one-time pairing code
   sample.py post BASE TOKEN               ship the fake data straight to /v1/objects as that machine
   sample.py wait BASE MACHINE SECONDS     wait until the ledger shows data from that machine
@@ -91,8 +91,8 @@ def main(argv):
     if cmd == "home":
         write_home(argv[2])
     elif cmd == "setup":
-        base, user, pw, cf = argv[2:6]
-        st, body, hd = req(base, "POST", "/v1/auth/setup", {"username": user, "password": pw, "timezone": "America/Chicago", "rate": "0.15"})
+        base, user, pw, cf, code = argv[2:7]
+        st, body, hd = req(base, "POST", "/v1/auth/setup", {"username": user, "password": pw, "timezone": "America/Chicago", "rate": "0.15", "setup_code": code})
         if st != 200:
             sys.exit("setup failed: %s %s" % (st, body))
         Path(cf).write_text(hd.get("Set-Cookie", "").split(";", 1)[0] + "\n")

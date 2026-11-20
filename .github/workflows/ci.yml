@@ -48,7 +48,10 @@ jobs:
           docker compose up -d --build
           for i in $(seq 1 40); do curl -fsS http://127.0.0.1:8787/healthz && break; sleep 2; done
       - name: walk the new-user path in a browser
-        run: python tests/e2e/browser_newuser.py http://127.0.0.1:8787 shots
+        run: |
+          code=$(docker compose logs bloom-ledger 2>&1 | grep -o 'Setup code: [0-9a-f]*' | tail -1 | awk '{print $3}')
+          test -n "$code"
+          python tests/e2e/browser_newuser.py http://127.0.0.1:8787 shots "$code"
       - if: always()
         uses: actions/upload-artifact@v4
         with:

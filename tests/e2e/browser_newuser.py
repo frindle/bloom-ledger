@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Browser walk of the new-user path against a running server (the Docker compose stack in CI). Fake data only.
-  browser_newuser.py BASE SHOTS_DIR
-First visit -> /setup -> create admin -> get the install command -> log out -> wrong password -> lockout -> log in again ->
+  browser_newuser.py BASE SHOTS_DIR SETUP_CODE
+SETUP_CODE is the one-time code from the server log (the "Setup code:" line). First visit -> /setup -> create admin -> get the install command -> log out -> wrong password -> lockout -> log in again ->
 every page with empty data -> a fake Mac pairs and ships sample data -> every page again, light and dark, desktop and phone,
 with no console errors, no NaN/undefined text and no sideways scrolling. Screenshots go to SHOTS_DIR."""
 import json
@@ -17,6 +17,7 @@ from playwright.sync_api import sync_playwright
 HERE = Path(__file__).resolve().parent
 BASE = sys.argv[1].rstrip("/")
 SHOTS = Path(sys.argv[2])
+SETUP_CODE = sys.argv[3]
 SHOTS.mkdir(parents=True, exist_ok=True)
 PAGES = ["/", "/status", "/log", "/tax", "/settings", "/settings/accounting", "/settings/depreciation", "/login", "/setup"]
 BAD = re.compile(r"\bNaN\b|\bundefined\b|\[object Object\]|Traceback|Internal Server Error")
@@ -71,7 +72,20 @@ def main():
         page.goto(BASE + "/login", wait_until="networkidle")
         check(page.url.rstrip("/").endswith("/setup"), "/login on a fresh server goes to /setup")
 
-        # 2. setup: bad input says what is wrong, then success
+        # 2. setup needs the code from the server log, even from this local address
+        check(page.locator("#code").is_visible(), "setup asks for the setup code")
+        check("Setup code" in page.inner_text("body") and "docker compose logs" in page.inner_text("body"), "setup page says where the code is")
+        page.fill("#code", "000000000000")
+        page.fill("#u", "owner")
+        page.fill("#p", PW)
+        page.fill("#p2", PW)
+        page.click("#go1")
+        page.wait_for_function("document.getElementById('err1').textContent.length > 0")
+        check("setup code" in page.inner_text("#err1").lower(), "a wrong setup code is refused: %r" % page.inner_text("#err1"))
+        check(page.locator("#p2s").is_hidden(), "a wrong setup code does not get to step 2")
+        page.fill("#code", SETUP_CODE)
+
+        # bad input says what is wrong, then success
         page.fill("#u", "owner")
         page.fill("#p", PW)
         page.fill("#p2", "something-else-1")

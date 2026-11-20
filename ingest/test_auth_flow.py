@@ -16,6 +16,11 @@ def post(web, path, obj, cookie=None, extra=None):
     return s, json.loads(body or b"{}")
 
 
+def code_of():
+    import server
+    return AU.setup_code(server.ROOT)
+
+
 def cookie_of(web):
     return web.last_headers["set-cookie"].split(";")[0]
 
@@ -27,21 +32,21 @@ def test_fresh_install_refuses_writes_until_setup(web):
 
 
 def test_setup_validates_input(web):
-    assert post(web, "/v1/auth/setup", {"username": "me", "password": "short"})[0] == 400
-    s, o = post(web, "/v1/auth/setup", {"username": "me", "password": "longenough1", "timezone": "Nope/Zone"})
+    assert post(web, "/v1/auth/setup", {"username": "me", "password": "short", "setup_code": code_of()})[0] == 400
+    s, o = post(web, "/v1/auth/setup", {"username": "me", "password": "longenough1", "timezone": "Nope/Zone", "setup_code": code_of()})
     assert s == 400 and "time zone" in o["error"]
-    s, o = post(web, "/v1/auth/setup", {"username": "me", "password": "longenough1", "rate": "abc"})
+    s, o = post(web, "/v1/auth/setup", {"username": "me", "password": "longenough1", "rate": "abc", "setup_code": code_of()})
     assert s == 400 and "electricity" in o["error"]
     assert not AU.has_admin(web.db)
 
 
 def test_setup_login_logout_and_protected_write(web):
     AU._fails.clear()
-    s, _o = post(web, "/v1/auth/setup", {"username": "me", "password": "longenough1", "timezone": "America/Chicago", "rate": "0.15", "bloomgauge": False})
+    s, _o = post(web, "/v1/auth/setup", {"username": "me", "password": "longenough1", "timezone": "America/Chicago", "rate": "0.15", "bloomgauge": False, "setup_code": code_of()})
     assert s == 200
     assert "HttpOnly" in web.last_headers["set-cookie"] and "SameSite=Lax" in web.last_headers["set-cookie"]
     ck = cookie_of(web)
-    assert post(web, "/v1/auth/setup", {"username": "x", "password": "longenough1"})[0] == 409
+    assert post(web, "/v1/auth/setup", {"username": "x", "password": "longenough1", "setup_code": "whatever"})[0] == 409
     # settings applied
     import bloom_accounting_config as CF
     v = CF.effective_settings(web.db, "2026-11-01")["values"]
@@ -90,12 +95,33 @@ def test_whoami_checks_the_machine_token(web):
     assert web("GET", "/v1/whoami")[0] == 401
 
 
-def test_setup_code_required_off_the_local_network(web):
-    s, o = post(web, "/v1/auth/setup", {"username": "me", "password": "longenough1"}, extra={"X-Forwarded-For": "8.8.8.8"})
-    assert s == 403 and "setup code" in o["error"]
-    code = AU.setup_code(web.db and __import__("server").ROOT)
-    s, _o = post(web, "/v1/auth/setup", {"username": "me", "password": "longenough1", "setup_code": code}, extra={"X-Forwarded-For": "8.8.8.8"})
-    assert s == 200
+def test_setup_always_needs_the_code_even_from_the_local_network(web):
+    # 127.0.0.1 is as private as an address gets; it still gets no shortcut. Neither does a Tailscale/LAN peer.
+    for extra in ({}, {"X-Forwarded-For": "8.8.8.8"}, {"X-Forwarded-For": "100.64.1.2"}, {"X-Forwarded-For": "192.168.1.9"}):
+        AU._fails.clear()
+        s, o = post(web, "/v1/auth/setup", {"username": "me", "password": "longenough1"}, extra=extra)
+        assert s == 403 and "setup code" in o["error"]
+        s, _o = post(web, "/v1/auth/setup", {"username": "me", "password": "longenough1", "setup_code": "wrong-code"}, extra=extra)
+        assert s == 403
+    assert not AU.has_admin(web.db)
+    s, _o = post(web, "/v1/auth/setup", {"username": "me", "password": "longenough1", "setup_code": code_of()})
+    assert s == 200 and AU.has_admin(web.db)
+
+
+def test_setup_code_is_rotated_after_use_and_guesses_lock_out(web):
+    AU._fails.clear()
+    old = code_of()
+    for _ in range(5):
+        assert post(web, "/v1/auth/setup", {"username": "me", "password": "longenough1", "setup_code": "nope"})[0] == 403
+    assert post(web, "/v1/auth/setup", {"username": "me", "password": "longenough1", "setup_code": old})[0] == 429
+    AU._fails.clear()
+    assert post(web, "/v1/auth/setup", {"username": "me", "password": "longenough1", "setup_code": old})[0] == 200
+    assert code_of() != old
+
+
+def test_setup_page_asks_for_the_code_and_says_where_it_is(web):
+    page = web("GET", "/setup")[2].decode()
+    assert 'id="code"' in page and "Setup code" in page and "docker compose logs" in page and "server.log" in page
 
 
 def test_old_install_keeps_working_without_an_admin(web, monkeypatch):
@@ -110,6 +136,6 @@ def test_optional_integration_switch(web):
     import bloom_integrations as IG
     assert IG.bloomgauge_state(web.db, {}) == "not set up"
     assert IG.bloomgauge_state(web.db, {"BLOOM_BLOOMGAUGE": "1"}) == "enabled"
-    post(web, "/v1/auth/setup", {"username": "me", "password": "longenough1", "bloomgauge": True})
+    post(web, "/v1/auth/setup", {"username": "me", "password": "longenough1", "bloomgauge": True, "setup_code": code_of()})
     assert IG.bloomgauge_state(web.db, {}) == "enabled"
     assert json.loads(web("GET", "/v1/status")[2])["integrations"][0]["state"] == "enabled"
