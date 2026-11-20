@@ -59,7 +59,7 @@ def test_same_data_same_hash_and_change_changes_it():
 def test_months_index_matches_each_invoice():
     db = seeded()
     idx = INV.build_invoice_months(db, NOW)["months"]
-    assert [m["month"] for m in idx] == ["2026-10", "2026-11"]
+    assert [m["month"] for m in idx] == ["2026-09", "2026-10", "2026-11"]
     for m in idx:
         assert m["hash"] == INV.build_invoice(db, m["month"], NOW)["hash"]
 

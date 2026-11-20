@@ -57,4 +57,4 @@ def test_month_with_only_pre_tracking_pay_is_listed():
     months = TL.months_with_data(db)
     assert "2026-09" in months and months == sorted(months)
     inv = INV.build_invoice(db, "2026-09", NOW)
-    assert inv["gross_cents"] > 0 and inv["final"] is True or inv["gross_cents"] > 0
+    assert inv["gross_cents"] > 0
