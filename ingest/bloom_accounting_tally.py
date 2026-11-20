@@ -30,9 +30,11 @@ MONTH_RE = re.compile(r"^(\d{4})-(0[1-9]|1[0-2])\Z")
 CONVENTION = ("local calendar month in settings local_timezone effective on the month's last day: "
               "[first day 00:00, next month 00:00) local time, the same day boundary as the tax report and packet")
 ROUNDING = ("micro-USD to cents once per column per month, rounded down; machine rows split the month total by largest remainder")
-COLUMNS = ("earnings_cents", "other_income_cents", "power_cost_cents", "depreciation_cents", "lease_cents", "entries_deductible_cents")
+COLUMNS = ("earnings_cents", "fees_cents", "other_income_cents", "power_cost_cents", "depreciation_cents", "lease_cents", "entries_deductible_cents")
 SHARED = "shared"
-SCHEMA_VERSION = 2   # 1 (no field): per-machine rows and balances only. 2: adds schema_version and the account-level block
+SCHEMA_VERSION = 3   # 1 (no field): per-machine rows and balances only. 2: adds schema_version and the account-level block.
+#                      3: adds fees_cents (Darkbloom's 10% on Sandbox payouts); earnings_cents stays what Darkbloom paid out (net of that fee)
+SANDBOX_FEE_DIVISOR = 9   # a Sandbox row stores the payout, which is 90% of its cost, so the fee is payout / 9 (10% of cost)
 ACCOUNT_NOTE = ("Account level, not per machine. draw = the owner's personal use of the Darkbloom balance (API usage rows), "
                 "never an expense against Darkbloom income. contribution = money the owner put into the balance by card, entered by hand.")
 
@@ -139,6 +141,9 @@ def build_month(db, month, now, today=None):
     fixed = TX.fixed_by_month(settings, everything, y, {month: agg}, today)[month]
     rows_e = [_entry_row(e, agg["bp"]) for e in entries]
 
+    sandbox_w = {r[0] or SHARED: r[1] for r in db.execute("SELECT source_machine, COALESCE(SUM(micro_usd), 0) FROM earnings"
+                                                             " WHERE kind = 'sandbox' AND ts >= ? AND ts < ? GROUP BY source_machine", (lo, hi))}
+    fee_w = {mid: sandbox_w.get(mid, 0) // SANDBOX_FEE_DIVISOR for mid in ids + [SHARED]}
     earn_w, power_w, dep_w, lease_w = {}, {}, {}, {}
     records = {m["id"]: m for m in settings.get("machines") or []}
     for mid in ids + [SHARED]:
@@ -167,6 +172,7 @@ def build_month(db, month, now, today=None):
         ded_w[mkey(e)] += r["deductible_cents"]
     cols = {
         "earnings_cents": split(agg["income_micro"] // 10000, earn_w),
+        "fees_cents": apportion(sum(fee_w.values()) // 10000, fee_w),
         "other_income_cents": other_w,
         "power_cost_cents": split(None if agg["job_power_micro"] is None else agg["job_power_micro"] // 10000, power_w),
         "depreciation_cents": split(fixed["depreciation_business_cents"], dep_w),
@@ -224,6 +230,9 @@ def months_with_data(db):
     a, b = db.execute("SELECT MIN(date), MAX(date) FROM acct_entries WHERE voided_at IS NULL").fetchone() if _has_entries(db) else (None, None)
     if a:
         seen |= {a[:7], b[:7]}
+    in_service = CF.effective_settings(db, "9999-12-31")["values"].get("m4_in_service_date")
+    if in_service and TX.pre_tracking_micro(db, in_service[:7] + "-01", in_service[:7] + "-31", in_service) > 0:
+        seen.add(in_service[:7])   # pay from before tracking began sits in that month even when no day row does
     if not seen:
         return []
     y, m = int(min(seen)[:4]), int(min(seen)[5:])
@@ -232,7 +241,10 @@ def months_with_data(db):
         key = "%04d-%02d" % (y, m)
         start, end = month_bounds(key)
         lo, hi = RP.ts_bounds(tz.key, start, end)
-        has = (db.execute("SELECT 1 FROM earnings WHERE ts >= ? AND ts < ? LIMIT 1", (lo, hi)).fetchone()
+        # A month can hold pay with no day rows at all: the pay from before tracking began is booked to the month of the
+        # machine's in-service date (pre_tracking_micro), so that month counts as a month with data too.
+        has = (TX.pre_tracking_micro(db, start, end, CF.effective_settings(db, end)["values"].get("m4_in_service_date")) > 0
+               or db.execute("SELECT 1 FROM earnings WHERE ts >= ? AND ts < ? LIMIT 1", (lo, hi)).fetchone()
                or db.execute("SELECT 1 FROM power_minutes WHERE ts >= ? AND ts < ? LIMIT 1", (lo, hi)).fetchone()
                or db.execute("SELECT 1 FROM api_spend WHERE ts >= ? AND ts < ? LIMIT 1", (lo, hi)).fetchone()
                or (_has_entries(db) and db.execute("SELECT 1 FROM acct_entries WHERE voided_at IS NULL AND date >= ? AND date <= ? LIMIT 1",

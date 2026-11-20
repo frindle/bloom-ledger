@@ -5,10 +5,15 @@ Built on the monthly tally (bloom_accounting_tally), so the totals are the tally
 write-off rules. This module adds what the tally does not split: the earnings by kind (inference, sandbox, base reward) and the
 usage behind them (tokens, jobs, paid minutes). Money is integer cents.
 
-Facts and gaps, so the invoice never claims more than the ledger knows:
-- fees_cents is null: Darkbloom pays out net and the ledger has no fee figure.
-- usage.vcpu_seconds is null: the earnings feed carries amount, model, job id and completion tokens, no vCPU seconds. Sandbox
-  work is measured as minutes with a Sandbox job running (power log), not as vCPU seconds.
+What the numbers mean (Penn, 2026-11-19):
+- Net = gross - Darkbloom fees - power - depreciation - lease (plus any other income, less hand-entered expenses). The Mac is
+  bought, so its depreciation is a cost; the lease line is whatever the lease settings say (0 when unset).
+- Darkbloom takes 10% of Sandbox cost; inference and base reward carry no fee. The earnings feed (and so the earnings table)
+  stores what Darkbloom PAID, i.e. cost minus the fee: sandbox payouts come in round tenths of cost (2250 for a 2500 job) and the
+  rows add up to the account's lifetime total, which is a payout balance. So gross = payout + fee, where fee = sandbox payout / 9,
+  and the fee is taken off once, after turning the payout back into gross. The feed has no per-row fee, so the
+  10% is applied to the month's Sandbox payout.
+- usage.vcpu_seconds is null: the earnings feed carries amount, model, job id and completion tokens, no vCPU seconds.
 Bookkeeping, not tax advice."""
 import datetime as dt
 import hashlib
@@ -21,9 +26,9 @@ import bloom_accounting_report as RP
 import bloom_accounting_tally as TL
 import bloom_power_lib as P
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 LINE_KINDS = (("job", "inference", "Inference"), ("sandbox", "sandbox", "Sandbox jobs"), ("base", "base_reward", "Base reward"))
-FEES_NOTE = "Darkbloom pays out net of its own fees; the ledger holds no fee figure."
+FEES_NOTE = "Darkbloom keeps 10% of Sandbox cost (no fee on inference); computed from the payouts the ledger holds."
 COST_COLUMNS = (("power_cost_cents", "Metered power"), ("depreciation_cents", "Depreciation"), ("lease_cents", "Equipment lease"),
                 ("entries_deductible_cents", "Purchases and other expenses"))
 
@@ -42,8 +47,11 @@ def build_invoice(db, month, now, today=None):
         k["micro"] += micro
         k["count"] += n
         k["tokens"] += tok
-    gross = tally["totals"]["earnings_cents"] or 0
+    payout = tally["totals"]["earnings_cents"] or 0
+    fees = tally["totals"]["fees_cents"] or 0
+    gross = payout + fees   # what the work cost the buyers; Darkbloom paid out `payout` after taking `fees`
     weights = {k: v["micro"] for k, v in kinds.items()}
+    weights["sandbox"] += fees * 10000 if kinds["sandbox"]["micro"] else 0   # the fee belongs to the Sandbox line
     rest = gross * 10000 - sum(weights.values())
     if rest > 0:
         weights["other"] = rest   # pay the day rows do not carry (pay from before tracking began), so the lines always add up
@@ -59,9 +67,9 @@ def build_invoice(db, month, now, today=None):
     costs = [{"key": c.replace("_cents", ""), "label": label, "amount_cents": totals[c]} for c, label in COST_COLUMNS]
     other_income = totals["other_income_cents"] or 0
     known = [c["amount_cents"] for c in costs if c["amount_cents"] is not None]
-    net = gross + other_income - sum(known)
+    net = gross + other_income - fees - sum(known)
     body = {"month": month, "invoice_id": "BL-" + month, "issue_date": TL.month_bounds(_next(month))[0], "currency": "USD",
-            "gross_cents": gross, "fees_cents": None, "fees_note": FEES_NOTE, "other_income_cents": other_income,
+            "gross_cents": gross, "fees_cents": fees, "fees_note": FEES_NOTE, "other_income_cents": other_income,
             "lines": lines, "costs": costs, "costs_unknown": [c["key"] for c in costs if c["amount_cents"] is None],
             "net_cents": net, "usage": usage, "timezone": tz, "machine_count": sum(1 for m in tally["machines"] if not m["shared"])}
     digest = hashlib.sha256(json.dumps(body, sort_keys=True, separators=(",", ":")).encode()).hexdigest()

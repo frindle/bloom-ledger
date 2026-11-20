@@ -22,7 +22,7 @@ def seeded():
 def test_lines_add_up_to_the_tally_gross():
     db = seeded()
     inv, tally = INV.build_invoice(db, "2026-11", NOW), TL.build_month(db, "2026-11", NOW)
-    assert inv["gross_cents"] == tally["totals"]["earnings_cents"] > 0
+    assert inv["gross_cents"] == tally["totals"]["earnings_cents"] + tally["totals"]["fees_cents"] > 0
     assert sum(l["amount_cents"] for l in inv["lines"]) == inv["gross_cents"]
     by = {l["key"]: l for l in inv["lines"]}
     assert by["sandbox"]["count"] == 1 and by["base_reward"]["count"] == 1
@@ -30,12 +30,12 @@ def test_lines_add_up_to_the_tally_gross():
     assert inv["invoice_id"] == "BL-2026-11" and inv["issue_date"] == "2026-12-01" and inv["currency"] == "USD"
 
 
-def test_net_is_gross_plus_other_income_minus_known_costs():
+def test_net_is_gross_plus_other_income_minus_fees_and_known_costs():
     db = seeded()
     inv = INV.build_invoice(db, "2026-11", NOW)
     costs = sum(c["amount_cents"] for c in inv["costs"] if c["amount_cents"] is not None)
-    assert inv["other_income_cents"] == 501 and costs > 0
-    assert inv["net_cents"] == inv["gross_cents"] + inv["other_income_cents"] - costs
+    assert inv["other_income_cents"] == 501 and costs > 0 and inv["fees_cents"] == 5
+    assert inv["net_cents"] == inv["gross_cents"] + inv["other_income_cents"] - inv["fees_cents"] - costs
 
 
 def test_usage_and_honest_gaps():
@@ -43,7 +43,8 @@ def test_usage_and_honest_gaps():
     inv = INV.build_invoice(db, "2026-11", NOW)
     assert inv["usage"]["tokens"] == 5 * 3 * 2 + 40   # the fixture's six job rows of 5 tokens in November, plus 40
     assert inv["usage"]["jobs"] == 9 and inv["usage"]["vcpu_seconds"] is None
-    assert inv["fees_cents"] is None and "fee" in inv["fees_note"]
+    assert inv["fees_cents"] == 480_000 // 9 // 10000 and "10%" in inv["fees_note"]
+    assert [c["key"] for c in inv["costs"]] == ["power_cost", "depreciation", "lease", "entries_deductible"]
 
 
 def test_same_data_same_hash_and_change_changes_it():
@@ -58,7 +59,7 @@ def test_same_data_same_hash_and_change_changes_it():
 def test_months_index_matches_each_invoice():
     db = seeded()
     idx = INV.build_invoice_months(db, NOW)["months"]
-    assert [m["month"] for m in idx] == ["2026-10", "2026-11"]
+    assert [m["month"] for m in idx] == ["2026-09", "2026-10", "2026-11"]
     for m in idx:
         assert m["hash"] == INV.build_invoice(db, m["month"], NOW)["hash"]
 
