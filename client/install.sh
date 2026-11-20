@@ -70,13 +70,16 @@ if [ "$UNINSTALL" = 1 ]; then
   for j in $JOBS; do unload "$PREFIX.$j"; rm -f "$AGENTS/$PREFIX.$j.plist"; done
   OLD_MID=$(sed -n 's/.*"machine_id": *"\([A-Za-z0-9._-]*\)".*/\1/p' "$DBK/ledger.json" 2>/dev/null | head -n 1)
   if [ -n "$OLD_MID" ]; then /usr/bin/security delete-generic-password -s bloom-ledger-ingest -a "$OLD_MID" >/dev/null 2>&1 || true; fi
-  rm -rf "$APP"
+  # Only what this installer made. $APP/old-launchagents (plists moved aside by --replace-old) stays so they can be restored.
+  rm -rf "$APP/client" "$APP/client.new" "$APP/logs"
+  rmdir "$APP" 2>/dev/null || true
   rm -f "$DBK/ledger.json"
   if [ "$DELETE_DATA" = 1 ]; then
     rm -rf "$DBK/ledger-spool"
     say "removed the LaunchAgents, the client, the Keychain token and the spool. Darkbloom's own files were not touched."
   else
     say "removed the LaunchAgents, the client and the Keychain token. Darkbloom's own files were not touched."
+    [ ! -d "$APP/old-launchagents" ] || say "kept $APP/old-launchagents (the older LaunchAgent plists moved aside by --replace-old)."
     [ ! -d "$DBK/ledger-spool" ] || say "kept $DBK/ledger-spool (records not yet sent). Add --delete-data to remove it too."
   fi
   say "To remove this Mac from the ledger's list, use Machines > Remove on the ledger."

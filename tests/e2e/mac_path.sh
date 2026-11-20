@@ -78,12 +78,15 @@ must "install.sh a second time" sh "$WORK/install.sh" --pair "$NEWCODE"
 must "client doctor passes after reinstall" python3 "$APP/client/bloom-doctor.py"
 
 step "7 uninstall the client"
+mkdir -p "$APP/old-launchagents" && echo keep > "$APP/old-launchagents/com.example.bloom-power-log.plist"
 must "install.sh --uninstall" sh "$WORK/install.sh" --uninstall
 for j in power archive ship manifest find earnings; do
   launchctl print "gui/$UIDN/dev.bloom-ledger.$j" >/dev/null 2>&1 && bad "client job $j gone" || ok "client job $j gone"
 done
 ls "$HOME"/Library/LaunchAgents/dev.bloom-ledger.[!s]* >/dev/null 2>&1 && bad "no client plists left" || ok "no client plists left"
-[ -e "$APP" ] && bad "client folder removed" || ok "client folder removed"
+[ -e "$APP/client" ] || [ -e "$APP/logs" ] && bad "client folder removed" || ok "client folder removed"
+[ -f "$APP/old-launchagents/com.example.bloom-power-log.plist" ] && ok "old-launchagents kept by uninstall" || bad "old-launchagents kept by uninstall"
+rm -rf "$APP"
 security find-generic-password -s bloom-ledger-ingest -a mac-ci >/dev/null 2>&1 && bad "Keychain token removed" || ok "Keychain token removed"
 [ -e "$DBK/ledger.json" ] && bad "ledger.json removed" || ok "ledger.json removed"
 [ -f "$DBK/provider.log" ] && [ -f "$DBK/usage-history.json" ] && ok "Darkbloom's own files untouched" || bad "Darkbloom's own files untouched"
