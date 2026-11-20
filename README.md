@@ -10,42 +10,45 @@ A small self-hosted ledger for people who run Darkbloom on Macs. It keeps a priv
 
 | Piece | Where it runs | Needs |
 |---|---|---|
-| Server | Any machine that stays on: Docker host (amd64 or arm64), or one of your Macs | Docker, or Python 3.9+ on a Mac |
-| Client | Each Mac that runs Darkbloom | macOS, Python 3.9+, Darkbloom already running |
+| Server | Any machine that stays on: a Docker host (amd64 or arm64), or one of your Macs | Docker with Compose v2 and git, or on a Mac: git and Python 3.9+ (`xcode-select --install` gives you both) |
+| Client | Each Mac that runs Darkbloom | macOS, Python 3.9+, Darkbloom already running, same network (or VPN) as the server |
 
-BloomGauge is **not** required (see "Optional: BloomGauge").
+BloomGauge is **not** required (see "Optional: BloomGauge"). Port 8787 must be free on the server (change it with `BLOOM_PORT`, see Troubleshooting).
 
 ## 1. Start the server
 
 ### Option A: Docker (any machine)
 
 ```sh
-git clone <this repo> bloom-ledger && cd bloom-ledger
-cp .env.example .env            # optional, every setting has a default
+git clone https://github.com/frindle/bloom-ledger.git && cd bloom-ledger
 docker compose up -d --build
 ```
 
-Open `http://<that machine>:8787/setup`. Data lives in the `bloom-data` volume. Check health any time:
+The first build takes a minute or two. Then open `http://localhost:8787/setup` (on another computer use the server's network address instead of `localhost`, for example `http://192.168.1.20:8787/setup`). Check health any time:
 
 ```sh
 docker compose ps                                           # should say "healthy"
 docker compose exec bloom-ledger python3 /app/server.py doctor
 ```
 
+Optional settings go in a file named `.env` next to `compose.yaml` (copy `.env.example`). Nothing is needed to start.
+
 ### Option B: host it on one of your Macs
 
 ```sh
-git clone <this repo> bloom-ledger && cd bloom-ledger
+git clone https://github.com/frindle/bloom-ledger.git && cd bloom-ledger
 sh deploy/mac/install-server.sh          # --port 8787 --data DIR are optional
 ```
 
-It starts at login and restarts if it stops. Remove it with `sh deploy/mac/uninstall-server.sh` (your data is kept unless you add `--delete-data`).
+It starts at login and restarts if it stops. **Keep the `bloom-ledger` folder where it is**: the service runs the code from it. Remove it with `sh deploy/mac/uninstall-server.sh` (your data is kept unless you add `--delete-data`).
 
 ## 2. Finish setup in the browser
 
-`/setup` takes three short steps: create a login, set your time zone and electricity price (optional), name your first Mac. It then shows one command to paste on that Mac and waits for data to arrive.
+Open `/setup`. It takes three short steps: create a login, set your time zone and electricity price (optional), name your first Mac. It then shows one command to paste on that Mac and waits for data to arrive. Visiting the home page of a brand-new server sends you there by itself.
 
-If you open `/setup` from a different machine than the server, it asks for a one-time setup code printed in the server log (`docker compose logs bloom-ledger`).
+If you open `/setup` from a different machine than the server, it asks for a one-time setup code printed in the server log (`docker compose logs bloom-ledger`, or the file `setup-code` in the data folder on a Mac install).
+
+The command it shows uses the address you opened the page with. If that was `localhost`, the command only works on the server itself: to add a different Mac, open `/setup` (or Machines) using the server's network address and copy the command from there.
 
 ## 3. Add each Mac
 
@@ -55,9 +58,11 @@ On the Mac, paste the command `/setup` (or Machines) shows you:
 curl -fsSL http://<server>:8787/install.sh | sh -s -- --pair <code>
 ```
 
-The installer checks it can reach the server, installs a small background client, stores the machine token in your login Keychain, runs `bloom-doctor`, and tells you exactly what to fix if anything is wrong. It is safe to run again. To remove: `sh install.sh --uninstall` (your Darkbloom data is never touched). Flags: `--server URL`, `--earnings`, `--replace-old`, `--bloomgauge` / `--no-bloomgauge`.
+The installer checks it can reach the server, installs a small background client, stores the machine token in your login Keychain, installs `macmon` with Homebrew if you have it (for power readings), runs `bloom-doctor`, and tells you exactly what to fix if anything is wrong. It is safe to run again (get a fresh code first: Machines > New token). The code works once and expires after 30 minutes.
 
-The client only **reads** Darkbloom's folder.
+To remove the client from a Mac: `curl -fsSL http://<server>:8787/install.sh | sh -s -- --uninstall`. That removes the background jobs, the client folder, the Keychain token and the pairing file. Darkbloom's own files are never touched; the not-yet-sent copy in `~/.darkbloom/ledger-spool` is kept unless you add `--delete-data`. Remove the Mac from the ledger's list with Machines > Remove.
+
+Flags: `--server URL`, `--earnings`, `--replace-old`, `--bloomgauge` / `--no-bloomgauge`. The client only **reads** Darkbloom's folder.
 
 ## Pages
 
@@ -67,9 +72,13 @@ Home (earnings, power, cost per day) - Status (is every Mac reporting, with a fi
 
 Run `doctor` on the server (above) and `python3 "$HOME/Library/Application Support/bloom-ledger/client/bloom-doctor.py"` on a Mac. Each failure prints a `fix:` line. Common ones:
 
+- "port is already allocated" (Docker) or "port 8787 is already in use" (Mac): something else uses 8787. Put `BLOOM_PORT=8788` in `.env` and run `docker compose up -d` again, or use `--port 8788` with the Mac script.
+- "Cannot connect to the Docker daemon": start Docker Desktop (or the Docker service) and rerun.
 - "Ledger is reachable" fails: the Mac cannot see the server. Use the server's local address or name, same network or VPN.
 - "Ledger accepts this Mac's token" fails: make a new pairing code on Machines and rerun the installer.
-- Forgot the password: `docker compose exec bloom-ledger python3 /app/server.py reset-admin`, then open `/setup`.
+- "pairing failed" in the installer: the code was already used or is older than 30 minutes. Make a new one in Machines > New token.
+- Forgot the password: Docker: `docker compose exec bloom-ledger python3 /app/server.py reset-admin`. Mac server: `BLOOM_DATA="$HOME/Library/Application Support/bloom-ledger-server" PYTHONPATH=lib:ingest python3 ingest/server.py reset-admin` from the project folder. Then open `/setup`.
+- Five wrong passwords lock the login for a minute; wait and try again.
 
 ## Settings you can change (environment)
 
@@ -77,7 +86,13 @@ See `.env.example`. Notable: `BLOOM_PORT`, `BLOOM_LEDGER_LAN_URL`, `BLOOM_TIMEZO
 
 ## Backup and update
 
-Back up the `bloom-data` volume (or the data folder on a Mac). Update with `git pull && docker compose up -d --build`; the database migrates itself.
+Back up the Docker volumes `bloom-data` and `bloom-keys` (or the data folder on a Mac). Check what exists with `docker volume ls`.
+
+**Update, new install (started with `docker compose up`):** `git pull && docker compose up -d --build`. The database migrates itself.
+
+**Update, install made with `./update.sh` (a `.env` that names `BLOOM_DATA_DIR` and friends, for example on Unraid):** run `./update.sh`. Your data stays in the folders named in `.env`; nothing is copied or moved. `./update.sh` is also safe to run twice. (A plain `git pull && docker compose up -d --build` also keeps those folders now, because compose reads them from `.env`.)
+
+**Update, server on a Mac:** `git pull && sh deploy/mac/install-server.sh` (it restarts the service, data is kept). Macs running the client update themselves by rerunning their install command with a fresh code.
 
 ## Optional: BloomGauge
 

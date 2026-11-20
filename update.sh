@@ -44,17 +44,8 @@ for kv in "BLOOM_DATA_DIR=$DEF_DATA" "BLOOM_SECRETS_DIR=$DEF_SECRETS" "BLOOM_KEY
     echo "added to .env: $kv"
   fi
 done
-# Remember the host-folder layout in .env too, so a plain `docker compose up -d --build` keeps using the same folders
-# instead of starting on an empty named volume.
-if ! grep -q "^COMPOSE_FILE=" .env; then
-  [ -z "$(tail -c1 .env)" ] || echo >> .env
-  echo "COMPOSE_FILE=compose.yaml:compose.paths.yaml" >> .env
-  echo "added to .env: COMPOSE_FILE=compose.yaml:compose.paths.yaml"
-fi
 set -a; . ./.env; set +a
 mkdir -p "${BLOOM_DATA_DIR:-./data}" "${BLOOM_SECRETS_DIR:-./secrets}" "${BLOOM_KEYS_DIR:-./data/secrets}"
-# Keep data in the host folders named in .env: compose.yaml alone would use Docker named volumes instead.
-export COMPOSE_FILE=compose.yaml:compose.paths.yaml
 
 # --- build only what changed -------------------------------------------------
 # $BUILD_MARKER holds the commit the image was last built from. It is
@@ -69,7 +60,7 @@ BUILD_MARKER=.last-built-sha
 # reaches the image. Both compose services use this one image.
 is_build_input() {
   case "$1" in
-    Dockerfile|compose.yaml|compose.paths.yaml|.dockerignore|earnings-loop.sh) return 0 ;;
+    Dockerfile|compose.yaml|.dockerignore|earnings-loop.sh) return 0 ;;
     lib/*|client/*) return 0 ;;
     ingest/server.py|ingest/bloom_*.py|ingest/dashboard.html|ingest/settings.html|ingest/static/*) return 0 ;;
   esac

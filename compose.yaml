@@ -3,12 +3,16 @@
 #   docker compose up -d --build
 #   open http://<this machine>:8787/setup
 # Data (objects, ledger manifests, index.sqlite) lives in the named volume "bloom-data". Back it up (see README).
+# Installs made with ./update.sh have host folders named in .env (BLOOM_DATA_DIR, BLOOM_KEYS_DIR, BLOOM_SECRETS_DIR,
+# BLOOM_EARNINGS_DIR, BLOOM_UID, BLOOM_GID). When those are set they are used instead of the named volumes, so an update
+# never starts on an empty volume. Leave them unset on a new install.
 services:
   bloom-ledger:
     build: .
     image: bloom-ledger:latest
     container_name: bloom-ledger
     restart: unless-stopped
+    user: "${BLOOM_UID:-99}:${BLOOM_GID:-100}"
     ports:
       - "${BLOOM_PORT:-8787}:8787"
     environment:
@@ -23,8 +27,12 @@ services:
       DAILY_PUSH_HOUR: ${DAILY_PUSH_HOUR:-9}
       BLOOM_ACCESS_TEAM_DOMAIN: ${BLOOM_ACCESS_TEAM_DOMAIN:-}
       BLOOM_ACCESS_AUD: ${BLOOM_ACCESS_AUD:-}
+      BLOOM_KEYS: /keys
+      BLOOM_TOKENS: /run/secrets/bloom_tokens
     volumes:
-      - bloom-data:/data
+      - ${BLOOM_DATA_DIR:-bloom-data}:/data
+      - ${BLOOM_KEYS_DIR:-bloom-keys}:/keys
+      - ${BLOOM_SECRETS_DIR:-bloom-secrets}:/run/secrets:ro
 
   # Optional: run the Darkbloom earnings archiver here instead of on a Mac. Needs a Darkbloom token file.
   #   docker compose --profile earnings up -d
@@ -36,10 +44,13 @@ services:
     container_name: bloom-earnings
     restart: unless-stopped
     command: ["/app/earnings-loop.sh"]
+    user: "${BLOOM_UID:-99}:${BLOOM_GID:-100}"
     volumes:
-      - bloom-earnings:/state
+      - ${BLOOM_EARNINGS_DIR:-bloom-earnings}:/state
       - ${BLOOM_SECRETS_DIR:-./secrets}:/run/secrets:ro
 
 volumes:
   bloom-data:
+  bloom-keys:
+  bloom-secrets:
   bloom-earnings:

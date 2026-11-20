@@ -20,7 +20,7 @@ dump() { echo "---- diagnostics"; (cd "$WORK/deploy" 2>/dev/null && docker compo
 onexit() {
   code=$?
   [ "$FAILS" = 0 ] || dump
-  (cd "$WORK/deploy" 2>/dev/null && COMPOSE_FILE=compose.yaml:compose.paths.yaml docker compose down -v >/dev/null 2>&1)
+  (cd "$WORK/deploy" 2>/dev/null && docker compose down -v >/dev/null 2>&1)
   exit "$code"
 }
 trap onexit EXIT
@@ -74,7 +74,6 @@ docker volume ls --format '{{.Name}}' | grep -q 'bloom-data' && bad "no empty na
 echo "== second update (now the new script) and a plain compose up"
 ./update.sh > update.out 2>&1 && ok "update.sh (second run) finished" || { bad "update.sh (second run) finished"; tail -30 update.out; }
 wait_up && check_data "after second update" || bad "server up after second update"
-grep -q '^COMPOSE_FILE=' .env && ok ".env now remembers the host-folder layout" || bad ".env remembers the layout"
 docker compose up -d --build >/dev/null 2>&1 && wait_up && check_data "after plain docker compose up" || bad "plain docker compose up"
 
 echo "== create the admin on the upgraded server, update again, login must survive"

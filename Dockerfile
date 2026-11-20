@@ -12,9 +12,9 @@ COPY ingest/server.py ingest/bloom_*.py ingest/dashboard.html ingest/settings.ht
 COPY ingest/static/ /app/static/
 COPY client/ /app/client/
 COPY earnings-loop.sh /app/earnings-loop.sh
-RUN chmod 0755 /app/earnings-loop.sh && mkdir -p /data /state && chown 99:100 /data /state
+RUN chmod 0755 /app/earnings-loop.sh && mkdir -p /data /keys /state /run/secrets && chown 99:100 /data /keys /state
 
-ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 BLOOM_DATA=/data BLOOM_KEYS=/data/secrets BLOOM_TOKENS=/data/secrets/bloom_tokens BLOOM_PORT=8787
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 BLOOM_DATA=/data BLOOM_KEYS=/keys BLOOM_TOKENS=/run/secrets/bloom_tokens BLOOM_PORT=8787
 EXPOSE 8787
 HEALTHCHECK --interval=60s --timeout=5s --retries=3 \
   CMD python3 -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8787/healthz', timeout=4).status == 200 else 1)"
