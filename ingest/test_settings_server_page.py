@@ -9,7 +9,8 @@ from server_fixture import ADMIN, post_object, sha, web  # noqa: F401
 def test_settings_page_is_served(web):
     status, ctype, body = web("GET", "/settings")
     assert status == 200 and ctype.startswith("text/html"), (status, ctype)
-    assert body == (Path(SV.__file__).resolve().parent / "settings.html").read_bytes()
+    import bloom_web as WEB
+    assert body == WEB.themed((Path(SV.__file__).resolve().parent / "settings.html").read_text()).encode()
 
 
 def test_ingest_accepts_tokens_from_machines_json(web):

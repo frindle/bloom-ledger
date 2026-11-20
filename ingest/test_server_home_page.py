@@ -7,7 +7,8 @@ from server_fixture import web  # noqa: F401
 def test_root_serves_the_rendered_page(web):
     status, ctype, body = web("GET", "/")
     assert status == 200 and ctype.startswith("text/html")
-    assert body == PG.render_page().encode()
+    import bloom_web as WEB
+    assert body == WEB.themed(PG.render_page()).encode()
     assert b"/v1/accounting/summary" in body and b'id="day-rows"' in body and b'href="/log"' in body
     assert web("GET", "/index.html")[2] == body
 

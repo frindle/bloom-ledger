@@ -39,9 +39,12 @@ def web(tmp_path, monkeypatch):
         c.request(method, path, body=body, headers=h)
         r = c.getresponse()
         out = (r.status, r.getheader("Content-Type"), r.read())
+        call.last_headers = {k.lower(): v for k, v in r.getheaders()}
         c.close()
         return out
 
+    call.db = srv.db
+    call.last_headers = {}
     call.admin_file = tmp_path / "bloom_admin"
     call.lines = lines
     yield call

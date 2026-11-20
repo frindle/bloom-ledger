@@ -51,6 +51,12 @@ import urllib.parse  # noqa: E402
 from zoneinfo import ZoneInfo  # noqa: E402
 import bloom_lan as LAN  # noqa: E402
 import bloom_migrate as MIG  # noqa: E402
+import bloom_auth as AU  # noqa: E402
+import bloom_web as WEB  # noqa: E402
+import bloom_status as ST  # noqa: E402
+import bloom_integrations as IG  # noqa: E402
+import decimal  # noqa: E402
+import bloom_doctor as DOC  # noqa: E402
 import bloom_alerts as AL  # noqa: E402
 import bloom_daily_push as DP  # noqa: E402
 import bloom_ingest as I  # noqa: E402
@@ -93,13 +99,170 @@ class Handler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError):
             self.close_connection = True
 
-    def reply(self, code, obj):
+    def reply(self, code, obj, headers=None):
         data = json.dumps(obj, sort_keys=True).encode()
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(data)))
+        for k, v in (headers or {}).items():
+            self.send_header(k, v)
         self.end_headers()
         self.wfile.write(data)
+
+    def write_denied(self):
+        """None when this request may write; else (status, body). Login when an admin exists (see bloom_auth)."""
+        with DB_LOCK:
+            return AU.write_denied(self.server.db, self.client_address[0], self.headers,
+                                   lambda: LAN.write_guard(self.client_address[0], self.headers))
+
+    def send_html(self, html, code=200):
+        data = WEB.themed(html if isinstance(html, str) else html.decode("utf-8")).encode()
+        self.send_response(code)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(data)
+
+    def get_new(self):
+        """Routes added for first-run setup, login, status and static files. True when handled."""
+        path = self.path.split("?", 1)[0]
+        if path.startswith("/static/"):
+            f = WEB.static_file(path[len("/static/"):])
+            if f is None:
+                self.reply(404, {"error": "not found"})
+            else:
+                self.send_response(200)
+                self.send_header("Content-Type", f[0])
+                self.send_header("Content-Length", str(len(f[1])))
+                self.send_header("Cache-Control", "no-cache")
+                self.end_headers()
+                self.wfile.write(f[1])
+            return True
+        if path == "/login":
+            self.send_html(WEB.login_page())
+            return True
+        if path == "/setup":
+            with DB_LOCK:
+                mode = AU.auth_mode(self.server.db)
+            needs = AU.setup_code_needed(LAN.is_private_ip(self.client_address[0]) and LAN.forwarded_ok(self.headers))
+            self.send_html(WEB.setup_page(needs_code=needs and mode in ("setup", "lan")))
+            return True
+        if path == "/status":
+            self.send_html(WEB.status_page())
+            return True
+        if path == "/v1/auth/me":
+            with DB_LOCK:
+                mode = AU.auth_mode(self.server.db)
+                ok = AU.session_ok(self.server.db, self.headers.get("Cookie"))
+            self.reply(200, {"mode": mode, "logged_in": ok})
+            return True
+        if path == "/v1/status":
+            now = time.time()
+            with DB_LOCK:
+                AX.create_schema(self.server.db)
+                ids = sorted(set(I.load_tokens(TOKENS_PATH, MACHINES_PATH).values()))
+                tz = ACF.effective_settings(self.server.db, "9999-12-31")["values"]["local_timezone"]
+                data = ST.build(self.server.db, ROOT, now, ids, self.server_version, AU.auth_mode(self.server.db), tz,
+                                MIG.export_api_enabled(self.server.db))
+            self.reply(200, data)
+            return True
+        if path == "/v1/whoami":
+            auth = self.headers.get("Authorization", "")
+            tokens = I.load_tokens(TOKENS_PATH, MACHINES_PATH)
+            import hashlib
+            mid = tokens.get(hashlib.sha256(auth[7:].strip().encode()).hexdigest()) if auth.startswith("Bearer ") else None
+            if mid:
+                self.reply(200, {"machine_id": mid, "ok": True})
+            else:
+                self.reply(401, {"error": "unknown token", "ok": False})
+            return True
+        return False
+
+    def post_new(self):
+        """POST /v1/auth/*. True when handled."""
+        if not self.path.startswith("/v1/auth/"):
+            return False
+        try:
+            n = int(self.headers.get("Content-Length") or "-1")
+        except ValueError:
+            n = -1
+        if n < 0 or n > 4096:
+            self.reply(411 if n < 0 else 413, {"error": "bad length"})
+            self.close_connection = True
+            return True
+        try:
+            body = json.loads(self.rfile.read(n) or b"{}")
+            if not isinstance(body, dict):
+                raise ValueError
+        except ValueError:
+            self.reply(400, {"error": "bad request"})
+            return True
+        if not LAN.same_origin(self.headers):
+            self.reply(403, {"error": "cross-origin request blocked"})
+            return True
+        ip = self.client_address[0]
+        db = self.server.db
+        if self.path == "/v1/auth/login":
+            with DB_LOCK:
+                if AU.locked(ip):
+                    self.reply(429, {"error": "Too many tries. Wait a minute and try again."})
+                elif AU.has_admin(db) and AU.check_login(db, ip, body.get("username"), body.get("password")):
+                    tok = AU.new_session(db)
+                    self.reply(200, {"ok": True}, {"Set-Cookie": AU.cookie_header(tok, self.secure())})
+                else:
+                    self.reply(401, {"error": "Wrong username or password."})
+        elif self.path == "/v1/auth/logout":
+            with DB_LOCK:
+                AU.end_session(db, self.headers.get("Cookie"))
+            self.reply(200, {"ok": True}, {"Set-Cookie": AU.cookie_header("", self.secure(), clear=True)})
+        elif self.path == "/v1/auth/setup":
+            self.reply(*self.do_setup(body))
+        else:
+            self.reply(404, {"error": "not found"})
+        return True
+
+    def do_setup(self, body):
+        db = self.server.db
+        with DB_LOCK:
+            if AU.has_admin(db):
+                return (409, {"error": "Setup is already done. Log in instead."})
+            local = LAN.is_private_ip(self.client_address[0]) and LAN.forwarded_ok(self.headers)
+            if AU.setup_code_needed(local) and str(body.get("setup_code") or "").strip() != AU.setup_code(ROOT):
+                return (403, {"error": "That setup code is not right. It is printed in the server log."})
+            tz = str(body.get("timezone") or "UTC").strip()
+            try:
+                ZoneInfo(tz)
+            except Exception:
+                return (400, {"error": "Unknown time zone. Use a name like America/Chicago or UTC."})
+            rate = None
+            raw = str(body.get("rate") or "").strip().lstrip("$")
+            if raw:
+                try:
+                    rate = decimal.Decimal(raw)
+                    if not (0 <= rate <= 10):
+                        raise ValueError
+                except (decimal.InvalidOperation, ValueError):
+                    return (400, {"error": "The electricity price should be a number like 0.15 (dollars per kWh)."})
+            try:
+                AU.create_admin(db, body.get("username"), body.get("password"))
+            except ValueError as e:
+                return (400, {"error": str(e)})
+            now = int(time.time())
+            ACF.set_setting(db, "local_timezone", tz, "1970-01-01", now)
+            if rate is not None:
+                sched = [{"months": list(range(1, 13)), "periods": [{"start": "00:00", "end": "24:00", "rate": str(rate)}]}]
+                ACF.set_setting(db, "rate_schedule", sched, "1970-01-01", now)
+                for k in ("rate_adder_usd_per_kwh", "universal_charge_usd_per_kwh", "county_fee_pct"):
+                    ACF.set_setting(db, k, 0, "1970-01-01", now)
+            if body.get("bloomgauge"):
+                IG.set_bloomgauge(db, True)
+            tok = AU.new_session(db)
+        log("setup finished: admin created")
+        return (200, {"ok": True}, {"Set-Cookie": AU.cookie_header(tok, self.secure())})
+
+    def secure(self):
+        return self.headers.get("X-Forwarded-Proto", "").lower() == "https"
 
     def send_bytes(self, ctype, data):
         self.send_response(200)
@@ -116,6 +279,8 @@ class Handler(BaseHTTPRequestHandler):
             if not on:
                 self.reply(404, {"error": "not found"})
                 return
+        if self.get_new():
+            return
         if self.path == "/healthz":
             with DB_LOCK:
                 self.reply(*I.healthz(ROOT, self.server.db))
@@ -154,6 +319,8 @@ class Handler(BaseHTTPRequestHandler):
             with DB_LOCK:
                 AX.create_schema(self.server.db)
                 code, ctype, data = AT.tax_response(self.server.db, self.path)
+            if ctype.startswith("text/html"):
+                data = WEB.themed(data.decode("utf-8")).encode()
             self.send_response(code)
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(data)))
@@ -200,12 +367,7 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(data)
         elif self.path in ("/", "/index.html", "/log"):
-            data = DASHBOARD.read_bytes() if self.path == "/log" else PG.render_page().encode()
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(data)))
-            self.end_headers()
-            self.wfile.write(data)
+            self.send_html(DASHBOARD.read_bytes() if self.path == "/log" else PG.render_page())
         elif self.path == "/v1/alerts":
             with DB_LOCK:
                 self.reply(200, AL.evaluate_alerts(self.server.db, time.time()))
@@ -218,14 +380,9 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/v1/settings/darkbloom-key":
             self.reply(200, LV.key_status(ROOT))
         elif self.path == "/settings/accounting":
-            data = SF.settings_form_page().encode()
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(data)))
-            self.end_headers()
-            self.wfile.write(data)
+            self.send_html(SF.settings_form_page())
         elif self.path == "/settings/depreciation":
-            self.send_bytes("text/html; charset=utf-8", DPG.page().encode())
+            self.send_html(DPG.page())
         elif self.path == "/v1/accounting/depreciation":
             import bloom_machine_profiles as MP
             with DB_LOCK:
@@ -241,12 +398,7 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/client.tar.gz":
             self.send_bytes("application/gzip", PA.client_bundle())
         elif self.path == "/settings":
-            data = SETTINGS.read_bytes()
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(data)))
-            self.end_headers()
-            self.wfile.write(data)
+            self.send_html(SETTINGS.read_bytes())
         elif self.path == "/v1/settings":
             with DB_LOCK:
                 now = time.time()
@@ -271,6 +423,8 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(404, {"error": "not found"})
 
     def do_POST(self):
+        if self.post_new():
+            return
         if self.path == "/v1/pair":
             # curl on the new Mac sends no Origin, so this is LAN-only without the same-origin rule; the code is the secret.
             if not LAN.is_private_ip(self.client_address[0]) or not LAN.forwarded_ok(self.headers):
@@ -304,7 +458,7 @@ class Handler(BaseHTTPRequestHandler):
                 code, obj = I.handle_post(self.headers, body, tokens, ROOT, self.server.db, time.time())
             self.reply(code, obj)
         elif self.path.startswith("/v1/settings/"):
-            denied = LAN.write_guard(self.client_address[0], self.headers)
+            denied = self.write_denied()
             if denied:
                 self.reply(*denied)
                 return
@@ -336,7 +490,7 @@ class Handler(BaseHTTPRequestHandler):
                                               set(I.load_tokens(TOKENS_PATH).values()))
             self.reply(code, PA.after_machine_change(self.path, code, obj, body, dbkey, ROOT, time.time()))
         elif self.path.startswith("/v1/accounting/"):
-            denied = LAN.write_guard(self.client_address[0], self.headers)
+            denied = self.write_denied()
             if denied:
                 self.reply(*denied)
                 return
@@ -421,12 +575,34 @@ def scheduler(db, stop):
         stop.wait(300)
 
 
+def reset_admin():
+    """`server.py reset-admin`: remove the admin account and its sessions so /setup can create a new one."""
+    db = I.open_db(ROOT / "index.sqlite")
+    AU.create_tables(db)
+    db.execute("DELETE FROM bl_admin")
+    db.execute("DELETE FROM bl_sessions")
+    db.commit()
+    print("Admin removed. Open /setup in the browser to create a new one.")
+
+
 def main():
+    if len(sys.argv) > 1 and sys.argv[1] == "doctor":
+        sys.exit(DOC.run(ROOT, TOKENS_PATH, MACHINES_PATH, PORT, time.time()))
+    if len(sys.argv) > 1 and sys.argv[1] == "reset-admin":
+        return reset_admin()
+    if len(sys.argv) > 1:
+        print("usage: server.py [doctor | reset-admin]   (no argument starts the server)")
+        sys.exit(2)
     ROOT.mkdir(parents=True, exist_ok=True)
     db = I.open_db(ROOT / "index.sqlite")
     MIG.run(db, log)
-    if not I.load_tokens(TOKENS_PATH):
-        log(f"WARN no machine tokens in {TOKENS_PATH}: every POST will be refused")
+    mode = AU.auth_mode(db)
+    if mode == "setup":
+        log(f"first run: open http://<this machine>:{PORT}/setup to create the admin login (setup code for remote browsers: {AU.setup_code(ROOT)})")
+    elif mode == "lan":
+        log("no admin login yet: settings are open to the local network only. Open /setup to create one.")
+    if not I.load_tokens(TOKENS_PATH, MACHINES_PATH):
+        log("no Macs added yet: add one at /setup or Settings. Data posts are refused until then.")
     stop = threading.Event()
     threading.Thread(target=scheduler, args=(db, stop), daemon=True).start()
     srv = ThreadingHTTPServer((LISTEN, PORT), Handler)
