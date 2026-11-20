@@ -1,6 +1,6 @@
 # bloom-ledger
 
-A small self-hosted ledger for people who run [Darkbloom](https://darkbloom.dev) on Macs. It keeps a private, tamper-evident record of what each Mac earned and how much power it used, shows it on a clean dashboard, alerts you when a Mac goes quiet, and works out a tax-year summary (income, power cost, depreciation).
+A small self-hosted ledger for people who run Darkbloom on Macs. It keeps a private, tamper-evident record of what each Mac earned and how much power it used, shows it on a clean dashboard, alerts you when a Mac goes quiet, and works out a tax-year summary (income, power cost, depreciation).
 
 - Reads Darkbloom's files and API. It never changes anything Darkbloom owns.
 - Everything stays on your network. No cloud account, no telemetry.
