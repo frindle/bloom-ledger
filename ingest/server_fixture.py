@@ -20,7 +20,7 @@ def sha(text):
 
 @pytest.fixture
 def web(tmp_path, monkeypatch):
-    (tmp_path / "tokens").write_text(f"studio {sha('studio-token')}\n")
+    (tmp_path / "tokens").write_text(f"mac1 {sha('mac1-token')}\n")
     monkeypatch.setattr(SV, "ROOT", tmp_path)
     monkeypatch.setattr(SV, "TOKENS_PATH", str(tmp_path / "tokens"))
     monkeypatch.setattr(SV, "MACHINES_PATH", str(tmp_path / "machines.json"), raising=False)

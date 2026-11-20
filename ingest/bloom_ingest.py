@@ -1,4 +1,4 @@
-"""bloom-ledger ingest: content-addressed object store + SQLite index (stdlib only, runs in the Unraid container).
+"""bloom-ledger ingest: content-addressed object store + SQLite index (stdlib only, runs in Docker or directly on a Mac).
 
 Layout under ROOT (the /data volume):
   objects/<machine_id>/<kind>/<sha256>.obj   write-once, exactly the bytes the Mac spooled

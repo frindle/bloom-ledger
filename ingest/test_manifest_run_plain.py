@@ -27,10 +27,10 @@ def run_day(root, db, day):
 
 def setup(tmp_path):
     db = I.open_db(tmp_path / "index.sqlite")
-    add(tmp_path, db, "m4max", "usage", b"u1", DAY1 + 10)
-    add(tmp_path, db, "m4max", "log", b"l1", DAY1 + 20)
-    c = add(tmp_path, db, "m4max", "log", b"l2", DAY2 + 5)
-    add(tmp_path, db, "m5ultra", "log", b"x1", DAY1 + 30)
+    add(tmp_path, db, "mac-a", "usage", b"u1", DAY1 + 10)
+    add(tmp_path, db, "mac-a", "log", b"l1", DAY1 + 20)
+    c = add(tmp_path, db, "mac-a", "log", b"l2", DAY2 + 5)
+    add(tmp_path, db, "mac-b", "log", b"x1", DAY1 + 30)
     return tmp_path, db, c
 
 
@@ -41,17 +41,17 @@ def test_signature_is_root_db_day_only():
 def test_manifest_run_chains_and_verifies(tmp_path):
     root, db, c = setup(tmp_path)
     res = run_day(root, db, "2026-10-29")
-    assert res == {"m4max": "written", "m5ultra": "written"}
-    m1 = json.loads((root / "ledger" / "m4max" / "manifest-2026-10-29.json").read_text())
-    assert m1["machine_id"] == "m4max" and m1["prev_hash"] == L.GENESIS
-    assert [f["sha256"] for f in m1["files"]] == [f["sha256"] for f in IL.day_files(db, "m4max", "2026-10-29")]
-    assert run_day(root, db, "2026-10-29") == {"m4max": "same", "m5ultra": "same"}
-    assert run_day(root, db, "2026-10-30") == {"m4max": "written", "m5ultra": "written"}
-    m2 = json.loads((root / "ledger" / "m4max" / "manifest-2026-10-30.json").read_text())
+    assert res == {"mac-a": "written", "mac-b": "written"}
+    m1 = json.loads((root / "ledger" / "mac-a" / "manifest-2026-10-29.json").read_text())
+    assert m1["machine_id"] == "mac-a" and m1["prev_hash"] == L.GENESIS
+    assert [f["sha256"] for f in m1["files"]] == [f["sha256"] for f in IL.day_files(db, "mac-a", "2026-10-29")]
+    assert run_day(root, db, "2026-10-29") == {"mac-a": "same", "mac-b": "same"}
+    assert run_day(root, db, "2026-10-30") == {"mac-a": "written", "mac-b": "written"}
+    m2 = json.loads((root / "ledger" / "mac-a" / "manifest-2026-10-30.json").read_text())
     assert m2["prev_hash"] == m1["chain_hash"]
-    assert L.verify_chain(root, L.load_manifests(root / "ledger" / "m4max")) == []
-    (root / "objects" / "m4max" / "log" / f"{c}.obj").write_bytes(b"tampered")
-    assert L.verify_chain(root, L.load_manifests(root / "ledger" / "m4max")) != []
+    assert L.verify_chain(root, L.load_manifests(root / "ledger" / "mac-a")) == []
+    (root / "objects" / "mac-a" / "log" / f"{c}.obj").write_bytes(b"tampered")
+    assert L.verify_chain(root, L.load_manifests(root / "ledger" / "mac-a")) != []
 
 
 def test_manifest_run_skips_machine_not_yet_present_or_ahead(tmp_path):
@@ -60,13 +60,13 @@ def test_manifest_run_skips_machine_not_yet_present_or_ahead(tmp_path):
     assert "newmac" not in run_day(root, db, "2026-10-29")
     run_day(root, db, "2026-10-30")
     assert run_day(root, db, "2026-10-28") == {}
-    assert not (root / "ledger" / "m4max" / "manifest-2026-10-28.json").exists()
+    assert not (root / "ledger" / "mac-a" / "manifest-2026-10-28.json").exists()
 
 
 def test_manifest_run_writes_no_proof_files(tmp_path):
     root, db, _ = setup(tmp_path)
     run_day(root, db, "2026-10-29")
-    names = sorted(p.name for p in (root / "ledger" / "m4max").iterdir())
+    names = sorted(p.name for p in (root / "ledger" / "mac-a").iterdir())
     assert names == ["manifest-2026-10-29.json"], names
     src = inspect.getsource(IL).lower()
     for word in ("opentimestamps", "bitcoin", "ots_stamp", "subprocess"):

@@ -181,7 +181,7 @@ WRAPPER_FIX_TS = 1793688120  # 2026-11-03T06:42:00Z
 WRAPPER_FALSE_POSITIVES = {"pipeline-canary.py"}
 
 
-# macOS housekeeping daemons that spike CPU on their own schedule. They are not Penn's work, so a minute they
+# macOS housekeeping daemons that spike CPU on their own schedule. They are not the owner's work, so a minute they
 # alone flagged is not other work (the sampler ignores them from 2026-11-03; older rows are recomputed here).
 SYSTEM_DAEMONS = ("corespotlightd", "backupd", "XProtect", "mds", "mdworker", "softwareupdated",
                   "photoanalysisd", "mediaanalysisd", "spotlightknowledged")

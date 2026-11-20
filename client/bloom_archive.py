@@ -3,7 +3,7 @@ Darkbloom: reads files under ~/.darkbloom, never writes there except the spool, 
 
 Why: usage-history.json is a 4096-entry ring (~40 h at current load) and provider.log / lifecycle files are
 rewritten or rotated by the provider. Each run copies what is new into ~/.darkbloom/ledger-spool/<kind>/ as
-write-once objects named by the sha256 of their bytes; bloom-ship.py pushes them to the Unraid ingest and moves
+write-once objects named by the sha256 of their bytes; bloom-ship.py pushes them to the ledger server and moves
 them to ledger-spool/sent/<kind>/.
 
 Object format: one canonical JSON meta line, b"\\n", then the payload bytes (usage: canonical JSON list of ring

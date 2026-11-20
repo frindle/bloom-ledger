@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""bloom-ledger ingest server (stdlib only). Runs in the Unraid container.
+"""bloom-ledger ingest server (stdlib only). Runs in Docker or directly on a Mac.
 
   POST /v1/objects   body = one spool object; headers Authorization: Bearer <machine token>, X-Bloom-Kind,
                      X-Bloom-Sha256. 201 stored, 200 already had it, 400/401/413/422 refused.

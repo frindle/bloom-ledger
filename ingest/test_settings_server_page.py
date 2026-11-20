@@ -16,15 +16,15 @@ def test_ingest_accepts_tokens_from_machines_json(web):
     assert post_object(web, "unknown-token") == 401
     token = ST.add_machine(SV.MACHINES_PATH, "m1", 1.0)
     assert post_object(web, token) == 201, "a machine added to machines.json can ingest without a restart"
-    assert post_object(web, "studio-token") == 201, "the secret file still works"
+    assert post_object(web, "mac1-token") == 201, "the secret file still works"
 
 
 def test_revoked_ids_are_cut_off_including_secret_file_machines(web):
     token = ST.add_machine(SV.MACHINES_PATH, "m1", 1.0)
     ST.revoke_machine(SV.MACHINES_PATH, "m1")
-    ST.revoke_machine(SV.MACHINES_PATH, "studio")
+    ST.revoke_machine(SV.MACHINES_PATH, "mac1")
     assert post_object(web, token) == 401
-    assert post_object(web, "studio-token") == 401
+    assert post_object(web, "mac1-token") == 401
 
 
 def test_machines_file_defaults_next_to_the_data_dir():

@@ -110,7 +110,7 @@ def report_db():
     cols = ["machine_id", "ts", "wh", "interval_s", "power_ok", "other_work", "tokens_delta", *A.USAGE_COLUMNS]
     sql = "INSERT INTO power_minutes (" + ", ".join(cols) + ") VALUES (" + ", ".join("?" * len(cols)) + ")"
     rows = [
-        # Darkbloom serving while Penn works hard: 1/4 of attributable energy is Darkbloom's
+        # Darkbloom serving while the owner works hard: 1/4 of attributable energy is Darkbloom's
         (utc(2026, 10, 20, 20, 0), 1.0, 1, 5, u(usage_s=60, dbk_cpu_mj=1000, own_cpu_mj=3000)),
         # Darkbloom alone, measured
         (utc(2026, 10, 20, 20, 1), 1.0, 0, 5, u(usage_s=60, dbk_cpu_mj=1000)),

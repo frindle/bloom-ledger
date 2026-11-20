@@ -48,10 +48,10 @@ def test_revoke_moves_a_dynamic_machine_to_the_revoked_list(tmp_path):
 
 def test_revoke_also_cuts_off_a_secret_file_machine(tmp_path):
     secret = tmp_path / "bloom_tokens"
-    secret.write_text(f"studio {sha('t1')}\nm2 {sha('t2')}\n")
+    secret.write_text(f"mac1 {sha('t1')}\nm2 {sha('t2')}\n")
     p = str(tmp_path / "machines.json")
-    S.revoke_machine(p, "studio")
-    assert json.load(open(p))["revoked"] == ["studio"]
+    S.revoke_machine(p, "mac1")
+    assert json.load(open(p))["revoked"] == ["mac1"]
     assert I.load_tokens(str(secret), p) == {sha("t2"): "m2"}
 
 

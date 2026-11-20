@@ -71,14 +71,14 @@ def test_http_get_refuses_other_hosts_and_plain_http():
 def test_live_summarises_darkbloom_sandbox_and_power(tmp_path):
     Path(LV.key_path(tmp_path)).parent.mkdir(parents=True)
     Path(LV.key_path(tmp_path)).write_text(KEY)
-    db = db_with([("m4max", 900, 1.0, 60, "serving", 0), ("m4max", 960, 2.5, 60, "serving", 1)])
+    db = db_with([("mac-a", 900, 1.0, 60, "serving", 0), ("mac-a", 960, 2.5, 60, "serving", 1)])
     calls = []
     get = fake_get({LV.PROVIDERS_URL: (200, PROVIDERS), LV.SANDBOX_HOSTS_URL: (200, HOSTS)}, calls)
     res = LV.live(tmp_path, LV.mac_view(db, 1000), 1000, get)
     (m,) = res["darkbloom"]["machines"]
     assert m["online"] and m["routing"] == "eligible" and m["decode_tps"] == 41.3 and m["pending"] == 2
     assert res["sandbox"]["hosts"][0]["running"] == 1
-    assert res["mac"] == [{"machine_id": "m4max", "ts": 960, "age_s": 40, "stale": False, "watts": 150.0,
+    assert res["mac"] == [{"machine_id": "mac-a", "ts": 960, "age_s": 40, "stale": False, "watts": 150.0,
                            "darkbloom_state": "serving", "sandbox_jobs": 1}]
     assert all(k == KEY for _, k in calls) and len(calls) == 2
     LV.live(tmp_path, [], 1010, get)
@@ -119,7 +119,7 @@ def run_home(tmp_path, live):
 
 def test_page_strip_shows_status_and_watts(tmp_path):
     live = {"darkbloom": LV.darkbloom_view(PROVIDERS), "sandbox": LV.sandbox_view(HOSTS),
-            "mac": [{"machine_id": "m4max", "age_s": 40, "stale": False, "watts": 150.0, "sandbox_jobs": 1}]}
+            "mac": [{"machine_id": "mac-a", "age_s": 40, "stale": False, "watts": 150.0, "sandbox_jobs": 1}]}
     text, note = run_home(tmp_path, live)
     assert "Studio: online, 2/24 requests, 41.3 tok/s" in text, text
     assert "studio-sbx: accepting, 1 running" in text and "150 W, 40 s ago" in text, text
@@ -128,9 +128,9 @@ def test_page_strip_shows_status_and_watts(tmp_path):
 
 def test_page_strip_without_key_falls_back_to_the_mac(tmp_path):
     live = {"darkbloom": {"error": "no API key saved"}, "sandbox": {"error": "no API key saved"},
-            "mac": [{"machine_id": "m4max", "age_s": 400, "stale": True, "watts": None, "sandbox_jobs": 2}]}
+            "mac": [{"machine_id": "mac-a", "age_s": 400, "stale": True, "watts": None, "sandbox_jobs": 2}]}
     text, note = run_home(tmp_path, live)
-    assert "m4max: 2 running (from the Mac)" in text and "not measured" in text and "stopped reporting" in text, text
+    assert "mac-a: 2 running (from the Mac)" in text and "not measured" in text and "stopped reporting" in text, text
     assert "Settings" in note
 
 

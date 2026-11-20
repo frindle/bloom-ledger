@@ -19,9 +19,9 @@ def test_open_db_creates_only_the_objects_table(tmp_path):
 
 def test_summary_days_have_no_ots_field(tmp_path):
     db = I.open_db(tmp_path / "i.sqlite")
-    I.index_object(db, "m4max", "log", "a" * 64, 10, NOW - 3 * 86400)
+    I.index_object(db, "mac-a", "log", "a" * 64, 10, NOW - 3 * 86400)
     day = I.utc_day(NOW - 3 * 86400)
-    L.write_manifest(IL.ledger_dir(tmp_path, "m4max"), L.make_manifest(day, "m4max", [], None))
+    L.write_manifest(IL.ledger_dir(tmp_path, "mac-a"), L.make_manifest(day, "mac-a", [], None))
     days = S.summary(db, tmp_path, NOW)["machines"][0]["days"]
     assert set(days[0]) == {"day", "files", "bytes", "state", "chain_hash"}, sorted(days[0])
     assert [d["state"] for d in days] == ["sealed", "missing", "missing", "open"]

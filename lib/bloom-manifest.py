@@ -7,7 +7,7 @@
   bloom-manifest.py verify                       walk the chain, re-hash every file range; rc 1 on any problem
 
 Env: BLOOM_POWER_HOME (default ~/.darkbloom), BLOOM_MACHINE_ID (else "machine_id" in ~/.darkbloom/ledger.json,
-else m4max). Reads no secrets.
+else the host name). Reads no secrets.
 """
 import argparse
 import datetime as dt

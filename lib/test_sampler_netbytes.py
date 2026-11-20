@@ -34,9 +34,9 @@ def load(name, file, base=HERE):
 L = load("bloom_power_lib_nb", "bloom_power_lib.py")
 S = load("bloom_power_log_nb", "bloom-power-log.py", CLIENT)
 
-PROVIDER = "/Users/penn/.darkbloom/Darkbloom.app/Contents/MacOS/darkbloom start --foreground --model m"
-WATCHDOG = "/Users/penn/.darkbloom/Darkbloom.app/Contents/MacOS/darkbloom watchdog --config /x/provider.toml"
-CLI = "/Users/penn/.darkbloom/bin/darkbloom status"
+PROVIDER = "/Users/alice/.darkbloom/Darkbloom.app/Contents/MacOS/darkbloom start --foreground --model m"
+WATCHDOG = "/Users/alice/.darkbloom/Darkbloom.app/Contents/MacOS/darkbloom watchdog --config /x/provider.toml"
+CLI = "/Users/alice/.darkbloom/bin/darkbloom status"
 
 
 # ---------------------------------------------------------------- columns and bridges

@@ -8,7 +8,7 @@ LEASE = {"display_name": "Studio", "model": "M4 Max", "acquisition": "leased", "
 
 
 def page(tmp_path, profile, steps=None):
-    machines = [{"id": "m4max", "last_seen": 1793299880, "objects": 5, "days_sealed": 2, "status": "reporting", "profile": profile}]
+    machines = [{"id": "mac-a", "last_seen": 1793299880, "objects": 5, "days_sealed": 2, "status": "reporting", "profile": profile}]
     fx = {"/v1/settings": {"status": 200, "body": {"machines": machines, "health": {"time": 1793300000}}},
           "POST /v1/settings/machines/profile": {"status": 200, "body": {"ok": True}}}
     res = D.run_page(tmp_path, fx, steps)
@@ -21,11 +21,11 @@ def shown(res):
         n = D.find(res["dom"], i)
         assert n is not None, "no element " + i
         return n
-    return (v("start-label-m4max")["text"], v("start-m4max")["value"], v("amt-label-m4max")["text"], v("amt-m4max")["value"])
+    return (v("start-label-mac-a")["text"], v("start-mac-a")["value"], v("amt-label-mac-a")["text"], v("amt-mac-a")["value"])
 
 
 def to(mode):
-    return {"do": "change", "id": "acq-m4max", "values": {"acq-m4max": mode}}
+    return {"do": "change", "id": "acq-mac-a", "values": {"acq-mac-a": mode}}
 
 
 def test_labels_follow_the_loaded_mode(tmp_path):
@@ -36,7 +36,7 @@ def test_labels_follow_the_loaded_mode(tmp_path):
 def test_switching_loads_the_other_modes_values(tmp_path):
     res = page(tmp_path, LEASE, [to("purchased")])
     assert shown(res) == ("In service", "2026-09-28", "Purchase price", "3225.65")
-    assert D.find(res["dom"], "start-m4max")["attrs"]["aria-label"] == "In service date for m4max"
+    assert D.find(res["dom"], "start-mac-a")["attrs"]["aria-label"] == "In service date for mac-a"
     back = page(tmp_path, LEASE, [to("purchased"), to("leased")])
     assert shown(back) == ("Lease start", "2026-01-15", "Per month", "123.45")
 
@@ -47,13 +47,13 @@ def test_switching_to_an_empty_mode_clears_the_fields(tmp_path):
 
 
 def test_edits_survive_a_round_trip(tmp_path):
-    steps = [{"do": "input", "id": "amt-m4max", "values": {"amt-m4max": "99.00"}}, to("purchased"), to("leased")]
+    steps = [{"do": "input", "id": "amt-mac-a", "values": {"amt-mac-a": "99.00"}}, to("purchased"), to("leased")]
     assert shown(page(tmp_path, LEASE, steps))[3] == "99.00"
 
 
 def test_save_after_switching_posts_the_purchase(tmp_path):
     res = page(tmp_path, dict(LEASE, in_service=None, purchase_cents=None),
-               [to("purchased"), {"do": "input", "id": "start-m4max", "values": {"start-m4max": "2026-09-28", "amt-m4max": "3225.65"}},
+               [to("purchased"), {"do": "input", "id": "start-mac-a", "values": {"start-mac-a": "2026-09-28", "amt-mac-a": "3225.65"}},
                 {"do": "click", "sel": ".primary"}])
     (post,) = [f for f in res["fetches"] if f["method"] == "POST"]
     body = json.loads(post["body"])

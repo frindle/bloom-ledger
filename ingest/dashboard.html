@@ -184,7 +184,7 @@
     if (failures) {
       banner.hidden = false;
       banner.textContent = lastOk ? `Can't reach the ledger. Showing data from ${new Date(lastOk).toLocaleTimeString()}; retrying every minute.`
-                                  : "Can't reach the ledger. Check that the bloom-ledger container is running on Unraid.";
+                                  : "Can't reach the ledger. Check that the bloom-ledger container is running.";
     } else banner.hidden = true;
   }
 

@@ -21,13 +21,21 @@ import bloom_power_lib as P  # noqa: E402
 SCHEMA = 1
 GENESIS = "0" * 64
 LEDGER_DIRNAME = "ledger"
-DEFAULT_MACHINE_ID = "m4max"
+
+
 RAW_GLOBS = ("power/power-log-*.csv", "earnings-archive/earnings-*.jsonl", "earnings-archive/totals.jsonl")
 TS_KEYS = ("_fetched_at", "at")
 MANIFEST_RE = re.compile(r"^manifest-(\d{4}-\d{2}-\d{2})\.json$")
 
 
 # ---------------------------------------------------------------- helpers (fixed contract)
+def default_machine_id():
+    """No built-in id: pairing writes one into ledger.json. Without it, the sanitized host name (a valid machine id)."""
+    import socket
+    name = re.sub(r"[^A-Za-z0-9._-]+", "-", socket.gethostname().split(".")[0]).strip("-._")[:64]
+    return name or "my-mac"
+
+
 def home_dir():
     return Path(os.environ.get("BLOOM_POWER_HOME") or Path.home() / ".darkbloom")
 
@@ -160,7 +168,7 @@ def make_manifest(day, machine_id, files, prev):
 
 
 def resolve_machine_id(home, env=None):
-    """BLOOM_MACHINE_ID env, else "machine_id" in <home>/ledger.json, else 'm4max'."""
+    """BLOOM_MACHINE_ID env, else "machine_id" in <home>/ledger.json, else the sanitized host name."""
     if env is None:
         env = os.environ
     val = env.get("BLOOM_MACHINE_ID", "")
@@ -175,7 +183,7 @@ def resolve_machine_id(home, env=None):
             return mid.strip()
     except Exception:
         pass
-    return DEFAULT_MACHINE_ID
+    return default_machine_id()
 
 
 

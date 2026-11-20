@@ -11,7 +11,7 @@ BANNED = re.compile(r"opentimestamps|bitcoin|\bots\b|ots_|_ots|\.ots\b|shutil|st
 
 
 def run(home, *args):
-    env = dict(os.environ, BLOOM_POWER_HOME=str(home), BLOOM_MACHINE_ID="m4max", PATH="/usr/bin:/bin")
+    env = dict(os.environ, BLOOM_POWER_HOME=str(home), BLOOM_MACHINE_ID="mac-a", PATH="/usr/bin:/bin")
     return subprocess.run([sys.executable, str(SCRIPT), *args], env=env, cwd=str(home), capture_output=True,
                           text=True, timeout=60)
 

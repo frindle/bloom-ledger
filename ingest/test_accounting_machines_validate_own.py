@@ -1,9 +1,9 @@
 """Frozen test: owned machines need a price and method, leased machines a monthly lease and start."""
 import bloom_accounting_machines as M
 
-OWNED = {"id": "m4max", "display_name": "M4 Max", "processor": "Apple M4 Max", "ownership": "owned", "in_service": "2026-10-01",
+OWNED = {"id": "mac-a", "display_name": "M4 Max", "processor": "Apple M4 Max", "ownership": "owned", "in_service": "2026-10-01",
          "business_mode": "auto_paid_hours", "purchase_cents": 322565, "depreciation_method": "straight_line", "watts": 90}
-LEASED = {"id": "m5ultra", "display_name": "M5 Ultra", "processor": "Apple M5 Ultra", "ownership": "leased", "in_service": "2026-11-15",
+LEASED = {"id": "mac-b", "display_name": "M5 Ultra", "processor": "Apple M5 Ultra", "ownership": "leased", "in_service": "2026-11-15",
           "business_mode": "leased_100", "lease_monthly_cents": 13735, "lease_start": "2026-11-15"}
 
 

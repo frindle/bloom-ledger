@@ -75,7 +75,7 @@ const doc = { getElementById: id => byId.get(id) || null, createElement: t => ne
   get activeElement() { return null; } };
 const sandbox = { document: doc, sessionStorage: session, JSON, Date, URL, Promise, Math, Number, String, Object, Array, Set, Map, RegExp, Error, isNaN, parseInt,
   localStorage: new Proxy({}, { get() { out.local_storage_calls += 1; return () => null; }, set() { out.local_storage_calls += 1; return true; } }),
-  location: { origin: scenario.origin || "http://10.0.12.46:8787", href: (scenario.origin || "http://10.0.12.46:8787") + "/settings", pathname: "/settings", host: "10.0.12.46:8787", protocol: "http:" },
+  location: { origin: scenario.origin || "http://10.0.0.5:8787", href: (scenario.origin || "http://10.0.0.5:8787") + "/settings", pathname: "/settings", host: "10.0.0.5:8787", protocol: "http:" },
   navigator: { clipboard: { writeText: s => { out.clipboard.push(String(s)); return Promise.resolve(); } } },
   console: { log: (...a) => out.console.push(a.map(String).join(" ")), error: (...a) => out.console.push(a.map(String).join(" ")), warn: (...a) => out.console.push(a.map(String).join(" ")) },
   setTimeout: () => 0, setInterval: () => 0, clearTimeout() {}, clearInterval() {}, confirm: () => { out.errors.push("confirm() used"); return false; },

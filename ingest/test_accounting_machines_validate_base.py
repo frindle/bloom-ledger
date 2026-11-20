@@ -1,7 +1,7 @@
 """Frozen test: validate_machine returns per-field errors for the common machine fields."""
 import bloom_accounting_machines as M
 
-OWNED = {"id": "m4max", "display_name": "M4 Max", "processor": "Apple M4 Max", "ownership": "owned", "in_service": "2026-10-01",
+OWNED = {"id": "mac-a", "display_name": "M4 Max", "processor": "Apple M4 Max", "ownership": "owned", "in_service": "2026-10-01",
          "business_mode": "auto_paid_hours", "purchase_cents": 322565, "depreciation_method": "straight_line", "watts": 90}
 
 

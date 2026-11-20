@@ -1,4 +1,4 @@
-"""Ship the ledger spool to the Unraid ingest over LAN HTTP (stdlib only).
+"""Ship the ledger spool to the ledger server over LAN HTTP (stdlib only).
 
 Each spool object is POSTed to <ingest>/v1/objects with a per-machine bearer token. The ingest stores it under
 its sha256 (idempotent: a resend answers 200), so a crash between POST and move only causes one harmless resend.

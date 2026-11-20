@@ -18,7 +18,7 @@ def ts_bounds(tz, start, end):
 
 
 def minute_stream(ok, tok, other, sbx):
-    """Which stream a power minute belongs to: "sandbox", "gpu", "other" (Penn's own work), "idle", or "gap" (no reading)."""
+    """Which stream a power minute belongs to: "sandbox", "gpu", "other" (the owner's own work), "idle", or "gap" (no reading)."""
     if not ok:
         return "gap"
     if other:
@@ -47,7 +47,7 @@ def stream_of_kind(kind):
 def add_net_bytes(row, net, scope=None):
     """Add one minute's byte counts (values in NET_COLUMNS order; None = not measured) to the day row.
 
-    Data moved is internet traffic only (Penn, 2026-11-19). Only minutes the sampler recorded as internet-only (scope
+    Data moved is internet traffic only. Only minutes the sampler recorded as internet-only (scope
     'internet', since 2026-11-19) add bytes. An older minute counted all traffic, LAN included (Time Machine, file
     shares), and can't be split, so its bytes are left out and it counts in net_legacy_minutes instead.
     Bytes count whether or not the power reading was good. net_minutes counts internet minutes with a measured
