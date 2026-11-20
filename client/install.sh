@@ -99,6 +99,12 @@ if [ -z "$CODE" ]; then ask CODE "Pairing code (from the ledger's Setup page):";
 # The shipper talks to a private address or a hostname, never a public IP literal. Checked before pairing so a code is never used up.
 BASE_HOST=${BASE#*://}; BASE_HOST=${BASE_HOST%%/*}; BASE_HOST=${BASE_HOST%%:*}
 acceptable_host "$BASE_HOST" || die "'$BASE_HOST' is not a private address or a hostname: use the ledger's LAN address or name, e.g. curl -fsSL http://192.168.1.20:8787/install.sh | sh -s -- --pair <code> (Settings > Add a machine shows the exact command)"
+case "$BASE" in
+  http://*)
+    if ! printf '%s' "$BASE_HOST" | grep -Eq '^[0-9.]+$'; then
+      case "$BASE_HOST" in localhost|*.local) ;; *) die "'$BASE_HOST' over plain http: the token would cross the network unencrypted. Use https://, a private IP address, or a .local name" ;; esac
+    fi ;;
+esac
 printf '%s' "$CODE" | grep -Eq '^[A-Za-z0-9_-]{12,64}$' || die "pass --pair <code> from Settings > Add a machine"
 
 # Python 3.9 or newer, by absolute path (LaunchAgents get no shell PATH).

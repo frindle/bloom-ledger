@@ -37,6 +37,7 @@ ls "$DBK"
 step "1 install the server like the README says"
 must "install-server.sh --port succeeds" sh "$REPO/deploy/mac/install-server.sh" --port "$PORT"
 must "/healthz answers" curl -fsS "$BASE/healthz"
+[ "$(stat -f %Lp "$SDATA/logs/server.log")" = 600 ] && ok "server.log is readable by this user only (600)" || bad "server.log is mode 600"
 launchctl print "gui/$UIDN/dev.bloom-ledger.server" >/dev/null 2>&1 && ok "server launchd job is loaded" || bad "server launchd job is loaded"
 must "install-server.sh a second time, no flags (the README update command), is harmless" sh "$REPO/deploy/mac/install-server.sh"
 must "/healthz still answers on the same port (flags were kept)" curl -fsS "$BASE/healthz"
@@ -48,6 +49,7 @@ SETUP_CODE=$(grep -o 'Setup code: [0-9a-f]*' "$SDATA/logs/server.log" | tail -1 
 [ -n "$SETUP_CODE" ] && ok "setup code is in server.log" || bad "setup code is in server.log"
 mustnot "setup without the code is refused" python3 "$HERE/sample.py" setup "$BASE" intruder "correct-horse-1" "$WORK/cookie-no" 000000000000
 must "admin created" python3 "$HERE/sample.py" setup "$BASE" owner "correct-horse-1" "$COOKIE" "$SETUP_CODE"
+[ ! -e "$SDATA/setup-code" ] && ok "setup code rotated after setup (file removed)" || bad "setup code rotated after setup"
 CODE=$(python3 "$HERE/sample.py" paircode "$BASE" mac-ci "$COOKIE") && ok "pairing code made" || { bad "pairing code made"; CODE=""; }
 
 step "3 install the client with the pairing code"

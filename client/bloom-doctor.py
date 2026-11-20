@@ -22,7 +22,7 @@ def get(url, token=None, timeout=6):
     if token:
         req.add_header("Authorization", "Bearer " + token)
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
+        with S.open_no_redirect(req, timeout=timeout) as r:  # never follow a redirect with the token attached
             return r.status, r.read()
     except urllib.error.HTTPError as e:
         return e.code, b""

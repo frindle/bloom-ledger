@@ -39,6 +39,10 @@ if "$PY" -c "import socket,sys; s=socket.socket(); sys.exit(0 if s.connect_ex(('
   launchctl print "gui/$(id -u)/$LABEL" >/dev/null 2>&1 || die "port $PORT is already in use by something else: pick another with --port"
 fi
 mkdir -p "$DATA" "$DATA/logs" "$HOME/Library/LaunchAgents"
+# The log holds the one-time setup code until the login exists: keep it to this user (launchd appends to the existing file).
+chmod 700 "$DATA" "$DATA/logs"
+touch "$DATA/logs/server.log"
+chmod 600 "$DATA/logs/server.log"
 LANIP=$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || true)
 {
   printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>' \
