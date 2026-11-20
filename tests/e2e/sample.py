@@ -92,6 +92,8 @@ def main(argv):
     elif cmd == "paircode":
         base, mid, cf = argv[2:5]
         st, body, _ = req(base, "POST", "/v1/settings/machines", {"id": mid}, cf)
+        if st == 409:  # already added: same as Machines > New token
+            st, body, _ = req(base, "POST", "/v1/settings/machines/rotate", {"id": mid}, cf)
         if st not in (200, 201) or "pair_code" not in body:
             sys.exit("add machine failed: %s %s" % (st, body))
         print(body["pair_code"])

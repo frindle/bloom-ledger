@@ -86,7 +86,7 @@ fi
 [ -z "$SERVER" ] || BASE=$SERVER
 case "$BASE" in http://*|https://*) ;; *) BASE="" ;; esac
 # ask(VAR, question): read from the keyboard even when this script is piped from curl. Empty when there is no keyboard.
-ask() { if [ -r /dev/tty ] && [ -w /dev/tty ]; then printf '%s ' "$2" >/dev/tty; read -r _a </dev/tty || _a=""; else _a=""; fi; eval "$1=\$_a"; }
+ask() { if (: </dev/tty) 2>/dev/null && (: >/dev/tty) 2>/dev/null; then printf '%s ' "$2" >/dev/tty; read -r _a </dev/tty || _a=""; else _a=""; fi; eval "$1=\$_a"; }
 if [ -z "$BASE" ]; then
   ask BASE "Ledger address (like http://192.168.1.20:8787):"
   case "$BASE" in http://*|https://*) ;; *) die "no ledger address. Rerun with --server http://<ledger>:8787 --pair <code>, or copy the command from the ledger's Setup page" ;; esac

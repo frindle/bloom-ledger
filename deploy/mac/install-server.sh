@@ -52,7 +52,15 @@ LANIP=$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null
     "  <key>StandardErrorPath</key><string>$DATA/logs/server.log</string>" \
     '</dict></plist>'
 } > "$PLIST"
-launchctl bootout "gui/$(id -u)/$LABEL" >/dev/null 2>&1 || true
+if launchctl bootout "gui/$(id -u)/$LABEL" >/dev/null 2>&1; then
+  # Running it again (to update): wait until the old process has let go of the port, or the new one cannot start.
+  w=0
+  while "$PY" -c "import socket,sys; s=socket.socket(); sys.exit(0 if s.connect_ex(('127.0.0.1',$PORT))==0 else 1)"; do
+    w=$((w + 1))
+    [ "$w" -lt 20 ] || break
+    sleep 1
+  done
+fi
 n=0
 until launchctl bootstrap "gui/$(id -u)" "$PLIST"; do
   n=$((n + 1))
