@@ -59,6 +59,11 @@ def test_unmeasured_periods_say_so(tmp_path):
         assert all(" B " not in x and " GB" not in x for x in (gpu, sbx, whole))
 
 
+def test_older_all_traffic_minutes_say_not_counted(tmp_path):
+    gpu, sbx, whole = metas(run(tmp_path, dict(SUM, totals=dict(TOT, net_minutes=0, net_legacy_minutes=500)))["dom"])
+    assert all("data not counted (before internet-only counting)" in x for x in (gpu, sbx, whole)), (gpu, sbx, whole)
+
+
 def test_large_units_cap_at_terabytes(tmp_path):
     gpu, _, _ = metas(run(tmp_path, dict(SUM, totals=dict(TOT, gpu_bytes_in=3_000_000_000_000_000)))["dom"])
     assert "data 3000.0 TB in" in gpu, gpu
