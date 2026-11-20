@@ -6,12 +6,12 @@ write-off rules. This module adds what the tally does not split: the earnings by
 usage behind them (tokens, jobs, paid minutes). Money is integer cents.
 
 What the numbers mean (Penn, 2026-11-19):
-- Net = gross - Darkbloom fees - power - Mac lease (plus any other income and hand-entered expenses). No depreciation line: the
-  lease already covers the Mac.
+- Net = gross - Darkbloom fees - power - depreciation - lease (plus any other income, less hand-entered expenses). The Mac is
+  bought, so its depreciation is a cost; the lease line is whatever the lease settings say (0 when unset).
 - Darkbloom takes 10% of Sandbox cost; inference and base reward carry no fee. The earnings feed (and so the earnings table)
   stores what Darkbloom PAID, i.e. cost minus the fee: sandbox payouts come in round tenths of cost (2250 for a 2500 job) and the
   rows add up to the account's lifetime total, which is a payout balance. So gross = payout + fee, where fee = sandbox payout / 9,
-  and net does not subtract the fee a second time beyond turning the payout back into gross. The feed has no per-row fee, so the
+  and the fee is taken off once, after turning the payout back into gross. The feed has no per-row fee, so the
   10% is applied to the month's Sandbox payout.
 - usage.vcpu_seconds is null: the earnings feed carries amount, model, job id and completion tokens, no vCPU seconds.
 Bookkeeping, not tax advice."""
@@ -29,8 +29,8 @@ import bloom_power_lib as P
 SCHEMA_VERSION = 2
 LINE_KINDS = (("job", "inference", "Inference"), ("sandbox", "sandbox", "Sandbox jobs"), ("base", "base_reward", "Base reward"))
 FEES_NOTE = "Darkbloom keeps 10% of Sandbox cost (no fee on inference); computed from the payouts the ledger holds."
-COST_COLUMNS = (("power_cost_cents", "Metered power"), ("lease_cents", "Equipment lease"),
-                ("entries_deductible_cents", "Purchases and other expenses"))   # no depreciation: the lease covers the Mac
+COST_COLUMNS = (("power_cost_cents", "Metered power"), ("depreciation_cents", "Depreciation"), ("lease_cents", "Equipment lease"),
+                ("entries_deductible_cents", "Purchases and other expenses"))
 
 
 def build_invoice(db, month, now, today=None):

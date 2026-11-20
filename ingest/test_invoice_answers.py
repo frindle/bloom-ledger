@@ -6,10 +6,10 @@ from test_tally_monthly import NOW, make, utc
 
 
 def tally_net(t):
-    """Net the way the tracker's books post a tally month: payout + fees (income) + other income - fees - power - lease - expenses."""
+    """Net the way the tracker's books post a tally month: payout + fees (income) + other income - fees - power - depreciation - lease - expenses."""
     tot = t["totals"]
     g = lambda k: tot[k] or 0
-    return (g("earnings_cents") + g("fees_cents")) + g("other_income_cents") - g("fees_cents") - g("power_cost_cents") - g("lease_cents") - g("entries_deductible_cents")
+    return (g("earnings_cents") + g("fees_cents")) + g("other_income_cents") - g("fees_cents") - g("power_cost_cents") - g("depreciation_cents") - g("lease_cents") - g("entries_deductible_cents")
 
 
 def sandbox_db():
@@ -29,19 +29,20 @@ def test_fee_is_ten_percent_of_sandbox_cost_and_inference_has_none():
     assert sum(r["fees_cents"] for r in t["machines"]) == t["totals"]["fees_cents"]
     inv = INV.build_invoice(db, "2026-11", NOW)
     assert inv["fees_cents"] == t["totals"]["fees_cents"]
-    # gross = payout + fee, and the fee comes off once: net does not drop below payout - power - lease.
+    # gross = payout + fee, and the fee comes off once: net is payout - power - depreciation - lease.
     assert inv["gross_cents"] == t["totals"]["earnings_cents"] + inv["fees_cents"]
     assert sum(l["amount_cents"] for l in inv["lines"]) == inv["gross_cents"]
     oct_inv = INV.build_invoice(db, "2026-10", NOW)
     assert oct_inv["fees_cents"] == 0 and payout > 0
 
 
-def test_no_depreciation_in_net_even_for_an_owned_machine():
+def test_depreciation_is_in_net_and_costs_for_an_owned_machine():
     db = sandbox_db()
     t = TL.build_month(db, "2026-11", NOW)
-    assert t["totals"]["depreciation_cents"] > 0   # the tax tally keeps it
+    dep = t["totals"]["depreciation_cents"]
+    assert dep > 0
     inv = INV.build_invoice(db, "2026-11", NOW)
-    assert "depreciation" not in {c["key"] for c in inv["costs"]}
+    assert {c["key"]: c["amount_cents"] for c in inv["costs"]}["depreciation"] == dep
     assert inv["net_cents"] == tally_net(t)
 
 

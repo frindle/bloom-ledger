@@ -44,7 +44,7 @@ def test_usage_and_honest_gaps():
     assert inv["usage"]["tokens"] == 5 * 3 * 2 + 40   # the fixture's six job rows of 5 tokens in November, plus 40
     assert inv["usage"]["jobs"] == 9 and inv["usage"]["vcpu_seconds"] is None
     assert inv["fees_cents"] == 480_000 // 9 // 10000 and "10%" in inv["fees_note"]
-    assert [c["key"] for c in inv["costs"]] == ["power_cost", "lease", "entries_deductible"]
+    assert [c["key"] for c in inv["costs"]] == ["power_cost", "depreciation", "lease", "entries_deductible"]
 
 
 def test_same_data_same_hash_and_change_changes_it():
