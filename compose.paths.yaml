@@ -1,0 +1,19 @@
+# Host-folder layout used by ./update.sh (and by installs made before the named-volume compose file).
+# update.sh loads this on top of compose.yaml, so data, saved keys and the legacy token files stay in the
+# folders named in .env (BLOOM_DATA_DIR, BLOOM_KEYS_DIR, BLOOM_SECRETS_DIR, BLOOM_EARNINGS_DIR) and the
+# containers run as BLOOM_UID:BLOOM_GID. Plain `docker compose up` does not use this file.
+services:
+  bloom-ledger:
+    user: "${BLOOM_UID:-99}:${BLOOM_GID:-100}"
+    environment:
+      BLOOM_KEYS: /keys
+      BLOOM_TOKENS: /run/secrets/bloom_tokens
+    volumes:
+      - ${BLOOM_DATA_DIR:-./data}:/data
+      - ${BLOOM_KEYS_DIR:-./data/secrets}:/keys
+      - ${BLOOM_SECRETS_DIR:-./secrets}:/run/secrets:ro
+  bloom-earnings:
+    user: "${BLOOM_UID:-99}:${BLOOM_GID:-100}"
+    volumes:
+      - ${BLOOM_EARNINGS_DIR:-./data/earnings}:/state
+      - ${BLOOM_SECRETS_DIR:-./secrets}:/run/secrets:ro
