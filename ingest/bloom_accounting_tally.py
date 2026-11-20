@@ -230,6 +230,9 @@ def months_with_data(db):
     a, b = db.execute("SELECT MIN(date), MAX(date) FROM acct_entries WHERE voided_at IS NULL").fetchone() if _has_entries(db) else (None, None)
     if a:
         seen |= {a[:7], b[:7]}
+    in_service = CF.effective_settings(db, "9999-12-31")["values"].get("m4_in_service_date")
+    if in_service and TX.pre_tracking_micro(db, in_service[:7] + "-01", in_service[:7] + "-31", in_service) > 0:
+        seen.add(in_service[:7])   # pay from before tracking began sits in that month even when no day row does
     if not seen:
         return []
     y, m = int(min(seen)[:4]), int(min(seen)[5:])
