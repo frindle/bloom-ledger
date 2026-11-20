@@ -8,6 +8,7 @@ This is bookkeeping data, not tax advice.
 """
 import csv
 import datetime as dt
+import ipaddress
 import json
 import os
 import plistlib
@@ -35,8 +36,14 @@ DAEMON_STAT_KEYS = ("requests_served", "tokens_generated", "prompt_tokens_proces
 DAEMON_COLUMNS = POWER_COLUMNS[POWER_COLUMNS.index("machine_id"):]
 # Network bytes and sandbox jobs (2026-11-03). The main power-log header does NOT carry these columns (bloom-ledger
 # reads them from the sidecar files below, written every minute by bridge_row), so the power-log CSV is unchanged.
-# gpu_* = Darkbloom provider service; sandbox_* = Sandbox agent + workers (carry job VM traffic); total_* = en* links.
+# gpu_* = Darkbloom provider service; sandbox_* = Sandbox agent + workers (carry job VM traffic); total_* = the whole
+# machine. Since 2026-11-19 every figure counts INTERNET traffic only (flows whose remote end is a public address).
+# Before that, total_* was the en* link counters (LAN included: Time Machine, file shares) and gpu_*/sandbox_* counted
+# every non-loopback flow of the process. The net-bytes sidecar's net_scope column marks the rows written since;
+# a row without it (or blank) is an older "all traffic incl. LAN" row. Older rows are never rewritten.
 NET_COLUMNS = ["gpu_bytes_in", "gpu_bytes_out", "sandbox_bytes_in", "sandbox_bytes_out", "total_bytes_in", "total_bytes_out"]
+NET_SCOPE_COLUMN = "net_scope"
+NET_SCOPE_INTERNET = "internet"
 # The Darkbloom Sandbox agent's status file (rewritten by the agent about every 30 s; READ-ONLY for us).
 SANDBOX_STATUS = Path(os.environ.get("BLOOM_SANDBOX_STATUS")
                       or "/Volumes/NVMe-Models/DarkbloomSandbox/agent/status.json")
@@ -53,7 +60,7 @@ SANDBOX_BRIDGE_COLUMNS = ["ts_utc", "sandbox_jobs"]
 SANDBOX_PROCS = ("DarkbloomSandbox", "darkbloom-sandbox", "sandbox-linux-worker", "sandbox-macos-worker")
 VM_SERVICE = "com.apple.Virtualization.VirtualMachine"
 NET_BRIDGE = "net-bytes-{month}.csv"            # power dir: ts_utc + NET_COLUMNS while the month file lacks them
-NET_BRIDGE_COLUMNS = ["ts_utc"] + NET_COLUMNS
+NET_BRIDGE_COLUMNS = ["ts_utc"] + NET_COLUMNS + [NET_SCOPE_COLUMN]
 # Per-process CPU and GPU use (2026-11-06), for splitting a minute between Darkbloom business and the operator's own
 # use. Each row says how much CPU time (ms) and CPU energy (mJ, the kernel's per-process energy counter) and GPU time
 # (ms, the GPU driver's per-client counter) went to: dbk = the Darkbloom provider (inference runs in it), sbx = the
@@ -71,25 +78,36 @@ VM_GPU_SERVICE = "com.apple.gpusw.ParavirtualizedGraphicsGPUTask"   # a VM's GPU
 DARKBLOOM_EXE = re.compile(r"^(?:\S*/)?darkbloom(?:\s|$)")   # the provider binary itself, not a command naming it
 BRIDGES = ((SANDBOX_BRIDGE, SANDBOX_BRIDGE_COLUMNS), (NET_BRIDGE, NET_BRIDGE_COLUMNS), (USAGE_BRIDGE, USAGE_BRIDGE_COLUMNS))
 
-# Network bytes (read-only: nettop and netstat, no root). Per-process bytes come from ONE long-running nettop in
-# delta mode (bloom-power-log.py NettopReader): each block is every process's bytes since the previous block on
-# the given interface types, flows that closed in between included. Loopback is left out (the operator's own requests to
-# the provider's 127.0.0.1:8000 are not network traffic). nettop types the Cloudflare WARP tunnel (utun*, where
-# app traffic flows while WARP is on) as "undefined" and the physical NICs as "external".
+# Network bytes (read-only: nettop, no root). ONE long-running nettop in per-flow delta mode (no -P; bloom-power-log.py
+# NettopReader): each block is a process row followed by that process's connection rows, bytes since the previous
+# block, with the flow's interface and its two addresses. Only flows with an INTERNET remote address count (see
+# is_internet_remote); the process row's own sum is ignored because it also holds loopback and LAN flows.
+# nettop types the Cloudflare WARP tunnel (utun*, where app traffic flows while WARP is on) as "undefined" and the
+# physical NICs as "external", so both types are requested. The "whole machine" figure counts a flow only when it
+# runs on a physical interface: with WARP on, an app's inner flow is on utun* and WARP's own outer flow to a public
+# Cloudflare address is on en*, so the outer flow is counted and the inner one is not (each byte once). The per-process
+# gpu/sandbox figures also take a process's utun* flows (the outer flow belongs to the WARP process, not to them) and
+# never its outer ones, so they too count each byte once.
 # The block interval is the one knob that changes nothing about the byte numbers (delta mode: each block holds every
-# process's bytes since the previous block, closed flows included; the sampler weights by the block's own dt_s) and
-# cuts how often nettop formats and writes a block. 2026-11-12 on the M4 Studio: the long-running nettop used 20-55% of
-# a core while the python sampler used 1-2%, so the cost is nettop's own (60 s trials of other -s values and -t/-m filters
-# showed no difference on a fresh process; the effect of 15 s on a long-running one is to be measured after install).
+# flow's bytes since the previous block; the sampler weights by the block's own dt_s) and cuts how often nettop formats
+# and writes a block. 2026-11-12 on the M4 Studio: the long-running per-process nettop used 20-55% of a core while the
+# python sampler used 1-2%, so the cost is nettop's own (60 s trials of other -s values and -t/-m filters showed no
+# difference on a fresh process). Per-flow output is longer (a row per connection): its cost is NOT measured yet.
 NETTOP_INTERVAL_S = 15
-NETTOP_CMD = ["/usr/bin/nettop", "-P", "-x", "-n", "-d", "-L", "0", "-s", str(NETTOP_INTERVAL_S), "-t", "external",
-              "-t", "undefined", "-J", "bytes_in,bytes_out"]
-NETSTAT_CMD = ["/usr/sbin/netstat", "-ibn"]   # -n: address-to-name lookups made -ib take 6.7 s (past the 5 s probe timeout)
+NETTOP_CMD = ["/usr/bin/nettop", "-x", "-n", "-d", "-L", "0", "-s", str(NETTOP_INTERVAL_S), "-t", "external",
+              "-t", "undefined", "-J", "interface,state,bytes_in,bytes_out"]
 NET_NAME_MAX = 15              # nettop prints at most 15 characters of a process name ("sandbox-macos-w")
 NET_SANDBOX_NAMES = tuple(sorted({p[:NET_NAME_MAX] for p in SANDBOX_PROCS + (VM_SERVICE,)}))
 DARKBLOOM_SERVICE_CMDS = ("start", "watchdog")     # the `darkbloom <cmd>` processes that are the provider service
 NET_MAX_BPS = 5e9              # 40 Gbit/s, above any link here (en0 is 10GbE): more in a block is a glitch, counts 0
-NET_IFACE_RE = re.compile(r"^en\d+$")              # physical Ethernet/Wi-Fi: not lo0, utun* (WARP inner), bridge*, awdl0
+# Interfaces that carry another interface's traffic or none off the machine: a flow on one is never "the wire".
+# idx-N is what nettop prints when the interface index no longer exists (a socket left on a torn-down tunnel).
+NET_TUNNEL_IFACE_RE = re.compile(r"^(?:utun|ipsec|ppp|gif|stf|lo|awdl|llw|bridge|ap|anpi|vmenet|vmnet|feth)\d*$|^idx-\d+$")
+# Remote addresses that are not the internet: this host, "this network", RFC1918, CGNAT, link-local, ULA, multicast,
+# reserved/broadcast. (Documentation ranges are deliberately NOT here: tests use them as stand-in public addresses.)
+NET_NOT_INTERNET = tuple(ipaddress.ip_network(n) for n in (
+    "0.0.0.0/8", "10.0.0.0/8", "100.64.0.0/10", "127.0.0.0/8", "169.254.0.0/16", "172.16.0.0/12", "192.168.0.0/16",
+    "224.0.0.0/4", "240.0.0.0/4", "::/128", "::1/128", "fc00::/7", "fe80::/10", "ff00::/8"))
 
 
 # the operator's own LLM work shares this Mac. Its power must NOT be attributed to Darkbloom.
@@ -135,34 +153,76 @@ def append_line(path, line):
         os.close(fd)
 
 
+def render_csv_row(cols, row):
+    vals = []
+    for c in cols:
+        v = row.get(c, "")
+        v = "" if v is None else str(v)
+        if any(ch in v for ch in ',"\n'):
+            v = '"' + v.replace('"', '""') + '"'
+        vals.append(v)
+    return ",".join(vals) + "\n"
+
+
 def append_csv_row(path, columns, row):
     """Append one CSV row; the header goes in the SAME write that creates the file (O_EXCL), so a new
     month's file is never headerless and concurrent writers never double the header."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-
-    def render(cols):
-        vals = []
-        for c in cols:
-            v = row.get(c, "")
-            v = "" if v is None else str(v)
-            if any(ch in v for ch in ',"\n'):
-                v = '"' + v.replace('"', '""') + '"'
-            vals.append(v)
-        return ",".join(vals) + "\n"
-
     hdr = ",".join(columns) + "\n"
     try:
         fd = os.open(str(path), os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_EXCL, 0o644)
-        data = hdr + render(columns)
+        data = hdr + render_csv_row(columns, row)
     except FileExistsError:
         fd = os.open(str(path), os.O_WRONLY | os.O_APPEND, 0o644)
         if os.fstat(fd).st_size == 0:
-            data = hdr + render(columns)
+            data = hdr + render_csv_row(columns, row)
         else:
-            data = render(csv_columns_for(path, columns))
+            data = render_csv_row(csv_columns_for(path, columns), row)
     try:
         os.write(fd, data.encode())
+    finally:
+        os.close(fd)
+
+
+_SCOPE_HEADER_SEEN = set()      # sidecar paths known to carry a header line with net_scope (this process)
+
+
+def append_net_row(path, columns, row):
+    """append_csv_row for the net-bytes sidecar, which gained the net_scope column on 2026-11-19. A month file that
+    began before then keeps its old first line (its bytes are already shipped and hashed), so the first row written
+    after the change is preceded, in the SAME write, by a second header line carrying net_scope; ingest switches
+    columns at a header line. Rows above that line have no net_scope: older "all traffic incl. LAN" rows."""
+    path = Path(path)
+    try:
+        with open(path, newline="") as fh:
+            first = fh.readline()
+            if not first.endswith("\n"):
+                return append_csv_row(path, columns, row)
+            head = next(csv.reader([first]), [])
+            if not head or NET_SCOPE_COLUMN in head:
+                return append_csv_row(path, columns, row)
+            if path in _SCOPE_HEADER_SEEN:
+                return append_csv_row_as(path, columns, row)
+            for ln in fh:
+                if ln.startswith("ts_utc,") and NET_SCOPE_COLUMN in ln:
+                    _SCOPE_HEADER_SEEN.add(path)
+                    return append_csv_row_as(path, columns, row)
+    except OSError:
+        return append_csv_row(path, columns, row)
+    fd = os.open(str(path), os.O_WRONLY | os.O_APPEND, 0o644)
+    try:
+        os.write(fd, (",".join(columns) + "\n" + render_csv_row(columns, row)).encode())
+    finally:
+        os.close(fd)
+    _SCOPE_HEADER_SEEN.add(path)
+
+
+def append_csv_row_as(path, columns, row):
+    """Append a row with exactly `columns` (the file's first line is not consulted)."""
+    fd = os.open(str(path), os.O_WRONLY | os.O_APPEND, 0o644)
+    try:
+        os.write(fd, render_csv_row(columns, row).encode())
     finally:
         os.close(fd)
 
@@ -397,7 +457,8 @@ def read_sandbox_jobs(path, now, max_age_s=SANDBOX_STALE_S):
 
 def bridge_row(base, row, columns=POWER_COLUMNS):
     """Append the row's ts_utc and values to each BRIDGES file whose columns the month's power-log header predates
-    (csv_columns_for keeps such a header, so the bytes bloom_ledger's manifest covers never change):
+    (csv_columns_for keeps such a header, so the bytes bloom_ledger's manifest covers never change; the net-bytes file
+    is the one exception, append_net_row adds a second header line):
     sandbox-jobs-YYYY-MM.csv (ts_utc,sandbox_jobs), net-bytes-YYYY-MM.csv (ts_utc + NET_COLUMNS) and usage-YYYY-MM.csv
     (ts_utc + USAGE_COLUMNS, always: no power-log header has them).
     -> the bridge paths written, in BRIDGES order ([] when the header has every column). Raises OSError."""
@@ -407,33 +468,72 @@ def bridge_row(base, row, columns=POWER_COLUMNS):
         if all(c in have for c in cols[1:]):
             continue
         bridge = Path(base) / POWER_DIRNAME / name.format(month=month_of(row["ts_utc"]))
-        append_csv_row(bridge, cols, row)
+        (append_net_row if name == NET_BRIDGE else append_csv_row)(bridge, cols, row)
         written.append(bridge)
     return written
 
 
 # ---------------------------------------------------------------- network bytes
+NET_FLOW_RE = re.compile(r"^(?:tcp|udp)[46]? .*<->")
+NET_PORT_TAIL_RE = re.compile(r"[:.](?:\d+|\*)$")
+
+
 def parse_nettop_line(line):
-    """One line of `nettop -P -x -J bytes_in,bytes_out` CSV -> ("header", None) for a block header (it starts with
-    ","), ("row", (name, pid, bytes_in, bytes_out)) for a process row, else (None, None). A process name may hold
-    commas, dots and spaces, so a row is read from the right: name.pid,bytes_in,bytes_out, (trailing comma
-    optional). A negative count is read as 0. Never raises."""
+    """One line of `nettop -x -J interface,state,bytes_in,bytes_out` CSV (per-flow mode) ->
+    ("header", None) for a block header (it starts with ","),
+    ("proc", (name, pid, bytes_in, bytes_out)) for a process row (name.pid,,,in,out,),
+    ("flow", (remote, iface, bytes_in, bytes_out)) for a connection row ("tcp4 local<->remote,en0,Established,in,out,";
+    remote is the address text without its port, '' when nettop printed a wildcard), else (None, None).
+    Fields are read from the right (the last four are interface, state, in, out), so a process name may hold commas,
+    dots and spaces. A negative count is read as 0. Never raises."""
     s = str(line).rstrip("\r\n")
     if s.startswith(","):
         return "header", None
     f = s.split(",")
     if f and f[-1] == "":
         f = f[:-1]
-    if len(f) < 3:
+    if len(f) < 5:
         return None, None
     try:
         b_in, b_out = int(f[-2]), int(f[-1])
     except ValueError:
         return None, None
-    name, dot, pid = ",".join(f[:-2]).rpartition(".")
+    b_in, b_out = max(b_in, 0), max(b_out, 0)
+    name = ",".join(f[:-4])
+    if NET_FLOW_RE.match(name):
+        return "flow", (flow_remote(name), f[-4].strip(), b_in, b_out)
+    name, dot, pid = name.rpartition(".")
     if not dot or not name or not pid.isdigit():
         return None, None
-    return "row", (name, int(pid), max(b_in, 0), max(b_out, 0))
+    return "proc", (name, int(pid), b_in, b_out)
+
+
+def flow_remote(flow_name):
+    """'tcp4 192.0.2.5:5000<->203.0.113.9:443' -> '203.0.113.9' (the remote address without its port). IPv6 flows
+    print the port after a dot ('tcp6 2001:db8::2.5000<->2001:db8::9.443'); a zone ('fe80::1%en0') is dropped.
+    '' for a wildcard ('*') or anything unreadable."""
+    r = str(flow_name).partition("<->")[2].strip()
+    r = NET_PORT_TAIL_RE.sub("", r, count=1)
+    r = r.partition("%")[0].strip("[]")
+    return "" if "*" in r else r
+
+
+def is_internet_remote(addr):
+    """True when addr (text from flow_remote) is a publicly routable address; False for loopback, RFC1918, CGNAT
+    100.64/10, link-local, ULA, multicast, reserved, a wildcard or text that is not an address."""
+    try:
+        ip = ipaddress.ip_address(str(addr or ""))
+    except ValueError:
+        return False
+    mapped = getattr(ip, "ipv4_mapped", None)
+    if mapped is not None:
+        ip = mapped
+    return not any(ip in n for n in NET_NOT_INTERNET if n.version == ip.version)
+
+
+def is_tunnel_iface(iface):
+    """True for an interface that only carries another interface's packets (WARP's utun*, ipsec, loopback...)."""
+    return bool(NET_TUNNEL_IFACE_RE.match(str(iface or "").strip()))
 
 
 def darkbloom_subcommand(cmd):
@@ -463,69 +563,33 @@ def classify_net_proc(name, pid, cmd=None, provider_pid=None):
 
 
 def net_block_bytes(rows, dt_s, classify):
-    """Sum one nettop delta block by class -> ({"gpu": [in, out], "sandbox": [in, out]}, notes). rows are
-    parse_nettop_line tuples; classify(name, pid) -> 'gpu' | 'sandbox' | None. A row that moved more than
-    NET_MAX_BPS allows in dt_s is a counter glitch, never traffic: it counts 0 and adds a note."""
-    out = {"gpu": [0, 0], "sandbox": [0, 0]}
+    """Sum one nettop per-flow delta block -> ({"gpu": [in, out], "sandbox": [in, out], "total": [in, out]}, notes).
+    rows are (name, pid, flows) with flows = [(remote, iface, bytes_in, bytes_out)]; classify(name, pid) -> 'gpu' |
+    'sandbox' | None. Only flows whose remote is on the internet count. gpu/sandbox take the process's internet flows
+    on any interface; total takes those not on a tunnel interface (WARP: the outer flow counts, inner utun flows do
+    not), so each byte is counted once. A flow that moved more than NET_MAX_BPS allows in dt_s is a counter glitch:
+    it counts 0 and adds a note."""
+    out = {"gpu": [0, 0], "sandbox": [0, 0], "total": [0, 0]}
     notes = []
     try:
         cap = NET_MAX_BPS * max(float(dt_s), 1.0)
     except (TypeError, ValueError):
         cap = NET_MAX_BPS
-    for name, pid, b_in, b_out in rows:
+    for name, pid, flows in rows:
         cls = classify(name, pid)
-        if cls not in out:
-            continue
-        if b_in > cap or b_out > cap:
-            notes.append(f"net spike dropped ({cls}: {name}.{pid})")
-            continue
-        out[cls][0] += b_in
-        out[cls][1] += b_out
+        for remote, iface, b_in, b_out in flows:
+            if not is_internet_remote(remote):
+                continue
+            if b_in > cap or b_out > cap:
+                notes.append(f"net spike dropped ({cls or 'total'}: {name}.{pid})")
+                continue
+            if cls in out:
+                out[cls][0] += b_in
+                out[cls][1] += b_out
+            if not is_tunnel_iface(iface):
+                out["total"][0] += b_in
+                out["total"][1] += b_out
     return out, notes
-
-
-def parse_netstat_ib(text):
-    """`netstat -ibn` -> {iface: (ibytes, obytes)} for the physical interfaces (NET_IFACE_RE) from each one's
-    <Link#n> row: 64-bit link-layer counters. Columns are read from the right (an interface without a link
-    address has no Address column); a down interface's name ends in '*'. Never raises."""
-    out = {}
-    for ln in str(text or "").splitlines():
-        p = ln.split()
-        if len(p) < 9 or not p[2].startswith("<Link#"):
-            continue
-        name = p[0].rstrip("*")
-        if not NET_IFACE_RE.match(name) or name in out:
-            continue
-        try:
-            out[name] = (int(p[-5]), int(p[-2]))
-        except ValueError:
-            continue
-    return out
-
-
-def iface_bytes_delta(prev, cur, dt_s):
-    """Bytes the physical interfaces moved between two parse_netstat_ib readings dt_s apart -> (in, out, notes).
-    An interface missing from prev counts 0 (no baseline yet); one whose counter went down (reset, re-created)
-    counts 0, never a negative; one that moved more than NET_MAX_BPS allows in dt_s counts 0 with a note."""
-    t_in = t_out = 0
-    notes = []
-    try:
-        cap = NET_MAX_BPS * max(float(dt_s), 1.0)
-    except (TypeError, ValueError):
-        cap = NET_MAX_BPS
-    for name, (c_in, c_out) in sorted((cur or {}).items()):
-        if name not in (prev or {}):
-            continue
-        p_in, p_out = prev[name]
-        d_in, d_out = c_in - p_in, c_out - p_out
-        if d_in < 0 or d_out < 0:
-            continue
-        if d_in > cap or d_out > cap:
-            notes.append(f"net spike dropped (total: {name})")
-            continue
-        t_in += d_in
-        t_out += d_out
-    return t_in, t_out, notes
 
 
 # ---------------------------------------------------------------- non-Darkbloom work detection
