@@ -13,6 +13,10 @@ if [ "${1:-}" = "--delete-data" ]; then
     ""|"/"|"$HOME"|"$HOME/") echo "bloom-ledger: refusing to delete '$DATA' (not a bloom-ledger data folder). Nothing was changed." >&2; exit 1 ;;
   esac
   case "$DATA" in /*) ;; *) echo "bloom-ledger: refusing to delete '$DATA' (not an absolute path). Nothing was changed." >&2; exit 1 ;; esac
+  # A data folder set by hand could be a folder with other files in it (Documents, say): erase only one the server has used.
+  if [ -e "$DATA" ] && [ ! -f "$DATA/index.sqlite" ] && [ ! -f "$DATA/logs/server.log" ]; then
+    echo "bloom-ledger: refusing to delete '$DATA': it has no index.sqlite or logs/server.log, so it is not a bloom-ledger data folder. Nothing was changed." >&2; exit 1
+  fi
 fi
 launchctl bootout "gui/$(id -u)/$LABEL" >/dev/null 2>&1 || true
 rm -f "$PLIST"

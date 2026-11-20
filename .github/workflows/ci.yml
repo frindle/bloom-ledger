@@ -2,6 +2,10 @@ name: ci
 on:
   push:
   pull_request:
+# A newer push to the same branch cancels the older run, so stale runs don't hold the macOS runners.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   test:
     runs-on: ubuntu-latest

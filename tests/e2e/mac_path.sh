@@ -129,6 +129,11 @@ for bad_data in "$FH" "/"; do
   HOME="$FH" sh "$REPO/deploy/mac/uninstall-server.sh" --delete-data >/dev/null 2>&1 && bad "uninstall --delete-data refuses data folder '$bad_data'" || ok "uninstall --delete-data refuses data folder '$bad_data'"
   [ -e "$FH/keep-me" ] && ok "nothing was deleted for '$bad_data'" || bad "nothing was deleted for '$bad_data'"
 done
+OD="$WORK/other-files"; mkdir -p "$OD"; touch "$OD/keep-me"
+rm -f "$FH/Library/LaunchAgents/dev.bloom-ledger.server.plist"
+/usr/libexec/PlistBuddy -c "Add :EnvironmentVariables dict" -c "Add :EnvironmentVariables:BLOOM_DATA string $OD" "$FH/Library/LaunchAgents/dev.bloom-ledger.server.plist" >/dev/null 2>&1
+HOME="$FH" sh "$REPO/deploy/mac/uninstall-server.sh" --delete-data >/dev/null 2>&1 && bad "uninstall --delete-data refuses a folder the server never used" || ok "uninstall --delete-data refuses a folder the server never used"
+[ -e "$OD/keep-me" ] && ok "that folder's files are kept" || bad "that folder's files are kept"
 
 echo; echo "failures: $FAILS"
 [ "$FAILS" = 0 ]
