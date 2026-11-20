@@ -46,11 +46,13 @@ def test_user_choice_is_not_overwritten():
     assert CF.effective_settings(db, "2026-11-01")["values"]["local_timezone"] == "Europe/Berlin"
 
 
-def test_ingest_cutoff_follows_setting():
+def test_ingest_cutoff_follows_setting(monkeypatch):
+    for k in ("INGEST_FROM_TS", "BLOOM_INGEST_FROM"):
+        monkeypatch.delenv(k, raising=False)
     db = mk()
     assert AX.resolve_since(db) == 0
     CF.set_setting(db, "ingest_from", "2026-10-13", "1970-01-01", 1)
-    assert AX.resolve_since(db) == 1791849600 or AX.resolve_since(db) > 0
+    assert AX.resolve_since(db) == 1791849600     # 2026-10-13 00:00 UTC, exactly
 
 
 def test_old_bind_mount_data_with_an_empty_volume_refuses_to_start(tmp_path):

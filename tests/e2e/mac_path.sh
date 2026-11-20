@@ -85,7 +85,9 @@ must "install.sh --uninstall" sh "$WORK/install.sh" --uninstall
 for j in power archive ship manifest find earnings; do
   launchctl print "gui/$UIDN/dev.bloom-ledger.$j" >/dev/null 2>&1 && bad "client job $j gone" || ok "client job $j gone"
 done
-ls "$HOME"/Library/LaunchAgents/dev.bloom-ledger.[!s]* >/dev/null 2>&1 && bad "no client plists left" || ok "no client plists left"
+# every dev.bloom-ledger.* plist except the server's own (the old glob [!s]* also skipped the ship job's)
+left=$(find "$HOME/Library/LaunchAgents" -name 'dev.bloom-ledger.*.plist' ! -name 'dev.bloom-ledger.server.plist' 2>/dev/null)
+[ -z "$left" ] && ok "no client plists left" || { bad "no client plists left"; echo "$left"; }
 [ -e "$APP/client" ] || [ -e "$APP/logs" ] && bad "client folder removed" || ok "client folder removed"
 [ -f "$APP/old-launchagents/com.example.bloom-power-log.plist" ] && ok "old-launchagents kept by uninstall" || bad "old-launchagents kept by uninstall"
 rm -rf "$APP"
