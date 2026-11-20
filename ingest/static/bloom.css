@@ -88,3 +88,12 @@ svg text { fill: var(--muted); font-family: var(--sans); }
 .bl-steps li.done { color: var(--sealed); }
 @media (max-width: 40rem) { .bl-brand { width: 100%; } main { padding-top: 1rem; } h1 { font-size: 1.5rem; } }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
+
+/* narrow screens: nothing may push the page sideways */
+table { display: block; max-width: 100%; overflow-x: auto; }
+textarea, input, select { max-width: 100%; box-sizing: border-box; }
+dd, td, th, li, p { overflow-wrap: anywhere; }
+.scroll { max-width: 100%; min-width: 0; overflow-x: auto; }
+.scroll table { display: table; }
+.entry-form input, .entry-form select { width: 100%; min-width: 0; }
+@media (max-width: 40rem) { .scroll th, .scroll td { white-space: normal; } .scroll table { width: 100%; } }
