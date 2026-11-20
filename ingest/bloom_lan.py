@@ -16,7 +16,15 @@ def is_private_ip(ip):
     except ValueError:
         return False
     a = getattr(a, "ipv4_mapped", None) or a
-    return a.is_loopback or a.is_private
+    return a.is_loopback or a.is_private or a.is_link_local or is_cgnat(a)
+
+
+CGNAT = ipaddress.ip_network("100.64.0.0/10")   # Tailscale and some ISPs: private for our purposes
+
+
+def is_cgnat(a):
+    """True for an IPv4 address in 100.64.0.0/10 (carrier-grade NAT, Tailscale)."""
+    return isinstance(a, ipaddress.IPv4Address) and a in CGNAT
 
 
 def forwarded_ok(headers):

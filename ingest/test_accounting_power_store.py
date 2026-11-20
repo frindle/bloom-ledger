@@ -33,7 +33,7 @@ def test_overlapping_reship_does_not_double_count(tmp_path):
 
 def test_bad_rows_early_rows_and_no_header_fallback(tmp_path):
     db = mk(tmp_path)
-    out = A.store_power(db, "m2", "d" * 64, P, 900, "\n".join([row("2026-10-20T12:00:00Z"), "junk,1", row("2026-10-12T00:00:00Z")]))
+    out = A.store_power(db, "m2", "d" * 64, P, 900, "\n".join([row("2026-10-20T12:00:00Z"), "junk,1", row("2026-10-12T00:00:00Z")]), since_ts=1791849600)
     assert out == (1, 1)
     assert db.execute("SELECT n FROM acct_parse_errors WHERE machine_id='m2'").fetchone()[0] == 1
     assert A.store_power(db, "m2", "e" * 64, P, 1900, row("2026-10-12T00:00:00Z"), since_ts=0) == (1, 0)

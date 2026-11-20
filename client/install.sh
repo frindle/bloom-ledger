@@ -37,17 +37,23 @@ done
 UID_NUM=$(id -u)
 [ "$UID_NUM" -ne 0 ] || die "run it as your normal user, not with sudo"
 
-# private_ipv4 HOST: succeeds for a literal IPv4 address in 10/8, 172.16/12 or 192.168/16.
-private_ipv4() {
-  printf '%s' "$1" | grep -Eq '^([0-9]{1,3}\.){3}[0-9]{1,3}$' || return 1
-  _ifs=$IFS; IFS=.; set -- $1; IFS=$_ifs
-  for _o in "$1" "$2" "$3" "$4"; do [ "$_o" -le 255 ] || return 1; done
-  case "$1" in
-    10) return 0 ;;
-    192) [ "$2" = 168 ] ;;
-    172) [ "$2" -ge 16 ] && [ "$2" -le 31 ] ;;
-    *) return 1 ;;
-  esac
+# acceptable_host HOST: a private/loopback/Tailscale (100.64/10) IPv4 literal, or a hostname. A public IP literal is refused.
+acceptable_host() {
+  if printf '%s' "$1" | grep -Eq '^[0-9.]+$'; then
+    printf '%s' "$1" | grep -Eq '^([0-9]{1,3}\.){3}[0-9]{1,3}$' || return 1
+    _ifs=$IFS; IFS=.; set -- $1; IFS=$_ifs
+    for _o in "$1" "$2" "$3" "$4"; do [ "$_o" -le 255 ] || return 1; done
+    case "$1" in
+      10|127) return 0 ;;
+      169) [ "$2" = 254 ] ;;
+      192) [ "$2" = 168 ] ;;
+      172) [ "$2" -ge 16 ] && [ "$2" -le 31 ] ;;
+      100) [ "$2" -ge 64 ] && [ "$2" -le 127 ] ;;
+      *) return 1 ;;
+    esac
+  else
+    printf '%s' "$1" | grep -Eq '^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$'
+  fi
 }
 
 unload() { launchctl bootout "gui/$UID_NUM/$1" >/dev/null 2>&1 || true; }
@@ -59,10 +65,9 @@ if [ "$UNINSTALL" = 1 ]; then
 fi
 
 case "$BASE" in http://*|https://*) ;; *) die "download this script from your ledger (Settings > Add a machine)" ;; esac
-# The ledger must be reached by its private IPv4 address: a public or DNS name may sit behind a login page that answers
-# pairing with HTML, and the shipper only talks to private IP addresses. Checked before pairing so a code is never used up.
+# The shipper talks to a private address or a hostname, never a public IP literal. Checked before pairing so a code is never used up.
 BASE_HOST=${BASE#*://}; BASE_HOST=${BASE_HOST%%/*}; BASE_HOST=${BASE_HOST%%:*}
-private_ipv4 "$BASE_HOST" || die "'$BASE_HOST' is not a private IPv4 address: use the ledger's LAN URL, e.g. curl -fsSL http://192.168.1.20:8787/install.sh | sh -s -- --pair <code> (Settings > Add a machine shows it)"
+acceptable_host "$BASE_HOST" || die "'$BASE_HOST' is not a private address or a hostname: use the ledger's LAN address or name, e.g. curl -fsSL http://192.168.1.20:8787/install.sh | sh -s -- --pair <code> (Settings > Add a machine shows the exact command)"
 printf '%s' "$CODE" | grep -Eq '^[A-Za-z0-9_-]{12,64}$' || die "pass --pair <code> from Settings > Add a machine"
 
 # Python 3.9 or newer, by absolute path (LaunchAgents get no shell PATH).
@@ -74,11 +79,8 @@ for c in /opt/homebrew/bin/python3 /usr/local/bin/python3 /usr/bin/python3; do
 done
 [ -n "$PY" ] || die "needs Python 3.9+: run 'xcode-select --install' or 'brew install python', then try again"
 
-# The ledger's literal IP (the shipper only talks to private IP addresses, never DNS names).
-IP=$(curl -fsS -o /dev/null -w '%{remote_ip}' "$BASE/v1/hello") || die "can't reach the ledger at $BASE"
-PORT=$(printf '%s' "$BASE" | sed -n 's|^[a-z]*://[^/]*:\([0-9][0-9]*\).*|\1|p')
-[ -n "$PORT" ] || PORT=80
-case "$IP" in *:*) URL="http://[$IP]:$PORT" ;; *) URL="http://$IP:$PORT" ;; esac
+curl -fsS -o /dev/null "$BASE/v1/hello" || die "can't reach the ledger at $BASE: check the address, that the Mac is on the same network (or VPN), and that the server is running"
+URL=${BASE%/}
 
 say "downloading the client from $BASE"
 TMP=$(mktemp -d)

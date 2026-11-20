@@ -50,6 +50,7 @@ import bloom_accounting_config as ACF  # noqa: E402
 import urllib.parse  # noqa: E402
 from zoneinfo import ZoneInfo  # noqa: E402
 import bloom_lan as LAN  # noqa: E402
+import bloom_migrate as MIG  # noqa: E402
 import bloom_alerts as AL  # noqa: E402
 import bloom_daily_push as DP  # noqa: E402
 import bloom_ingest as I  # noqa: E402
@@ -70,6 +71,7 @@ DAILY_PUSH_HOUR = int(os.environ.get("DAILY_PUSH_HOUR", "9") or 9)
 DASHBOARD = Path(__file__).resolve().parent / "dashboard.html"
 MACHINES_PATH = os.environ.get("BLOOM_MACHINES", str(ROOT / "machines.json"))
 SETTINGS = Path(__file__).resolve().parent / "settings.html"
+EXPORT_PATHS = ("/v1/tally/monthly", "/v1/tally/months", "/v1/invoice/monthly", "/v1/invoice/months", "/v1/withdrawals")
 DB_LOCK = threading.Lock()
 
 
@@ -108,6 +110,12 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def do_GET(self):
+        if self.path.split("?", 1)[0] in EXPORT_PATHS:
+            with DB_LOCK:
+                on = MIG.export_api_enabled(self.server.db)
+            if not on:
+                self.reply(404, {"error": "not found"})
+                return
         if self.path == "/healthz":
             with DB_LOCK:
                 self.reply(*I.healthz(ROOT, self.server.db))
@@ -416,6 +424,7 @@ def scheduler(db, stop):
 def main():
     ROOT.mkdir(parents=True, exist_ok=True)
     db = I.open_db(ROOT / "index.sqlite")
+    MIG.run(db, log)
     if not I.load_tokens(TOKENS_PATH):
         log(f"WARN no machine tokens in {TOKENS_PATH}: every POST will be refused")
     stop = threading.Event()

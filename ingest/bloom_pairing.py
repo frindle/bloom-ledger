@@ -110,41 +110,61 @@ def client_version(client_dir=None, lib_dir=None):
     return h.hexdigest()[:12]
 
 
+HOSTNAME_RE = re.compile(r"^(?=.{1,253}$)[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$")
+
+
 def private_ipv4(host):
-    """True when `host` (no port) is a literal IPv4 address in 10/8, 172.16/12 or 192.168/16."""
+    """True when `host` (no port) is a literal IPv4 address in 10/8, 172.16/12, 192.168/16, 100.64/10 (Tailscale) or loopback."""
     try:
         a = ipaddress.IPv4Address(host)
     except ValueError:
         return False
-    return any(a in ipaddress.IPv4Network(n) for n in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"))
+    return a.is_loopback or a.is_link_local or any(a in ipaddress.IPv4Network(n) for n in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10"))
+
+
+def acceptable_host(host):
+    """True for a private/CGNAT/loopback IPv4 literal or a DNS-style hostname (home.example, my-mac.local, a Tailscale name).
+    A public IP literal is refused: use a name or a private address."""
+    if re.fullmatch(r"[0-9.]+", host or ""):
+        return private_ipv4(host)
+    return bool(HOSTNAME_RE.match(host or ""))
 
 
 def _split_hostport(hp):
-    m = re.fullmatch(r"([0-9.]+)(?::([0-9]{1,5}))?", hp or "")
+    m = re.fullmatch(r"([A-Za-z0-9.\-]+)(?::([0-9]{1,5}))?", hp or "")
     return (m.group(1), m.group(2)) if m else (None, None)
 
 
 def lan_base(value):
-    """http://<private IPv4>[:port] from a BLOOM_LEDGER_LAN_URL value (a bare host:port also works), else None."""
+    """http(s)://host[:port] from a BLOOM_LEDGER_LAN_URL value (a bare host:port also works, as http), else None.
+    The host may be a private/CGNAT IPv4 address or a hostname."""
     v = (value or "").strip().rstrip("/")
-    if v.startswith("http://"):
-        v = v[len("http://"):]
-    host, port = _split_hostport(v)
-    return ("http://" + v) if host and private_ipv4(host) else None
+    scheme = "http://"
+    for s in ("http://", "https://"):
+        if v.startswith(s):
+            scheme, v = s, v[len(s):]
+            break
+    host, _port = _split_hostport(v)
+    return (scheme + v) if host and acceptable_host(host) else None
 
 
 def ledger_base(host_header, lan_url=None):
-    """The address Macs must use to reach this ledger: the request's Host when that is a private IPv4 address, else the
-    BLOOM_LEDGER_LAN_URL setting, else None. Never a public or DNS name (it may sit behind a login proxy, which answers
-    pairing with HTML)."""
-    host, _port = _split_hostport((host_header or "").strip())
+    """The address Macs must use to reach this ledger: the request's Host when that is a private/CGNAT IPv4 address, else
+    the BLOOM_LEDGER_LAN_URL setting, else the request's Host when it is a hostname, else None."""
+    host_header = (host_header or "").strip()
+    host, _port = _split_hostport(host_header)
     if host and private_ipv4(host):
-        return "http://" + (host_header or "").strip()
-    return lan_base(lan_url)
+        return "http://" + host_header
+    setting = lan_base(lan_url)
+    if setting:
+        return setting
+    if host and not re.fullmatch(r"[0-9.]+", host) and acceptable_host(host):
+        return "http://" + host_header
+    return None
 
 
-NO_LAN_MESSAGE = ("The ledger does not know its local network address. Open Settings through the ledger's private IP address "
-                  "(for example http://192.168.1.20:8787) or set BLOOM_LEDGER_LAN_URL on the ledger container, then try again.")
+NO_LAN_MESSAGE = ("The ledger does not know the address Macs should use. Open Settings through its private IP address or hostname "
+                  "(for example http://192.168.1.20:8787) or set BLOOM_LEDGER_LAN_URL, then try again.")
 
 
 def install_script(host_header, client_dir=None, lan_url=None):

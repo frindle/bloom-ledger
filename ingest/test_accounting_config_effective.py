@@ -9,7 +9,7 @@ def mk(tmp_path):
 
 def test_defaults_when_nothing_set(tmp_path):
     r = C.effective_settings(mk(tmp_path), "2026-10-20")
-    assert r["values"] == C.DEFAULTS
+    assert r["values"] == C.live_defaults()
     assert [f["key"] for f in r["flags"]] == list(C.FLAGGED)
     assert r["flags"][0]["reason"] == C.FLAGGED[r["flags"][0]["key"]]
 

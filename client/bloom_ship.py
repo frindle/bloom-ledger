@@ -8,6 +8,7 @@ The token is never printed or logged. See the bloom-ledger README."""
 import hashlib
 import http.client
 import ipaddress
+import re
 import json
 import os
 import subprocess
@@ -28,16 +29,25 @@ RUN_LIMIT = 500
 TIMEOUT_S = 30
 
 
+_NAME = re.compile(r"^(?=.{1,253}$)[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$")
+
+
 def is_lan_url(url):
-    """True only for http(s) URLs whose host is a literal private/loopback IP (no DNS, no public hosts)."""
+    """True for http(s) URLs whose host is a private, loopback or CGNAT (Tailscale) IP or a hostname. A public IP literal is refused."""
     try:
         u = urlparse(url)
         if u.scheme not in ("http", "https") or not u.hostname:
             return False
-        ip = ipaddress.ip_address(u.hostname)
+        host = u.hostname
+        if re.fullmatch(r"[0-9.]+", host):
+            ip = ipaddress.ip_address(host)
+            return ip.is_private or ip.is_loopback or ip.is_link_local or ip in ipaddress.ip_network("100.64.0.0/10")
+        if ":" in host:
+            ip = ipaddress.ip_address(host)
+            return ip.is_private or ip.is_loopback or ip.is_link_local
+        return bool(_NAME.match(host))
     except ValueError:
         return False
-    return ip.is_private or ip.is_loopback
 
 
 def ingest_url(home, env=None):
