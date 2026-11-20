@@ -8,6 +8,7 @@
   GET  /            the static dashboard page (dashboard.html)
   GET  /v1/tally/monthly?month=YYYY-MM, /v1/tally/months   read-only monthly books tally (see README)
   GET  /v1/invoice/monthly?month=YYYY-MM, /v1/invoice/months   read-only monthly invoice for the resell-tracker
+  GET  /v1/withdrawals   read-only list of Darkbloom withdrawal requests found in the balance snapshots
   GET  /v1/earnings/series   daily earnings with a running total and a month roll-up (the home page graph)
   GET  /v1/alerts    200 [open alerts]  (machine silent > 30 min, ring snapshot > 12 h)
 
@@ -41,6 +42,7 @@ import bloom_accounting_summary as AS  # noqa: E402
 import bloom_accounting_tax as AT  # noqa: E402
 import bloom_accounting_tally as TL  # noqa: E402
 import bloom_invoice as INV  # noqa: E402
+import bloom_withdrawals as WD  # noqa: E402
 import bloom_earnings_series as ES  # noqa: E402
 import bloom_accounting_settings_form as SF  # noqa: E402
 import bloom_accounting_deprpage as DPG  # noqa: E402
@@ -163,6 +165,16 @@ class Handler(BaseHTTPRequestHandler):
             with DB_LOCK:
                 AX.create_schema(self.server.db)
                 code, ctype, data = INV.invoice_response(self.server.db, self.path, time.time())
+            self.send_response(code)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(data)
+        elif self.path.split("?", 1)[0] == "/v1/withdrawals":
+            with DB_LOCK:
+                AX.create_schema(self.server.db)
+                code, ctype, data = WD.withdrawals_response(self.server.db, self.path, time.time())
             self.send_response(code)
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(data)))
