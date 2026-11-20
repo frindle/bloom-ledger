@@ -50,6 +50,9 @@ TOKEN=$(curl -fsS -X POST $H --data "{\"code\":\"$CODE\"}" "$BASE/v1/pair" | jge
 python3 "$HERE/sample.py" post "$BASE" "$TOKEN" && ok "sample data shipped to the old version" || bad "sample data shipped to the old version"
 python3 "$HERE/sample.py" wait "$BASE" mac-old 90 || true
 before=$(curl -fsS "$BASE/v1/earnings/series" | jget total_micro)
+echo "old series: $(curl -fsS "$BASE/v1/earnings/series" | cut -c1-400)"
+echo "old status: $(curl -fsS "$BASE/v1/status" | cut -c1-600)"
+echo "old settings: $(curl -fsS "$BASE/v1/settings" 2>&1 | cut -c1-600)"
 objs_before=$(find data/objects -type f | wc -l)
 [ "$before" -gt 0 ] && ok "old version serves earnings ($before micro-USD)" || bad "old version serves earnings"
 echo "files in data/objects before: $objs_before"
