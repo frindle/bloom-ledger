@@ -27,9 +27,9 @@ def test_dedupe_across_objects_and_machines(tmp_path):
 
 def test_bad_lines_counted_and_early_rows_skipped(tmp_path):
     db = mk(tmp_path)
-    assert A.INGEST_FROM_TS == 1791849600  # 2026-10-13 UTC
+    CUT = 1791849600  # 2026-10-13 UTC
     payload = "\n".join([row("L1"), "junk", "", row("L2", amt=-5), row("OLD", ts="2026-10-12T23:59:59Z")])
-    assert A.store_earnings(db, "m1", "c" * 64, payload) == (1, 2)
+    assert A.store_earnings(db, "m1", "c" * 64, payload, since_ts=CUT) == (1, 2)
     assert db.execute("SELECT n FROM acct_parse_errors WHERE machine_id='m1' AND sha256=?", ("c" * 64,)).fetchone()[0] == 2
     assert db.execute("SELECT COUNT(*) FROM earnings WHERE ledger_id='OLD'").fetchone()[0] == 0
     assert A.store_earnings(db, "m1", "d" * 64, row("OLD", ts="2026-10-12T23:59:59Z"), since_ts=0) == (1, 0)

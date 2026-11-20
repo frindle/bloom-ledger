@@ -3,7 +3,7 @@ import bloom_lan as L
 
 
 def test_private_and_loopback_addresses():
-    for ip in ("127.0.0.1", "10.0.12.50", "192.168.1.5", "172.16.0.9", "::1", "::ffff:10.1.2.3", " 10.0.0.1 "):
+    for ip in ("127.0.0.1", "10.0.0.50", "192.168.1.5", "172.16.0.9", "::1", "::ffff:10.1.2.3", " 10.0.0.1 "):
         assert L.is_private_ip(ip) is True, ip
 
 

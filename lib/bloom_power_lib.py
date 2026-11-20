@@ -90,7 +90,7 @@ BRIDGES = ((SANDBOX_BRIDGE, SANDBOX_BRIDGE_COLUMNS), (NET_BRIDGE, NET_BRIDGE_COL
 # never its outer ones, so they too count each byte once.
 # The block interval is the one knob that changes nothing about the byte numbers (delta mode: each block holds every
 # flow's bytes since the previous block; the sampler weights by the block's own dt_s) and cuts how often nettop formats
-# and writes a block. 2026-11-12 on the M4 Studio: the long-running per-process nettop used 20-55% of a core while the
+# and writes a block. Measured on an M4 Mac: the long-running per-process nettop used 20-55% of a core while the
 # python sampler used 1-2%, so the cost is nettop's own (60 s trials of other -s values and -t/-m filters showed no
 # difference on a fresh process). Per-flow output is longer (a row per connection): its cost is NOT measured yet.
 NETTOP_INTERVAL_S = 15
@@ -112,11 +112,10 @@ NET_NOT_INTERNET = tuple(ipaddress.ip_network(n) for n in (
 
 # the operator's own LLM work shares this Mac. Its power must NOT be attributed to Darkbloom.
 # Patterns are matched against the full command line of running processes.
+# Generic local-LLM tools are built in. Add your own scripts with BLOOM_OTHER_WORK_PATTERNS (comma-separated regexes).
 OTHER_WORK_PATTERNS = [
-    r"ollama-worker\.py", r"ollama[ -]runner", r"\bollama runner\b", r"mlx_lm", r"mlx-lm",
-    r"code-review-agent\.py", r"llama-server", r"llama\.cpp", r"comfyui", r"pipeline-canary\.py",
-    r"darkbloom_chat\.py", r"darkbloom-coldload", r"bakeoff-runner\.py", r"ollama-dispatch-[a-z]+",
-]
+    r"ollama[ -]runner", r"\bollama runner\b", r"mlx_lm", r"mlx-lm", r"llama-server", r"llama\.cpp", r"comfyui",
+] + [p.strip() for p in os.environ.get("BLOOM_OTHER_WORK_PATTERNS", "").split(",") if p.strip()]
 HEAVY_CPU_PCT = 150.0          # a non-Darkbloom process this busy also counts as "other work"
 IGNORE_HEAVY = ("darkbloom", "macmon", "kernel_task", "WindowServer", "bloom-power")
 DBK_LOCAL_PORT = 8000
@@ -1031,8 +1030,8 @@ def summarize_earnings(entries):
 #           tokens_delta). Measured on real data: these counters did NOT move for 70+ local-endpoint calls
 #           and DID move 1:1 with ledger rows (20 requests = 20 per-job ledger rows;
 #           68,848 tokens = the ledger's completion tokens exactly), so they are network-side only.
-#   own A : a job window from ollama-worker's dispatch-metrics.jsonl (host 127.0.0.1:8000: exact start/end,
-#           completion tokens) or a done queue job in the Darkbloom lane (studio-db): start..log mtime.
+#   own A : a job window from a job-metrics file (BLOOM_WORKER_METRICS) (host 127.0.0.1:8000: exact start/end,
+#           completion tokens) or a done queue job in the Darkbloom lane (lane "darkbloom"): start..log mtime.
 #   own B : a non-Darkbloom process had an ESTABLISHED connection to :8000 during the minute
 #           (sampler flag local-endpoint-client:*).
 #   own C : only the process-name / >150% CPU heuristic (weak: shares the Mac but may not touch Darkbloom).
@@ -1044,11 +1043,15 @@ CLASSES = ("off", "idle", "paid", "own", "both", "unattributed", "network_unpaid
 
 
 def worker_metrics_path():
-    return Path(os.environ.get("BLOOM_WORKER_METRICS") or Path.home() / "bin" / "ollama-worker-logs" / "dispatch-metrics.jsonl")
+    """Optional job-metrics file of your own tooling (BLOOM_WORKER_METRICS); None when not configured."""
+    v = os.environ.get("BLOOM_WORKER_METRICS")
+    return Path(v) if v else None
 
 
 def queue_state_path():
-    return Path(os.environ.get("BLOOM_QUEUE_STATE") or Path.home() / "bin" / "ollama-queue-state.json")
+    """Optional job-queue state file of your own tooling (BLOOM_QUEUE_STATE); None when not configured."""
+    v = os.environ.get("BLOOM_QUEUE_STATE")
+    return Path(v) if v else None
 
 
 def load_own_windows(month, metrics_path=None, queue_path=None):
@@ -1057,7 +1060,7 @@ def load_own_windows(month, metrics_path=None, queue_path=None):
     out = []
     mp = Path(metrics_path) if metrics_path else worker_metrics_path()
     try:
-        fh = open(mp)
+        fh = open(mp) if mp else None
     except OSError:
         fh = None
     if fh:
@@ -1078,12 +1081,12 @@ def load_own_windows(month, metrics_path=None, queue_path=None):
                     continue
     qp = Path(queue_path) if queue_path else queue_state_path()
     try:
-        jobs = json.loads(qp.read_text()).get("jobs", [])
+        jobs = json.loads(qp.read_text()).get("jobs", []) if qp else []
     except (OSError, ValueError, AttributeError):
         jobs = []
     for j in jobs:
         try:
-            if j.get("status") != "done" or "studio-db" not in (j.get("lane"), j.get("host_pref")):
+            if j.get("status") != "done" or "darkbloom" not in (j.get("lane"), j.get("host_pref")):
                 continue
             lp = j.get("log_path") or j.get("live_log_path")
             st = parse_iso(j["launched_at"])

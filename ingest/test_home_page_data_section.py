@@ -33,7 +33,7 @@ def whole_label(out):
 
 
 def test_whole_machine_is_internet_only(tmp_path):
-    """Data moved is internet only (Penn, 2026-11-19). Older all-traffic minutes are left out and the note says how many."""
+    """Data moved is internet only. Older all-traffic minutes are left out and the note says how many."""
     new, note = whole_label(run(tmp_path, dict(SUM, totals=dict(TOT, net_minutes=2800))))
     assert "Whole machine (internet)" in new and "Internet traffic only" in note and "left out" not in note, (new, note)
     mixed, note = whole_label(run(tmp_path, dict(SUM, totals=dict(TOT, net_minutes=600, net_legacy_minutes=2200))))

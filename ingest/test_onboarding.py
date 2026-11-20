@@ -265,7 +265,7 @@ def test_add_machine_sends_the_key_and_shows_the_install_command(tmp_path):
     assert res["errors"] == [], res["errors"]
     (post,) = [f for f in res["fetches"] if f["method"] == "POST"]
     assert json.loads(post["body"]) == {"id": "mini", "darkbloom_key": KEY}
-    cmd = "curl -fsSL http://10.0.12.46:8787/install.sh | sh -s -- --pair CODE_abcdefghij"
+    cmd = "curl -fsSL http://10.0.0.5:8787/install.sh | sh -s -- --pair CODE_abcdefghij"
     assert D.find(res["dom"], "pair-cmd")["text"] == cmd and res["clipboard"] == [cmd]
     assert D.find(res["dom"], "pair-box")["hidden"] is False and D.find(res["dom"], "new-dbk")["value"] == ""
     assert "30 minutes" in D.find(res["dom"], "pair-ttl")["text"] and "key is saved" in D.find(res["dom"], "pair-note")["text"]

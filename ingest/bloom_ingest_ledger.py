@@ -1,5 +1,5 @@
 """Daily hash-chained manifests of the objects the ingest received, per machine, reusing bin/bloom_ledger.py
-make_manifest / write_manifest so the Mac and Unraid chains have one format and one verifier.
+make_manifest / write_manifest so the Mac and server chains have one format and one verifier.
 
 A day's manifest lists every object received that UTC day (server clock), path relative to ROOT:
 objects/<machine_id>/<kind>/<sha256>.obj. Objects are write-once and received_at never changes, so a closed day's

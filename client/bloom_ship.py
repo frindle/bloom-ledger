@@ -1,4 +1,4 @@
-"""Ship the ledger spool to the Unraid ingest over LAN HTTP (stdlib only).
+"""Ship the ledger spool to the ledger server over LAN HTTP (stdlib only).
 
 Each spool object is POSTed to <ingest>/v1/objects with a per-machine bearer token. The ingest stores it under
 its sha256 (idempotent: a resend answers 200), so a crash between POST and move only causes one harmless resend.
@@ -8,6 +8,7 @@ The token is never printed or logged. See the bloom-ledger README."""
 import hashlib
 import http.client
 import ipaddress
+import re
 import json
 import os
 import subprocess
@@ -28,16 +29,43 @@ RUN_LIMIT = 500
 TIMEOUT_S = 30
 
 
+_NAME = re.compile(r"^(?=.{1,253}$)[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$")
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Never follow a redirect: the bearer token must only ever go to the address the user paired with."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+_OPENER = urllib.request.build_opener(_NoRedirect)
+
+
+def open_no_redirect(req, timeout=None):
+    """urlopen that treats a 3xx as an error (HTTPError) instead of following it with the Authorization header."""
+    return _OPENER.open(req, timeout=timeout)
+
+
 def is_lan_url(url):
-    """True only for http(s) URLs whose host is a literal private/loopback IP (no DNS, no public hosts)."""
+    """True for URLs the token may be sent to: any private, loopback, link-local or CGNAT (Tailscale) IP literal, localhost and
+    *.local names over http or https; other hostnames only over https. A public IP literal is refused."""
     try:
         u = urlparse(url)
         if u.scheme not in ("http", "https") or not u.hostname:
             return False
-        ip = ipaddress.ip_address(u.hostname)
+        host = u.hostname
+        if re.fullmatch(r"[0-9.]+", host):
+            ip = ipaddress.ip_address(host)
+            return ip.is_private or ip.is_loopback or ip.is_link_local or ip in ipaddress.ip_network("100.64.0.0/10")
+        if ":" in host:
+            ip = ipaddress.ip_address(host)
+            return ip.is_private or ip.is_loopback or ip.is_link_local
+        if not _NAME.match(host):
+            return False
+        return u.scheme == "https" or host.lower() == "localhost" or host.lower().endswith(".local")
     except ValueError:
         return False
-    return ip.is_private or ip.is_loopback
 
 
 def ingest_url(home, env=None):
@@ -61,7 +89,7 @@ def keychain_token(machine_id, run=subprocess.run):
     return r.stdout.strip() if r.returncode == 0 else ""
 
 
-def post_object(url, token, path, kind, opener=urllib.request.urlopen):
+def post_object(url, token, path, kind, opener=open_no_redirect):
     """POST one spool object. Returns "ok" | "reject" | "auth" | "retry"."""
     try:
         data = Path(path).read_bytes()
@@ -129,7 +157,7 @@ def pending(spool):
     return [(t[0], t[1]) for t in result]
 
 
-def ship_run(spool, url, token, state, now, opener=urllib.request.urlopen, limit=RUN_LIMIT):
+def ship_run(spool, url, token, state, now, opener=open_no_redirect, limit=RUN_LIMIT):
     """One shipping pass. Updates state ({"fails", "next_try"}) in place; returns a summary dict."""
     res = {"ok": 0, "rejected": 0, "stopped": ""}
     if now < state.get("next_try", 0):

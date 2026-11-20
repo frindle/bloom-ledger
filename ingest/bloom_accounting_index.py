@@ -3,6 +3,7 @@ write-once log objects. Money is integer micro-USD or cents. Bookkeeping estimat
 from pathlib import Path
 import csv
 import datetime as dt
+import os
 import json
 import re
 
@@ -108,11 +109,39 @@ def parse_earnings_line(line):
             "completion_tokens": ctok if isinstance(ctok, int) and not isinstance(ctok, bool) else 0}
 
 
-INGEST_FROM_TS = int(dt.datetime(2026, 10, 13, tzinfo=dt.timezone.utc).timestamp())  # default ingest start, 2026-10-13 UTC
+def ingest_from_ts():
+    """Earliest timestamp to ingest. 0 (everything) by default. INGEST_FROM_TS (epoch seconds, the old name) or BLOOM_INGEST_FROM
+    (YYYY-MM-DD, UTC) set a start. A bad value is ignored."""
+    raw = os.environ.get("INGEST_FROM_TS", "").strip()
+    if raw.isdigit():
+        return int(raw)
+    d = os.environ.get("BLOOM_INGEST_FROM", "").strip()
+    try:
+        return int(dt.datetime.strptime(d, "%Y-%m-%d").replace(tzinfo=dt.timezone.utc).timestamp()) if d else 0
+    except ValueError:
+        return 0
 
 
-def store_earnings(db, machine_id, sha, payload, since_ts=INGEST_FROM_TS):
+INGEST_FROM_TS = ingest_from_ts()
+
+
+def resolve_since(db, since_ts=None):
+    """The ingest cut-off: an explicit value, else the environment, else the `ingest_from` setting, else 0 (keep everything)."""
+    if since_ts is not None:
+        return since_ts
+    if os.environ.get("INGEST_FROM_TS", "").strip().isdigit() or os.environ.get("BLOOM_INGEST_FROM", "").strip():
+        return ingest_from_ts()
+    try:
+        import bloom_accounting_config as CF
+        d = CF.effective_settings(db, "9999-12-31")["values"].get("ingest_from")
+        return int(dt.datetime.strptime(d, "%Y-%m-%d").replace(tzinfo=dt.timezone.utc).timestamp()) if d else 0
+    except Exception:
+        return 0
+
+
+def store_earnings(db, machine_id, sha, payload, since_ts=None):
     """Parse an earnings JSONL payload into the earnings table; returns (stored, bad)."""
+    since_ts = resolve_since(db, since_ts)
     stored = bad = 0
     for line in payload.splitlines():
         if not line.strip():
@@ -181,7 +210,7 @@ WRAPPER_FIX_TS = 1793688120  # 2026-11-03T06:42:00Z
 WRAPPER_FALSE_POSITIVES = {"pipeline-canary.py"}
 
 
-# macOS housekeeping daemons that spike CPU on their own schedule. They are not Penn's work, so a minute they
+# macOS housekeeping daemons that spike CPU on their own schedule. They are not the owner's work, so a minute they
 # alone flagged is not other work (the sampler ignores them from 2026-11-03; older rows are recomputed here).
 SYSTEM_DAEMONS = ("corespotlightd", "backupd", "XProtect", "mds", "mdworker", "softwareupdated",
                   "photoanalysisd", "mediaanalysisd", "spotlightknowledged")
@@ -279,10 +308,11 @@ def parse_power_line(line, columns):
         return None
 
 
-def store_power(db, machine_id, sha, path, offset, payload, since_ts=INGEST_FROM_TS):
+def store_power(db, machine_id, sha, path, offset, payload, since_ts=None):
     """Parse a power CSV increment into power_minutes; returns (stored, bad). Header comes from the offset-0 object."""
     db.execute("CREATE TABLE IF NOT EXISTS acct_headers (machine_id TEXT NOT NULL, path TEXT NOT NULL, header TEXT NOT NULL,"
                " PRIMARY KEY (machine_id, path))")
+    since_ts = resolve_since(db, since_ts)
     lines = [ln for ln in payload.splitlines() if ln.strip()]
     if offset == 0 and lines and power_columns(lines[0]):
         db.execute("INSERT OR REPLACE INTO acct_headers (machine_id, path, header) VALUES (?, ?, ?)",

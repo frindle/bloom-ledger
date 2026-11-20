@@ -6,9 +6,9 @@ import pytest
 import bloom_ingest as I
 
 NOW = 1793300000.0
-TOK = "fixture-token-m4max"
-TOKENS = {hashlib.sha256(TOK.encode()).hexdigest(): "m4max",
-          hashlib.sha256(b"fixture-token-m5").hexdigest(): "m5ultra"}
+TOK = "fixture-token-mac-a"
+TOKENS = {hashlib.sha256(TOK.encode()).hexdigest(): "mac-a",
+          hashlib.sha256(b"fixture-token-m5").hexdigest(): "mac-b"}
 
 
 def sha(b):
@@ -36,13 +36,13 @@ def test_post_stores_then_is_idempotent(env):
     body = b'{"m":1}\npayload\n'
     code, obj = I.handle_post(hdrs(body), body, TOKENS, root, db, NOW)
     assert code == 201 and obj == {"sha256": sha(body), "status": "written"}
-    assert (root / "objects" / "m4max" / "log" / f"{sha(body)}.obj").read_bytes() == body
+    assert (root / "objects" / "mac-a" / "log" / f"{sha(body)}.obj").read_bytes() == body
     code2, obj2 = I.handle_post(hdrs(body), body, TOKENS, root, db, NOW + 60)
     assert code2 == 200 and obj2["status"] == "exists"
     assert db.execute("SELECT received_at FROM objects").fetchall() == [(NOW,)], "first receipt time is kept"
     other = b"x\n"
     I.handle_post(hdrs(other, tok="fixture-token-m5"), other, TOKENS, root, db, NOW)
-    assert db.execute("SELECT machine_id FROM objects WHERE sha256 = ?", (sha(other),)).fetchall() == [("m5ultra",)], \
+    assert db.execute("SELECT machine_id FROM objects WHERE sha256 = ?", (sha(other),)).fetchall() == [("mac-b",)], \
         "the machine comes from the token"
 
 

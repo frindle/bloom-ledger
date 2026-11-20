@@ -16,7 +16,7 @@ def test_writes_work_on_the_lan_without_any_key(web):
     status, ctype, body = web("POST", "/v1/settings/machines", b'{"id": "m1"}', headers=H)
     assert status == 201 and ctype == "application/json"
     assert post_object(web, json.loads(body)["token"]) == 201, "an added machine can ingest at once"
-    assert machines(web) == ["m1", "studio"]
+    assert machines(web) == ["m1", "mac1"]
     entry = b'{"kind": "cost", "date": "2026-10-20", "amount_cents": 99, "category": "software"}'
     assert web("POST", "/v1/accounting/entries", entry, headers=H)[0] == 201, "accounting writes need no key either"
 
@@ -30,7 +30,7 @@ def test_guard_rejections_write_nothing(web):
     assert web("POST", "/v1/settings/machines", body, headers=dict(H, **{"CF-Connecting-IP": "8.8.8.8"}))[0] == 403
     for path in ("/v1/settings/machines/profile", "/v1/settings/machines/remove", "/v1/settings/machines/rotate"):
         assert web("POST", path, body)[0] == 403
-    assert machines(web) == ["studio"], "nothing was added"
+    assert machines(web) == ["mac1"], "nothing was added"
 
 
 def test_rotate_and_revoke_cut_off_old_tokens(web):

@@ -21,13 +21,38 @@ import bloom_power_lib as P  # noqa: E402
 SCHEMA = 1
 GENESIS = "0" * 64
 LEDGER_DIRNAME = "ledger"
-DEFAULT_MACHINE_ID = "m4max"
+
+
 RAW_GLOBS = ("power/power-log-*.csv", "earnings-archive/earnings-*.jsonl", "earnings-archive/totals.jsonl")
 TS_KEYS = ("_fetched_at", "at")
 MANIFEST_RE = re.compile(r"^manifest-(\d{4}-\d{2}-\d{2})\.json$")
 
 
 # ---------------------------------------------------------------- helpers (fixed contract)
+LEGACY_MACHINE_ID = "m4max"   # what installs made before pairing existed reported as; they keep it so history stays on one machine
+
+
+def has_existing_install(home):
+    """True when <home> already holds this tool's own files: a ledger.json, written manifests or a spool."""
+    home = Path(home)
+    try:
+        if (home / "ledger.json").exists() or (home / "ledger-spool").exists():
+            return True
+        return any((home / LEDGER_DIRNAME).glob("manifest-*.json"))
+    except OSError:
+        return False
+
+
+def default_machine_id(home=None):
+    """Existing installs (see has_existing_install) whose ledger.json has no machine_id keep "m4max", the old default, so their
+    data does not move to a new machine. A fresh install gets the sanitized host name (a valid machine id); pairing writes one."""
+    if home is not None and has_existing_install(home):
+        return LEGACY_MACHINE_ID
+    import socket
+    name = re.sub(r"[^A-Za-z0-9._-]+", "-", socket.gethostname().split(".")[0]).strip("-._")[:64]
+    return name or "my-mac"
+
+
 def home_dir():
     return Path(os.environ.get("BLOOM_POWER_HOME") or Path.home() / ".darkbloom")
 
@@ -160,7 +185,7 @@ def make_manifest(day, machine_id, files, prev):
 
 
 def resolve_machine_id(home, env=None):
-    """BLOOM_MACHINE_ID env, else "machine_id" in <home>/ledger.json, else 'm4max'."""
+    """BLOOM_MACHINE_ID env, else "machine_id" in <home>/ledger.json, else "m4max" for an install that already has data, else the sanitized host name."""
     if env is None:
         env = os.environ
     val = env.get("BLOOM_MACHINE_ID", "")
@@ -175,7 +200,7 @@ def resolve_machine_id(home, env=None):
             return mid.strip()
     except Exception:
         pass
-    return DEFAULT_MACHINE_ID
+    return default_machine_id(home)
 
 
 

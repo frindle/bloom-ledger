@@ -11,9 +11,37 @@ def flags_and_values():
 
 def test_in_service_default():
     flags, values = flags_and_values()
-    assert CF.DEFAULTS["m4_in_service_date"] == "2026-09-28", CF.DEFAULTS["m4_in_service_date"]
-    assert values["m4_in_service_date"] == "2026-09-28"
-    assert "m4_in_service_date" in flags and "ASSUMED 2026-09-28 (Darkbloom start)" in flags["m4_in_service_date"], flags.get("m4_in_service_date")
+    assert values["m4_in_service_date"] is None
+    assert "m4_in_service_date" in flags and "UNKNOWN" in flags["m4_in_service_date"], flags.get("m4_in_service_date")
+
+
+def test_env_defaults(monkeypatch):
+    monkeypatch.delenv("TZ", raising=False)
+    for k in ("BLOOM_TIMEZONE", "LOCAL_TIMEZONE", "BLOOM_INGEST_FROM", "BLOOM_IN_SERVICE_DATE", "BLOOM_M4_IN_SERVICE_DATE"):
+        monkeypatch.delenv(k, raising=False)
+    d = CF.live_defaults()
+    assert d["local_timezone"] == "UTC" and d["ingest_from"] is None and d["m4_in_service_date"] is None
+    monkeypatch.setenv("BLOOM_TIMEZONE", "America/Los_Angeles")
+    monkeypatch.setenv("BLOOM_M4_IN_SERVICE_DATE", "2026-09-28")  # old-style name still accepted
+    monkeypatch.setenv("BLOOM_INGEST_FROM", "2026-10-13")
+    d = CF.live_defaults()
+    assert (d["local_timezone"], d["m4_in_service_date"], d["ingest_from"]) == ("America/Los_Angeles", "2026-09-28", "2026-10-13")
+    monkeypatch.setenv("BLOOM_TIMEZONE", "Not/AZone")
+    assert CF.default_timezone() == "UTC"  # a bad zone never crashes the server
+
+
+def test_ingest_from_ts_env(monkeypatch):
+    import bloom_accounting_index as AX
+    monkeypatch.delenv("INGEST_FROM_TS", raising=False)
+    monkeypatch.delenv("BLOOM_INGEST_FROM", raising=False)
+    assert AX.ingest_from_ts() == 0
+    monkeypatch.setenv("INGEST_FROM_TS", "1791849600")
+    assert AX.ingest_from_ts() == 1791849600
+    monkeypatch.delenv("INGEST_FROM_TS")
+    monkeypatch.setenv("BLOOM_INGEST_FROM", "2026-10-13")
+    assert AX.ingest_from_ts() == 1791849600
+    monkeypatch.setenv("BLOOM_INGEST_FROM", "junk")
+    assert AX.ingest_from_ts() == 0
 
 
 def test_dep_method_default():

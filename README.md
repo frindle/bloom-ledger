@@ -1,81 +1,111 @@
 # bloom-ledger
 
-Tamper-evident record keeping for Darkbloom provider machines. Machines POST content-addressed objects (power and earnings snapshots) to a small stdlib-only Python server. The server indexes them in SQLite and closes each UTC day into a hash-chained manifest. A web dashboard at `/` shows each machine's last 90 days of manifests, and `/v1/alerts` reports silent machines and stale ring snapshots.
+A small self-hosted ledger for people who run Darkbloom on Macs. It keeps a private, tamper-evident record of what each Mac earned and how much power it used, shows it on a clean dashboard, alerts you when a Mac goes quiet, and works out a tax-year summary (income, power cost, depreciation).
 
-This is bookkeeping data, not tax advice.
+- Reads Darkbloom's files and API. It never changes anything Darkbloom owns.
+- Everything stays on your network. No cloud account, no telemetry.
+- Python standard library only. One container or one launchd service.
 
-## Run (Docker Compose)
+## What you need
 
-```
-git clone https://github.com/frindle/bloom-ledger.git
-cd bloom-ledger
-./update.sh
-```
+| Piece | Where it runs | Needs |
+|---|---|---|
+| Server | Any machine that stays on: a Docker host (amd64 or arm64), or one of your Macs | Docker with Compose v2 and git, or on a Mac: git and Python 3.9+ (`xcode-select --install` gives you both) |
+| Client | Each Mac that runs Darkbloom | macOS, Python 3.9+, Darkbloom already running, same network (or VPN) as the server |
 
-`update.sh` writes a `.env` on first run (git-ignored; edit it to move things), builds the image and starts the container. On Unraid the `.env` points at `/mnt/user/data/Docker/bloom-ledger` for data `/mnt/user/appdata/bloom-ledger/secrets` for optional secret files and `/mnt/user/appdata/bloom-ledger/keys` for keys saved in the web UI; elsewhere it uses `./data` and `./secrets` owned by you. Run `./update.sh` again to update. No secret files are needed to start: machines are added in the web UI.
+BloomGauge is **not** required (see "Optional: BloomGauge"). Port 8787 must be free on the server (change it with `BLOOM_PORT`, see Troubleshooting).
 
-Open `http://<host>:8787/`. Health check: `GET /healthz`. Keep port 8787 on your local network.
+## 1. Start the server
 
-## Add a Mac
+### Option A: Docker (any machine)
 
-1. Open `http://<host>:8787/settings`, type a machine id under **Add a machine** (optionally that Mac's Darkbloom API key, when it uses a different account from the one saved on the page) and press **Add machine**.
-2. Copy the install command it shows and paste it into Terminal on that Mac:
-   ```
-   curl -fsSL http://<host>:8787/install.sh | sh -s -- --pair <code>
-   ```
-   The code works once, for 30 minutes (**New token** on the machine's row makes a fresh one).
-
-The installer needs Python 3.9+ (Xcode command line tools or Homebrew) and installs `macmon` with Homebrew for power readings. It copies the client to `~/Library/Application Support/bloom-ledger`, puts the machine's token in the login Keychain, writes `~/.darkbloom/ledger.json` and loads per-user LaunchAgents (`dev.bloom-ledger.*`): a power logger, the archiver, the shipper, the daily manifest and a finder. Options: `--earnings` also archives that Mac's Darkbloom earnings (one Mac per account), `--replace-old` stops the older `com.*.bloom-{power-log,archive,ship,earnings-archive}` LaunchAgents this client replaces and moves their plists aside (other bloom jobs keep running), `--uninstall` removes the LaunchAgents (logged data stays in `~/.darkbloom`).
-
-If the ledger's address changes, the finder (every 10 minutes) asks the saved address for `/v1/hello`; when that fails it scans the Mac's local /24 for a ledger that answers with the same server id and updates `ledger.json`. It does not use mDNS/Bonjour, which would need host networking for the container. The shipper only talks to private IP addresses.
-
-## Write-off rules
-
-**Settings > Write-off rules** chooses what counts as business use (Darkbloom inference, Sandbox jobs, your own local work, idle time while Darkbloom is online), how power is deducted (metered cost of business-use minutes, the whole bill times the business share, all of it, or none), whether the business share used for depreciation is measured or a fixed percent, and how much of a lease is deducted. Rules are effective-dated: pick the date they apply from and earlier years keep their rules. The defaults count paid Darkbloom and Sandbox minutes only. Reports and the tax packet list the rules they used. Rates and other numbers are on `/settings/accounting`.
-
-## Settings page
-
-`http://<host>:8787/settings` lists the machines and the ledger health, and lets you add a machine (shows its token and the install command once), rotate a token, or remove a machine. Removing a machine revokes its token and hides it; its records stay, because history is write-once and hash-chained, so machines cannot be renamed either. A machine can be added before it reports: it shows as "Not reporting yet" and never raises a silent-machine alert.
-
-Changes need no password: the server only accepts them from a private (LAN) address with a same-origin request, and refuses anything that arrives through a public proxy. That is a guard, not authentication, so never expose port 8787 to the internet. The page also lets you edit each machine's display name, model, leased-or-purchased label (informational; it does not change accounting) and lease, and links to `/settings/accounting`. Machines added here are stored as token hashes in `/data/machines.json`. An optional legacy `secrets/bloom_tokens` file (one `<machine_id> <sha256 of token>` per line) stays read-only and wins if the same id is in both, until you press **New token** for that machine: the machine then moves to `machines.json` with the new token and its old line is ignored. Darkbloom API keys (optional; Darkbloom does not accept them for live status yet, see Layr-Labs/d-inference#1760) are kept in `BLOOM_KEYS_DIR` (default `data/secrets`, mode 600), never shown again and only sent to Darkbloom over https. Reads are open.
-
-Tunnel access: settings writes that arrive through a public Cloudflare tunnel need a verified Cloudflare Access JWT (RS256). The team domain and the application AUD come from the `BLOOM_ACCESS_TEAM_DOMAIN` and `BLOOM_ACCESS_AUD` environment variables (set them in a git-ignored `.env` next to `compose.yaml`); if either is unset, tunnel writes fail closed. Cloudflare Access must stay in front of the hostname. The token's email claim only has to exist; it is not matched against an allowlist, so the Access policy is the access control. The Access policy and the tunnel configuration live outside this repository.
-
-The optional `bloom-earnings` service archives Darkbloom earnings from the same image (`docker compose --profile earnings up -d`) and needs a `secrets/darkbloom_token` file. Run only one earnings poller per Darkbloom account.
-
-## Monthly tally (for the resell-tracker's books)
-
-Read-only, open on the LAN like the other reads; nothing in it is a token, key or secret.
-
-`GET /v1/tally/monthly?month=YYYY-MM` returns `month`, `timezone`, `day_boundary`, `rounding`, `generated_at`, `final`, `hash`, `balances`, `totals` and `machines`. `machines` has one row per machine that has data or an entry that month (every machine record in Settings, too), plus a row with `"shared": true` and `machine_id: null` for entries with no machine and for pre-tracking pay. Each row has `earnings_cents` (all Darkbloom pay, as the tax report's income), `other_income_cents`, `power_cost_cents` (deductible power under the write-off rules in effect), `depreciation_cents` and `lease_cents` (business share), `entries_deductible_cents` and `entries`. Each entry has `id, kind, date, category, vendor, purpose, business_pct, amount_cents, deductible_cents` and `effect`. An entry of kind `receipt` is money received (other income, Schedule C line 6), not a receipt file: it counts in `other_income_cents`, its `deductible_cents` is 0 and its `effect` is `income`. Hardware entries are `capitalized` (depreciated instead) and electricity entries are `metered_power` (already in the metered power cost), both with `deductible_cents` 0. Voided entries are left out. A column is `null` when the month's total cannot be computed (no rate schedule, an owned machine without a cost); legacy single-machine settings put depreciation and lease on the shared row.
-
-`balances` is the latest Darkbloom totals snapshot at or before the month's end, `{as_of, available_cents, withdrawable_cents}`, or `null`. `final` is true only when the month has ended and the newest earnings poll the ledger holds (latest totals snapshot, the server-side form of `archive_settled_until`) is at least the settle window (`SETTLE_S`, 15 minutes) past the month's end. `hash` is the sha256 of the canonical JSON (sorted keys, no spaces) of `machines` and `balances`; if it changes for a month you already booked, post a correction.
-
-`GET /v1/tally/months` lists the months with data as `{month, final, hash}`, oldest first. A missing or malformed `month` (or any unknown query parameter) is a 400.
-
-Conventions: a month is the local calendar month in the `local_timezone` setting effective on its last day (default America/Los_Angeles), from 00:00 on the 1st to 00:00 on the next 1st, the same day boundary as the tax report and packet; entries use their own date. The write-off rules and other settings are those effective on the month's last day (the tax report uses the year's December 31 settings for the whole year, so the two differ only after a mid-year rule change). Money is integer cents: each column's month total is converted from micro-USD to cents once, rounded down, equal to the report's month figure divided by 10000; the machine rows split that total by largest remainder, so they always add up. Twelve monthly tallies therefore sum to within a cent per month of the tax report's year total.
-
-## Monthly invoice (for the resell-tracker's side-hustle P&L)
-
-Read-only and open on the LAN like the tally; no secrets in it. `GET /v1/invoice/monthly?month=YYYY-MM` returns a mock invoice built on that month's tally: `invoice_id` (`BL-YYYY-MM`), `issue_date` (the 1st of the next month), `gross_cents`, `lines` (inference, sandbox, base reward, plus "other earlier pay" when the day rows do not carry all of the pay; they always add up to `gross_cents`), `other_income_cents`, `costs` (metered power, depreciation, lease, purchases; an amount is `null` when it cannot be computed and is listed in `costs_unknown`), `net_cents`, `usage` (`tokens`, `jobs`, `inference_minutes`, `sandbox_minutes`), `final` and `hash`. Net = gross - Darkbloom fees - power - depreciation - lease (plus other income, less hand-entered expenses); the Mac is owned, so its depreciation counts, and the lease line is 0 when no lease is set. The ledger stores what Darkbloom paid out (cost minus its fee): Darkbloom keeps 10% of Sandbox cost and nothing on inference, so `fees_cents` is the month's Sandbox payout divided by 9 and `gross_cents` is payout plus fees (the fee is taken off once, so net equals payout - power - depreciation - lease). The earnings feed carries no per-row fee, which is why it is computed. `usage.vcpu_seconds` is always `null` (the earnings feed has no vCPU seconds). The tally (`schema_version` 3) carries the same `fees_cents` column, so the books and the invoice give one net for every month. `GET /v1/invoice/months` lists `{month, final, hash}` for the months with data. The resell-tracker pulls these and keeps one invoice per month.
-
-## Withdrawal requests (read-only)
-
-`GET /v1/withdrawals` lists the Darkbloom withdrawal requests the balance snapshots show: `{key, requested_at, since, amount_cents, status, refunded_at}`, oldest first. Darkbloom's public API has no payout list, so a request is found the way the API-spend reconcile works: between two consecutive `account_totals` snapshots the withdrawable balance moves by earnings minus the API draws, and a drop the rows do not explain (more than the larger of 5 cents and 2% of earnings plus draws) is money that left, i.e. a withdrawal. If credits (available minus withdrawable) fell by the draws, the draws came out of credits and are not subtracted. Withdrawals are made by hand, several a month, and each ends sent or failed-and-refunded: a window where withdrawable rose by more than expected (same tolerance) is matched to the most recent earlier unrefunded request whose amount is within the larger of 5 cents and 2% of the rise (closest amount wins, then the latest) and marks it `status: "refunded"` with `refunded_at` set to the snapshot that showed the rise (otherwise `"requested"` and null); an unmatched rise is ignored, and a retry is a new request with its own key. A refund and a retry between the same two snapshots net to one smaller drop. Record only: the ledger never calls a Darkbloom write endpoint. Two withdrawals between the same two snapshots read as one, and a card top-up in the same window can make the amount read low; the tracker accepts a hand-entered request for those.
-
-## Earnings graph
-
-The home page's **Earnings over time** section draws `GET /v1/earnings/series` as inline SVG: stacked daily or monthly bars (inference, sandbox, base reward) and a running-total line on the right-hand axis, with a table of the same figures under it. Days are local days in the books' timezone, zero-filled up to today.
-
-## Tests
-
-```
-pip install pytest
-PYTHONPATH=lib python -m pytest ingest
+```sh
+git clone https://github.com/frindle/bloom-ledger.git && cd bloom-ledger
+docker compose up -d --build
 ```
 
-## Darkbloom API spend and the install address
+The first build takes a minute or two. Then open `http://localhost:8787/setup` (on another computer use the server's network address instead of `localhost`, for example `http://192.168.1.20:8787/setup`). Check health any time:
 
-Every 15 minutes the ledger reads `GET /v1/payments/usage` with the account key saved in Settings and stores new rows in `api_spend` (request id is the key; reading stops at the first row already stored). Only rows at or after the `api_spend_from_ts` setting (epoch seconds, set through `/v1/accounting/settings`; env `BLOOM_API_SPEND_FROM_TS` as a fallback) are kept; with neither set nothing is read. A 401/403 is skipped and shown under the key status in Settings. Every usage row is treated as the owner's personal use: an owner draw from the Darkbloom balance, never an expense against Darkbloom income. A card top-up is entered by hand as an entry of type "Card top-up" (kind `contribution`). The monthly tally (`schema_version` 2) adds an `account` block with `api_spend_draw_cents`, `contribution_cents`, items with effect `draw` or `contribution`, and a balance reconcile.
+```sh
+docker compose ps                                           # should say "healthy"
+docker compose exec bloom-ledger python3 /app/server.py doctor
+```
 
-The Add a machine command and `/install.sh` always use a private IPv4 address (10/8, 172.16/12, 192.168/16): the request's Host when it is one, else `BLOOM_LEDGER_LAN_URL`; with neither, a message instead of a command. `install.sh` itself refuses any other address before pairing.
+Optional settings go in a file named `.env` next to `compose.yaml` (copy `.env.example`). Nothing is needed to start.
+
+### Option B: host it on one of your Macs
+
+```sh
+git clone https://github.com/frindle/bloom-ledger.git && cd bloom-ledger
+sh deploy/mac/install-server.sh          # --port 8787 --data DIR are optional
+```
+
+It starts at login and restarts if it stops. **Keep the `bloom-ledger` folder where it is**: the service runs the code from it. Remove it with `sh deploy/mac/uninstall-server.sh` (your data is kept unless you add `--delete-data`).
+
+## 2. Finish setup in the browser
+
+Open `/setup`. It takes three short steps: create a login, set your time zone and electricity price (optional), name your first Mac. It then shows one command to paste on that Mac and waits for data to arrive. Visiting the home page of a brand-new server sends you there by itself.
+
+First setup from your own network needs no code. A browser that reaches the server from outside the local network is asked for a one-time setup code, printed in the server log on the line "Setup code" (`docker compose logs bloom-ledger`, or `~/Library/Application Support/bloom-ledger-server/logs/server.log` on a Mac install; also the file `setup-code` in the data folder). It stops working once the login exists, and setup can never be run again after that.
+
+On a server that already holds history, the setup page shows your time zone and price fields empty: leave them empty to keep what you have. A change made there applies from today on. Tick "Apply to past days too" only if you want past figures recalculated.
+
+The command it shows uses the address you opened the page with. If that was `localhost`, the command only works on the server itself: to add a different Mac, open `/setup` (or Machines) using the server's network address and copy the command from there.
+
+## 3. Add each Mac
+
+On the Mac, paste the command `/setup` (or Machines) shows you:
+
+```sh
+curl -fsSL http://<server>:8787/install.sh | sh -s -- --pair <code>
+```
+
+The installer checks it can reach the server, installs a small background client, stores the machine token in your login Keychain, installs `macmon` with Homebrew if you have it (for power readings), runs `bloom-doctor`, and tells you exactly what to fix if anything is wrong. It is safe to run again (get a fresh code first: Machines > New token). The code works once and expires after 30 minutes.
+
+To remove the client from a Mac: `curl -fsSL http://<server>:8787/install.sh | sh -s -- --uninstall`. That removes the background jobs, the client folder, the Keychain token and the pairing file. Darkbloom's own files are never touched; the not-yet-sent copy in `~/.darkbloom/ledger-spool` is kept unless you add `--delete-data`. Remove the Mac from the ledger's list with Machines > Remove.
+
+Flags: `--server URL`, `--earnings`, `--replace-old`, `--bloomgauge` / `--no-bloomgauge`. The client only **reads** Darkbloom's folder.
+
+## Pages
+
+Home (earnings, power, cost per day) - Status (is every Mac reporting, with a fix for each problem) - Day log - Tax - Machines (add or revoke a Mac) - Accounting and Depreciation settings. Light and dark follow your system; the Theme button overrides it.
+
+## Troubleshooting
+
+Run `doctor` on the server (above) and `python3 "$HOME/Library/Application Support/bloom-ledger/client/bloom-doctor.py"` on a Mac. Each failure prints a `fix:` line. Common ones:
+
+- "port is already allocated" (Docker) or "port 8787 is already in use" (Mac): something else uses 8787. Put `BLOOM_PORT=8788` in `.env` and run `docker compose up -d` again, or use `--port 8788` with the Mac script.
+- "Cannot connect to the Docker daemon": start Docker Desktop (or the Docker service) and rerun.
+- "Ledger is reachable" fails: the Mac cannot see the server. Use the server's local address or name, same network or VPN.
+- "Ledger accepts this Mac's token" fails: make a new pairing code on Machines and rerun the installer.
+- "pairing failed" in the installer: the code was already used or is older than 30 minutes. Make a new one in Machines > New token.
+- Forgot the password: Docker: `docker compose exec bloom-ledger python3 /app/server.py reset-admin`. Mac server: `BLOOM_DATA="$HOME/Library/Application Support/bloom-ledger-server" PYTHONPATH=lib:ingest python3 ingest/server.py reset-admin` from the project folder. Then open `/setup`.
+- Five wrong passwords lock the login for a minute; wait and try again.
+
+## Settings you can change (environment)
+
+See `.env.example`. Notable: `BLOOM_PORT`, `BLOOM_LEDGER_LAN_URL`, `BLOOM_TIMEZONE`, `BLOOM_AUTH` (`off` only on a trusted network), `BLOOM_ENABLE_EXPORT_API`, `ALERT_WEBHOOK_URL`, Pushover keys. Older variable names still work.
+
+## Backup and update
+
+Back up the Docker volumes `bloom-data` and `bloom-keys` (or the data folder on a Mac). Check what exists with `docker volume ls`.
+
+**Update, new install (started with `docker compose up`):** `git pull && docker compose up -d --build`. The database migrates itself.
+
+**Update, install made with `./update.sh` (a `.env` that names `BLOOM_DATA_DIR` and friends, for example on Unraid):** run `./update.sh`. Your data stays in the folders named in `.env`; nothing is copied or moved. `./update.sh` is also safe to run twice. (A plain `git pull && docker compose up -d --build` also keeps those folders now, because compose reads them from `.env`.)
+
+**Update, server on a Mac:** `git pull && sh deploy/mac/install-server.sh` (it restarts the service, data is kept). Macs running the client update themselves by rerunning their install command with a fresh code.
+
+## Optional: BloomGauge
+
+Nothing here needs BloomGauge. If you use it, tick the box in `/setup`, answer yes in the Mac installer, or set `BLOOM_BLOOMGAUGE=1`. Status shows "optional: not set up" until then, and that is never counted as a problem.
+
+## Privacy and security
+
+Writes require login. Reads are open on your network, so do not expose the port to the internet without a reverse proxy or tunnel with its own login. Secrets are never logged.
+
+## Developing
+
+See CONTRIBUTING.md. Tests: `PYTHONPATH=lib python -m pytest ingest`.
+
+Licence: MIT (see LICENSE).

@@ -13,14 +13,14 @@ PROFILE = {"display_name": "Studio", "model": "M4 Max", "lease_start": "2026-01-
 NO_PROFILE = {"display_name": None, "model": None, "lease_start": None, "lease_monthly_cents": None}
 ACQ_TEXT = "LeasedPurchased"
 SETTINGS = {
-    "machines": [{"id": "m4max", "last_seen": 1793299880, "objects": 573, "days_sealed": 12, "status": "reporting", "profile": PROFILE},
+    "machines": [{"id": "mac-a", "last_seen": 1793299880, "objects": 573, "days_sealed": 12, "status": "reporting", "profile": PROFILE},
                  {"id": "mini", "last_seen": None, "objects": 0, "days_sealed": 0, "status": "not-reporting-yet", "profile": NO_PROFILE}],
     "health": {"version": "bloom-ledger/1", "time": 1793300000, "data_bytes": 1572864, "objects": 12},
 }
 
 
 def one(profile=None):
-    return {"machines": [{"id": "m4max", "last_seen": 1793299880, "objects": 5, "days_sealed": 2, "status": "reporting",
+    return {"machines": [{"id": "mac-a", "last_seen": 1793299880, "objects": 5, "days_sealed": 2, "status": "reporting",
                           "profile": PROFILE if profile is None else profile}]}
 
 
@@ -70,7 +70,7 @@ def test_rows_show_every_column(tmp_path):
     res = load(tmp_path)
     assert res["errors"] == [], res["errors"]
     shown = [r[:4] + r[6:] for r in D.rows(res)]  # columns 5-6 carry per-row labels, see test_settings_acquisition
-    assert shown == [["m4max", "", "", ACQ_TEXT, "2 minutes ago", "12", "reporting", "SaveNew tokenRemove"],
+    assert shown == [["mac-a", "", "", ACQ_TEXT, "2 minutes ago", "12", "reporting", "SaveNew tokenRemove"],
                      ["mini", "", "", ACQ_TEXT, "never", "0", "Not reporting yet", "SaveNew tokenRemove"]], D.rows(res)
     first, second = table_row_inputs(res)
     assert [i["value"] for i in first] == ["Studio", "M4 Max", "2026-01-15", "123.45"], first
@@ -124,7 +124,7 @@ def test_save_posts_the_row_profile(tmp_path):
     (post,) = post_calls(res)
     assert post["url"] == "/v1/settings/machines/profile" and post["headers"]["content-type"] == "application/json"
     assert "authorization" not in post["headers"]
-    assert json.loads(post["body"]) == {"id": "m4max", "display_name": "Studio", "model": "M4 Max",
+    assert json.loads(post["body"]) == {"id": "mac-a", "display_name": "Studio", "model": "M4 Max",
                                         "lease_start": "2026-01-15", "lease_monthly_cents": 12345, "acquisition": "leased",
                                         "in_service": None, "purchase_cents": None}
     assert "Saved." in D.rows(res)[0][9]
@@ -134,7 +134,7 @@ def test_save_posts_the_row_profile(tmp_path):
 def test_save_sends_nulls_for_an_empty_profile(tmp_path):
     res = load(tmp_path, one(NO_PROFILE), [{"do": "click", "sel": ".primary"}], **{"/profile": (200, {"ok": True})})
     (post,) = post_calls(res)
-    assert json.loads(post["body"]) == dict(NO_PROFILE, id="m4max", acquisition="leased", in_service=None, purchase_cents=None)
+    assert json.loads(post["body"]) == dict(NO_PROFILE, id="mac-a", acquisition="leased", in_service=None, purchase_cents=None)
 
 
 def test_save_refusals_are_explained_in_the_row(tmp_path):
@@ -156,7 +156,7 @@ def test_remove_needs_two_clicks(tmp_path):
     assert post_calls(res) == [] and "Confirm" in D.rows(res)[0][9], D.rows(res)
     res = load(tmp_path, one(), [click, click], **{"/remove": (200, {"ok": True})})
     (post,) = post_calls(res)
-    assert post["url"] == "/v1/settings/machines/remove" and json.loads(post["body"]) == {"id": "m4max"}
+    assert post["url"] == "/v1/settings/machines/remove" and json.loads(post["body"]) == {"id": "mac-a"}
     assert "authorization" not in post["headers"]
     assert len(get_calls(res)) == 2, "the table reloads after a removal"
     res = load(tmp_path, one(), [click, click], **{"/remove": (404, {})})

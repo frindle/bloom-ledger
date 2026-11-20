@@ -17,10 +17,10 @@ def test_scheduler_writes_manifests_and_no_ots_files(tmp_path):
         "import server\n"
         "root = Path(sys.argv[1])\n"
         "db = I.open_db(root / 'index.sqlite')\n"
-        "I.index_object(db, 'm4max', 'log', 'a' * 64, 1, time.time() - 3 * 86400)\n"
+        "I.index_object(db, 'mac-a', 'log', 'a' * 64, 1, time.time() - 3 * 86400)\n"
         "stop = threading.Event()\n"
         "threading.Thread(target=server.scheduler, args=(db, stop), daemon=True).start()\n"
-        "ledger = root / 'ledger' / 'm4max'\n"
+        "ledger = root / 'ledger' / 'mac-a'\n"
         "for _ in range(80):\n"
         "    time.sleep(0.1)\n"
         "    if len(list(ledger.glob('manifest-*.json'))) >= 3:\n"
@@ -32,7 +32,7 @@ def test_scheduler_writes_manifests_and_no_ots_files(tmp_path):
                PYTHONPATH=os.pathsep.join(sys.path))
     subprocess.run([sys.executable, "-c", code, str(tmp_path)], env=env, cwd=str(tmp_path), timeout=60,
                    capture_output=True)
-    ledger = tmp_path / "ledger" / "m4max"
+    ledger = tmp_path / "ledger" / "mac-a"
     names = sorted(p.name for p in ledger.iterdir()) if ledger.is_dir() else []
     assert len(names) >= 3, names
     assert all(re.fullmatch(r"manifest-\d{4}-\d{2}-\d{2}\.json", n) for n in names), names

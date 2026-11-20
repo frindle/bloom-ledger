@@ -11,6 +11,11 @@ import bloom_accounting_index as AX
 import bloom_accounting_tally as TL
 import bloom_accounting_tax as TX
 
+
+@pytest.fixture(autouse=True)
+def _la_zone(monkeypatch):
+    monkeypatch.setenv("BLOOM_TIMEZONE", "America/Los_Angeles")
+
 SCHED = [{"months": list(range(1, 13)), "periods": [{"start": "00:00", "end": "24:00", "rate": "0.1234"}]}]
 OWNED = {"id": "m4", "ownership": "owned", "in_service": "2026-09-28", "depreciation_method": "straight_line", "purchase_cents": 182600,
          "display_name": "Studio"}

@@ -5,7 +5,7 @@ Built on the monthly tally (bloom_accounting_tally), so the totals are the tally
 write-off rules. This module adds what the tally does not split: the earnings by kind (inference, sandbox, base reward) and the
 usage behind them (tokens, jobs, paid minutes). Money is integer cents.
 
-What the numbers mean (Penn, 2026-11-19):
+What the numbers mean:
 - Net = gross - Darkbloom fees - power - depreciation - lease (plus any other income, less hand-entered expenses). The Mac is
   bought, so its depreciation is a cost; the lease line is whatever the lease settings say (0 when unset).
 - Darkbloom takes 10% of Sandbox cost; inference and base reward carry no fee. The earnings feed (and so the earnings table)

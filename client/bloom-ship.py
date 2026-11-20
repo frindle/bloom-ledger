@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Push the Darkbloom ledger spool to the Unraid bloom-ledger ingest (stdlib only; launchd every 60 s).
+"""Push the Darkbloom ledger spool to the bloom-ledger server (stdlib only; launchd every 60 s).
 
   bloom-ship.py              one pass: POST pending ~/.darkbloom/ledger-spool/<kind>/*.obj, oldest first
   bloom-ship.py --check      print the ingest URL, whether a token was found (never the token), pending count
 
 Config: BLOOM_INGEST_URL, else "ingest_url" in ~/.darkbloom/ledger.json (must be a literal LAN IP URL, e.g.
-http://10.0.7.143:8787). Token: BLOOM_SHIP_TOKEN, else the login Keychain item service "bloom-ledger-ingest",
+http://192.168.1.20:8787). Token: BLOOM_SHIP_TOKEN, else the login Keychain item service "bloom-ledger-ingest",
 account <machine_id>. Machine id as in bloom-manifest.py. See the bloom-ledger README."""
 import argparse
 import fcntl

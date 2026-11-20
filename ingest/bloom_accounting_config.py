@@ -2,11 +2,49 @@
 set falls back to DEFAULTS, and every default that is an assumption is listed in FLAGGED so reports can show it.
 Bookkeeping estimates, not tax advice."""
 import json
+import os
 import re
+from zoneinfo import ZoneInfo
+
+
+def _env_first(*names):
+    """First non-empty environment variable among `names` (new name first, old names after as aliases), else None."""
+    for n in names:
+        v = os.environ.get(n, "").strip()
+        if v:
+            return v
+    return None
+
+
+def _env_date(*names):
+    v = _env_first(*names)
+    return v if v and re.fullmatch(r"\d{4}-\d{2}-\d{2}", v) else None
+
+
+def default_timezone():
+    """BLOOM_TIMEZONE, else TZ when it names a real zone, else UTC. Never raises."""
+    for name in (_env_first("BLOOM_TIMEZONE", "LOCAL_TIMEZONE"), _env_first("TZ")):
+        if name:
+            try:
+                ZoneInfo(name)
+                return name
+            except Exception:
+                continue
+    return "UTC"
+
+
+def live_defaults():
+    """DEFAULTS with the environment applied (BLOOM_TIMEZONE, BLOOM_INGEST_FROM, BLOOM_IN_SERVICE_DATE). Read on each call."""
+    d = dict(DEFAULTS)
+    d["local_timezone"] = default_timezone()
+    d["ingest_from"] = _env_date("BLOOM_INGEST_FROM")
+    d["m4_in_service_date"] = _env_date("BLOOM_IN_SERVICE_DATE", "BLOOM_M4_IN_SERVICE_DATE")
+    return d
+
 
 DEFAULTS = {
-    "ingest_from": "2026-10-13",
-    "m4_in_service_date": "2026-09-28",
+    "ingest_from": None,
+    "m4_in_service_date": None,
     "m5_lease_start": None,
     "m5_lease_monthly_cents": None,
     "m5_lease_months": None,
@@ -19,7 +57,7 @@ DEFAULTS = {
     "rate_adder_usd_per_kwh": None,
     "universal_charge_usd_per_kwh": None,
     "county_fee_pct": None,
-    "local_timezone": "America/Los_Angeles",
+    "local_timezone": "UTC",
     "dep_method": "macrs5",
     "dep_life_months": 60,
     "machines": None,
@@ -28,7 +66,7 @@ DEFAULTS = {
     "api_spend_from_ts": None,
 }
 FLAGGED = {
-    "m4_in_service_date": "ASSUMED 2026-09-28 (Darkbloom start); confirm the real placed-in-service date",
+    "m4_in_service_date": "UNKNOWN: placed-in-service date not set; set it in Settings (or BLOOM_IN_SERVICE_DATE) before using depreciation",
     "rate_schedule": "UNKNOWN: power cost is not computed until the electricity rate schedule is entered in Settings",
     "rate_adder_usd_per_kwh": "UNKNOWN: optional per-kWh adder; none applied until entered",
     "universal_charge_usd_per_kwh": "UNKNOWN: optional per-kWh universal energy charge; none applied until entered",
@@ -61,7 +99,7 @@ def set_setting(db, key, value, effective_from, now):
 def effective_settings(db, on_date):
     """{'values': {key: value}, 'flags': [{'key', 'reason'}]} as of the YYYY-MM-DD `on_date`; defaults fill the gaps."""
     create_settings_table(db)
-    values = dict(DEFAULTS)
+    values = live_defaults()
     set_keys = set()
     rows = db.execute("SELECT key, value_json FROM acct_settings WHERE effective_from <= ? ORDER BY effective_from, created_at, rowid",
                       (on_date,)).fetchall()

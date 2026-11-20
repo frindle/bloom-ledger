@@ -15,7 +15,7 @@ CLIENT = HERE.parent / "client"
 sys.path.insert(0, str(HERE))
 NOW = 1793680600.0
 ME = 501
-DBK = "/Users/penn/.darkbloom/Darkbloom.app/Contents/MacOS/darkbloom start --foreground --model m"
+DBK = "/Users/alice/.darkbloom/Darkbloom.app/Contents/MacOS/darkbloom start --foreground --model m"
 VM = "/System/Library/Frameworks/Virtualization.framework/Versions/A/XPCServices/com.apple.Virtualization.VirtualMachine.xpc"
 VMGPU = ("/System/Library/Frameworks/ParavirtualizedGraphics.framework/Versions/A/XPCServices/"
          "com.apple.gpusw.ParavirtualizedGraphicsGPUTask.xpc/Contents/MacOS/com.apple.gpusw.ParavirtualizedGraphicsGPUTask")
@@ -74,7 +74,7 @@ def test_parse_macmon_parts():
 def test_usage_bucket():
     assert L.usage_bucket(DBK, ME, ME) == "dbk"
     assert L.usage_bucket("darkbloom start", ME, ME) == "dbk"
-    assert L.usage_bucket("/Users/penn/.darkbloom/bin/darkbloom status", ME, ME) == "dbk"
+    assert L.usage_bucket("/Users/alice/.darkbloom/bin/darkbloom status", ME, ME) == "dbk"
     assert L.usage_bucket("/Applications/Darkbloom Monitor.app/Contents/MacOS/Darkbloom Monitor", ME, ME) == "own"
     assert L.usage_bucket("/x/DarkbloomSandbox.app/Contents/MacOS/DarkbloomSandbox", ME, ME) == "sbx"
     assert L.usage_bucket("sandbox-linux-worker --job 1", ME, ME) == "sbx"

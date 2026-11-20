@@ -20,7 +20,7 @@ def sha(text):
 
 @pytest.fixture
 def web(tmp_path, monkeypatch):
-    (tmp_path / "tokens").write_text(f"studio {sha('studio-token')}\n")
+    (tmp_path / "tokens").write_text(f"mac1 {sha('mac1-token')}\n")
     monkeypatch.setattr(SV, "ROOT", tmp_path)
     monkeypatch.setattr(SV, "TOKENS_PATH", str(tmp_path / "tokens"))
     monkeypatch.setattr(SV, "MACHINES_PATH", str(tmp_path / "machines.json"), raising=False)
@@ -39,9 +39,12 @@ def web(tmp_path, monkeypatch):
         c.request(method, path, body=body, headers=h)
         r = c.getresponse()
         out = (r.status, r.getheader("Content-Type"), r.read())
+        call.last_headers = {k.lower(): v for k, v in r.getheaders()}
         c.close()
         return out
 
+    call.db = srv.db
+    call.last_headers = {}
     call.admin_file = tmp_path / "bloom_admin"
     call.lines = lines
     yield call

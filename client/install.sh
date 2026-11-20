@@ -3,11 +3,15 @@
 # shown in Settings > Add a machine is all a new Mac needs:
 #   curl -fsSL http://<ledger>:8787/install.sh | sh -s -- --pair <code>
 # Options:
-#   --pair CODE     pair this Mac (the code from Settings; single use, 30 minutes)
+#   --pair CODE     pair this Mac (the code from Settings; single use, 30 minutes). Without it you are asked.
+#   --server URL    the ledger's address, when you downloaded this file by hand instead of from the ledger
+#   --bloomgauge / --no-bloomgauge   answer the optional BloomGauge question up front (default: asked once, or skipped)
 #   --earnings      also archive this Mac's Darkbloom earnings (one Mac per Darkbloom account is enough)
 #   --replace-old   stop the older LaunchAgents this client replaces (com.*.bloom-{power-log,archive,ship,earnings-archive})
 #                   and move their plists aside (kept, not deleted); other com.*.bloom-* jobs are left running
-#   --uninstall     stop and remove the bloom-ledger LaunchAgents (logged data in ~/.darkbloom is kept)
+#   --uninstall     remove everything this installer put on the Mac: the LaunchAgents, the client folder, the Keychain token
+#                   and ~/.darkbloom/ledger.json. Darkbloom's own files are never touched; the not-yet-sent copy in
+#                   ~/.darkbloom/ledger-spool is kept unless you add --delete-data
 # Installs to ~/Library/Application Support/bloom-ledger, stores the machine token in the login Keychain
 # (service bloom-ledger-ingest), and writes ~/.darkbloom/ledger.json. Nothing runs as root.
 set -eu
@@ -18,7 +22,7 @@ AGENTS="$HOME/Library/LaunchAgents"
 DBK="$HOME/.darkbloom"
 PREFIX="dev.bloom-ledger"
 JOBS="power archive ship manifest earnings find"
-CODE="" EARNINGS=0 REPLACE_OLD=0 UNINSTALL=0
+CODE="" SERVER="" BG="" EARNINGS=0 REPLACE_OLD=0 UNINSTALL=0 DELETE_DATA=0
 
 say() { printf '%s\n' "bloom-ledger: $*"; }
 die() { printf '%s\n' "bloom-ledger: $*" >&2; exit 1; }
@@ -26,9 +30,13 @@ die() { printf '%s\n' "bloom-ledger: $*" >&2; exit 1; }
 while [ $# -gt 0 ]; do
   case "$1" in
     --pair) [ $# -ge 2 ] || die "--pair needs the code from Settings"; CODE="$2"; shift 2 ;;
+    --server) [ $# -ge 2 ] || die "--server needs the ledger address, like http://192.168.1.20:8787"; SERVER="$2"; shift 2 ;;
+    --bloomgauge) BG=yes; shift ;;
+    --no-bloomgauge) BG=no; shift ;;
     --earnings) EARNINGS=1; shift ;;
     --replace-old) REPLACE_OLD=1; shift ;;
     --uninstall) UNINSTALL=1; shift ;;
+    --delete-data) DELETE_DATA=1; shift ;;
     *) die "unknown option $1" ;;
   esac
 done
@@ -37,32 +45,66 @@ done
 UID_NUM=$(id -u)
 [ "$UID_NUM" -ne 0 ] || die "run it as your normal user, not with sudo"
 
-# private_ipv4 HOST: succeeds for a literal IPv4 address in 10/8, 172.16/12 or 192.168/16.
-private_ipv4() {
-  printf '%s' "$1" | grep -Eq '^([0-9]{1,3}\.){3}[0-9]{1,3}$' || return 1
-  _ifs=$IFS; IFS=.; set -- $1; IFS=$_ifs
-  for _o in "$1" "$2" "$3" "$4"; do [ "$_o" -le 255 ] || return 1; done
-  case "$1" in
-    10) return 0 ;;
-    192) [ "$2" = 168 ] ;;
-    172) [ "$2" -ge 16 ] && [ "$2" -le 31 ] ;;
-    *) return 1 ;;
-  esac
+# acceptable_host HOST: a private/loopback/Tailscale (100.64/10) IPv4 literal, or a hostname. A public IP literal is refused.
+acceptable_host() {
+  if printf '%s' "$1" | grep -Eq '^[0-9.]+$'; then
+    printf '%s' "$1" | grep -Eq '^([0-9]{1,3}\.){3}[0-9]{1,3}$' || return 1
+    _ifs=$IFS; IFS=.; set -- $1; IFS=$_ifs
+    for _o in "$1" "$2" "$3" "$4"; do [ "$_o" -le 255 ] || return 1; done
+    case "$1" in
+      10|127) return 0 ;;
+      169) [ "$2" = 254 ] ;;
+      192) [ "$2" = 168 ] ;;
+      172) [ "$2" -ge 16 ] && [ "$2" -le 31 ] ;;
+      100) [ "$2" -ge 64 ] && [ "$2" -le 127 ] ;;
+      *) return 1 ;;
+    esac
+  else
+    printf '%s' "$1" | grep -Eq '^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$'
+  fi
 }
 
 unload() { launchctl bootout "gui/$UID_NUM/$1" >/dev/null 2>&1 || true; }
 
 if [ "$UNINSTALL" = 1 ]; then
   for j in $JOBS; do unload "$PREFIX.$j"; rm -f "$AGENTS/$PREFIX.$j.plist"; done
-  say "removed the LaunchAgents. Logged data in $DBK and the Keychain token were kept."
+  OLD_MID=$(sed -n 's/.*"machine_id": *"\([A-Za-z0-9._-]*\)".*/\1/p' "$DBK/ledger.json" 2>/dev/null | head -n 1)
+  if [ -n "$OLD_MID" ]; then /usr/bin/security delete-generic-password -s bloom-ledger-ingest -a "$OLD_MID" >/dev/null 2>&1 || true; fi
+  # Only what this installer made. $APP/old-launchagents (plists moved aside by --replace-old) stays so they can be restored.
+  rm -rf "$APP/client" "$APP/client.new" "$APP/logs"
+  rmdir "$APP" 2>/dev/null || true
+  rm -f "$DBK/ledger.json"
+  if [ "$DELETE_DATA" = 1 ]; then
+    rm -rf "$DBK/ledger-spool"
+    say "removed the LaunchAgents, the client, the Keychain token and the spool. Darkbloom's own files were not touched."
+  else
+    say "removed the LaunchAgents, the client and the Keychain token. Darkbloom's own files were not touched."
+    [ ! -d "$APP/old-launchagents" ] || say "kept $APP/old-launchagents (the older LaunchAgent plists moved aside by --replace-old)."
+    [ ! -d "$DBK/ledger-spool" ] || say "kept $DBK/ledger-spool (records not yet sent). Add --delete-data to remove it too."
+  fi
+  say "To remove this Mac from the ledger's list, use Machines > Remove on the ledger."
   exit 0
 fi
 
-case "$BASE" in http://*|https://*) ;; *) die "download this script from your ledger (Settings > Add a machine)" ;; esac
-# The ledger must be reached by its private IPv4 address: a public or DNS name may sit behind a login page that answers
-# pairing with HTML, and the shipper only talks to private IP addresses. Checked before pairing so a code is never used up.
+[ -z "$SERVER" ] || BASE=$SERVER
+case "$BASE" in http://*|https://*) ;; *) BASE="" ;; esac
+# ask(VAR, question): read from the keyboard even when this script is piped from curl. Empty when there is no keyboard.
+ask() { if (: </dev/tty) 2>/dev/null && (: >/dev/tty) 2>/dev/null; then printf '%s ' "$2" >/dev/tty; read -r _a </dev/tty || _a=""; else _a=""; fi; eval "$1=\$_a"; }
+if [ -z "$BASE" ]; then
+  ask BASE "Ledger address (like http://192.168.1.20:8787):"
+  case "$BASE" in http://*|https://*) ;; *) die "no ledger address. Rerun with --server http://<ledger>:8787 --pair <code>, or copy the command from the ledger's Setup page" ;; esac
+fi
+BASE=${BASE%/}
+if [ -z "$CODE" ]; then ask CODE "Pairing code (from the ledger's Setup page):"; fi
+# The shipper talks to a private address or a hostname, never a public IP literal. Checked before pairing so a code is never used up.
 BASE_HOST=${BASE#*://}; BASE_HOST=${BASE_HOST%%/*}; BASE_HOST=${BASE_HOST%%:*}
-private_ipv4 "$BASE_HOST" || die "'$BASE_HOST' is not a private IPv4 address: use the ledger's LAN URL, e.g. curl -fsSL http://192.168.1.20:8787/install.sh | sh -s -- --pair <code> (Settings > Add a machine shows it)"
+acceptable_host "$BASE_HOST" || die "'$BASE_HOST' is not a private address or a hostname: use the ledger's LAN address or name, e.g. curl -fsSL http://192.168.1.20:8787/install.sh | sh -s -- --pair <code> (Settings > Add a machine shows the exact command)"
+case "$BASE" in
+  http://*)
+    if ! printf '%s' "$BASE_HOST" | grep -Eq '^[0-9.]+$'; then
+      case "$BASE_HOST" in localhost|*.local) ;; *) die "'$BASE_HOST' over plain http: the token would cross the network unencrypted. Use https://, a private IP address, or a .local name" ;; esac
+    fi ;;
+esac
 printf '%s' "$CODE" | grep -Eq '^[A-Za-z0-9_-]{12,64}$' || die "pass --pair <code> from Settings > Add a machine"
 
 # Python 3.9 or newer, by absolute path (LaunchAgents get no shell PATH).
@@ -74,11 +116,8 @@ for c in /opt/homebrew/bin/python3 /usr/local/bin/python3 /usr/bin/python3; do
 done
 [ -n "$PY" ] || die "needs Python 3.9+: run 'xcode-select --install' or 'brew install python', then try again"
 
-# The ledger's literal IP (the shipper only talks to private IP addresses, never DNS names).
-IP=$(curl -fsS -o /dev/null -w '%{remote_ip}' "$BASE/v1/hello") || die "can't reach the ledger at $BASE"
-PORT=$(printf '%s' "$BASE" | sed -n 's|^[a-z]*://[^/]*:\([0-9][0-9]*\).*|\1|p')
-[ -n "$PORT" ] || PORT=80
-case "$IP" in *:*) URL="http://[$IP]:$PORT" ;; *) URL="http://$IP:$PORT" ;; esac
+curl -fsS -m 10 -o /dev/null "$BASE/v1/hello" || die "can't reach the ledger at $BASE: check the address, that the Mac is on the same network (or VPN), and that the server is running"
+URL=${BASE%/}
 
 say "downloading the client from $BASE"
 TMP=$(mktemp -d)
@@ -195,6 +234,31 @@ else
   unload "$PREFIX.earnings"; rm -f "$AGENTS/$PREFIX.earnings.plist"
 fi
 
+# Optional BloomGauge: never needed. Offered only when the app is found, or asked once on a keyboard; the answer is stored beside the pairing.
+if [ -z "$BG" ]; then
+  if [ -d /Applications/BloomGauge.app ] || [ -d "$HOME/Applications/BloomGauge.app" ]; then
+    ask BG "BloomGauge found. Use it with the ledger? Optional, press Enter to skip [y/N]:"
+    case "$BG" in y|Y|yes) BG=yes ;; *) BG=no ;; esac
+  else
+    BG=no
+  fi
+fi
+"$PY" - "$DBK/ledger.json" "$BG" <<'PYEOF'
+import json, os, sys
+p, bg = sys.argv[1], sys.argv[2] == "yes"
+try:
+    cfg = json.load(open(p))
+except (OSError, ValueError):
+    cfg = {}
+cfg["bloomgauge"] = bg
+open(p + ".tmp", "w").write(json.dumps(cfg, indent=2, sort_keys=True) + "\n")
+os.replace(p + ".tmp", p)
+PYEOF
+HAVE_DB=0
+for _f in "$DBK"/*; do [ -e "$_f" ] && [ "${_f##*/}" != "ledger.json" ] && HAVE_DB=1; done
+if [ "$HAVE_DB" = 0 ]; then
+  say "note: no Darkbloom data found in $DBK yet. Run Darkbloom once on this Mac; the ledger only reads what it writes."
+fi
 say "installed as machine '$MID', shipping to $URL"
-"$PY" "$BIN/bloom-ship.py" --check || true
+"$PY" "$BIN/bloom-doctor.py" || say "some checks above need attention; the lines starting with fix: say what to do. Rerun: $PY \"$BIN/bloom-doctor.py\""
 say "done. Power minutes appear on the ledger within a few minutes. Uninstall: rerun with --uninstall"

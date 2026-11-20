@@ -19,10 +19,10 @@ def add(root, db, mid, kind, body, at):
 
 def test_day_behind_the_chain_head_is_skipped(tmp_path):
     db = I.open_db(tmp_path / "index.sqlite")
-    add(tmp_path, db, "m4max", "log", b"l1", DAY1 + 20)
-    add(tmp_path, db, "m4max", "log", b"l2", DAY2 + 5)
-    assert IL.manifest_run(tmp_path, db, "2026-10-30") == {"m4max": "written"}
-    ldir = tmp_path / "ledger" / "m4max"
+    add(tmp_path, db, "mac-a", "log", b"l1", DAY1 + 20)
+    add(tmp_path, db, "mac-a", "log", b"l2", DAY2 + 5)
+    assert IL.manifest_run(tmp_path, db, "2026-10-30") == {"mac-a": "written"}
+    ldir = tmp_path / "ledger" / "mac-a"
     assert IL.manifest_run(tmp_path, db, "2026-10-29") == {}
     assert not (ldir / "manifest-2026-10-29.json").exists()
     assert L.verify_chain(tmp_path, L.load_manifests(ldir)) == []
@@ -30,11 +30,11 @@ def test_day_behind_the_chain_head_is_skipped(tmp_path):
 
 def test_only_the_machine_that_is_ahead_is_skipped(tmp_path):
     db = I.open_db(tmp_path / "index.sqlite")
-    add(tmp_path, db, "m4max", "log", b"l1", DAY1 + 20)
-    add(tmp_path, db, "m4max", "log", b"l2", DAY2 + 5)
-    assert IL.manifest_run(tmp_path, db, "2026-10-30") == {"m4max": "written"}
-    add(tmp_path, db, "m5ultra", "log", b"x1", DAY1 + 30)   # a late shipper: its first object is on the earlier day
-    assert IL.manifest_run(tmp_path, db, "2026-10-29") == {"m5ultra": "written"}
-    assert not (tmp_path / "ledger" / "m4max" / "manifest-2026-10-29.json").exists()
-    for mid in ("m4max", "m5ultra"):
+    add(tmp_path, db, "mac-a", "log", b"l1", DAY1 + 20)
+    add(tmp_path, db, "mac-a", "log", b"l2", DAY2 + 5)
+    assert IL.manifest_run(tmp_path, db, "2026-10-30") == {"mac-a": "written"}
+    add(tmp_path, db, "mac-b", "log", b"x1", DAY1 + 30)   # a late shipper: its first object is on the earlier day
+    assert IL.manifest_run(tmp_path, db, "2026-10-29") == {"mac-b": "written"}
+    assert not (tmp_path / "ledger" / "mac-a" / "manifest-2026-10-29.json").exists()
+    for mid in ("mac-a", "mac-b"):
         assert L.verify_chain(tmp_path, L.load_manifests(tmp_path / "ledger" / mid)) == [], mid

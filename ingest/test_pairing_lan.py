@@ -12,12 +12,12 @@ INSTALL = PA.CLIENT_DIR / "install.sh"
 MSG = PA.NO_LAN_MESSAGE
 
 
-@pytest.mark.parametrize("host", ["10.0.0.5", "10.255.1.1", "172.16.0.1", "172.31.9.9", "192.168.1.20"])
+@pytest.mark.parametrize("host", ["10.0.0.5", "10.255.1.1", "172.16.0.1", "172.31.9.9", "192.168.1.20", "100.64.0.7", "100.127.255.1", "127.0.0.1"])
 def test_private_ipv4_accepted(host):
     assert PA.private_ipv4(host)
 
 
-@pytest.mark.parametrize("host", ["ledger.example.com", "8.8.8.8", "172.15.0.1", "172.32.0.1", "192.169.0.1", "127.0.0.1", "11.0.0.1",
+@pytest.mark.parametrize("host", ["ledger.example.com", "8.8.8.8", "172.15.0.1", "172.32.0.1", "192.169.0.1", "100.128.0.1", "11.0.0.1",
                                   "::1", "10.0.0", "10.0.0.256", "", "10.0.0.1.example.com"])
 def test_other_hosts_refused(host):
     assert not PA.private_ipv4(host)
@@ -28,9 +28,11 @@ def test_ledger_base_prefers_a_private_host_header_then_the_setting():
     assert PA.ledger_base("192.168.1.20:8787", "http://10.0.0.9:8787") == "http://192.168.1.20:8787"
     assert PA.ledger_base("ledger.example.com", "http://10.0.0.9:8787") == "http://10.0.0.9:8787"
     assert PA.ledger_base("ledger.example.com", "10.0.0.9:8787/") == "http://10.0.0.9:8787"
-    assert PA.ledger_base("ledger.example.com", None) is None
-    assert PA.ledger_base("ledger.example.com", "https://ledger.example.com") is None   # a public setting is not used
-    assert PA.ledger_base("ledger.example.com", "http://8.8.8.8:8787") is None
+    assert PA.ledger_base("ledger.example.com", None) == "http://ledger.example.com"       # a hostname is fine
+    assert PA.ledger_base("ledger.example.com", "https://mac.tail1234.ts.net") == "https://mac.tail1234.ts.net"
+    assert PA.ledger_base("ledger.example.com", "http://100.100.1.2:8787") == "http://100.100.1.2:8787"   # Tailscale
+    assert PA.ledger_base("8.8.8.8:8787", None) is None                                    # a public IP literal is not
+    assert PA.ledger_base("8.8.8.8", "http://8.8.8.8:8787") is None
     assert PA.ledger_base(None, "http://10.0.0.9:8787") == "http://10.0.0.9:8787"
 
 
@@ -41,7 +43,7 @@ def test_install_script_never_carries_the_public_name():
 
 
 def test_install_script_without_any_private_address_explains_itself():
-    text = PA.install_script("ledger.example.com")
+    text = PA.install_script("8.8.8.8:8787")
     assert text.startswith("#!/bin/sh") and "BLOOM_LEDGER_LAN_URL" in text and "exit 1" in text and "BASE=" not in text
     r = subprocess.run(["sh", "-c", text], capture_output=True, text=True)
     assert r.returncode == 1 and "BLOOM_LEDGER_LAN_URL" in r.stderr
@@ -56,18 +58,18 @@ def shell_function(name):
 
 
 @pytest.mark.parametrize("host,ok", [("192.168.1.20", True), ("10.1.2.3", True), ("172.20.0.1", True), ("172.15.0.1", False),
-                                     ("172.32.0.1", False), ("ledger.example.com", False), ("8.8.8.8", False), ("192.169.1.1", False),
-                                     ("127.0.0.1", False), ("", False)])
+                                     ("172.32.0.1", False), ("ledger.example.com", True), ("my-mac.local", True), ("8.8.8.8", False), ("192.169.1.1", False),
+                                     ("100.64.9.9", True), ("127.0.0.1", True), ("", False)])
 def test_install_sh_ip_check(host, ok):
-    r = subprocess.run(["sh", "-c", shell_function("private_ipv4") + '\nprivate_ipv4 "$1"', "sh", host])
+    r = subprocess.run(["sh", "-c", shell_function("acceptable_host") + '\nacceptable_host "$1"', "sh", host])
     assert (r.returncode == 0) is ok
 
 
 def test_install_sh_checks_the_address_before_pairing_and_names_the_lan_url():
     src = INSTALL.read_text()
-    check = src.index('private_ipv4 "$BASE_HOST" || die')
+    check = src.index('acceptable_host "$BASE_HOST" || die')
     assert check < src.index('say "pairing"') and check < src.index("/v1/hello") and check < src.index("/v1/pair")
-    assert "LAN URL" in src[check:check + 400]
+    assert "LAN address" in src[check:check + 400]
     assert subprocess.run(["bash", "-n", str(INSTALL)]).returncode == 0 and subprocess.run(["sh", "-n", str(INSTALL)]).returncode == 0
 
 
@@ -81,10 +83,10 @@ def test_install_sh_refuses_a_public_base_without_contacting_it(tmp_path):
         (bindir / name).write_text("#!/bin/sh\n" + body + "\n")
         (bindir / name).chmod(0o755)
     script = tmp_path / "install.sh"
-    script.write_text(INSTALL.read_text().replace("@@LEDGER_BASE@@", "http://ledger.example.com"))
+    script.write_text(INSTALL.read_text().replace("@@LEDGER_BASE@@", "http://8.8.8.8"))
     r = subprocess.run(["sh", str(script), "--pair", "ABCDEFGHIJKL123"], capture_output=True, text=True,
                        env={"PATH": "%s:/usr/bin:/bin" % bindir, "HOME": str(tmp_path)})
-    assert r.returncode == 1 and "not a private IPv4" in r.stderr and "ledger.example.com" in r.stderr
+    assert r.returncode == 1 and "not a private address" in r.stderr and "8.8.8.8" in r.stderr
     assert not log.exists()
 
 
@@ -133,9 +135,9 @@ def test_public_host_gets_the_lan_url_from_the_setting(web, monkeypatch):
 
 def test_public_host_without_a_setting_gets_a_clear_message_not_a_broken_script(web, monkeypatch):
     monkeypatch.setattr(SV, "LAN_URL", "", raising=False)
-    status, _ctype, raw = web("GET", "/install.sh", headers={"Host": "ledger.example.com"})
+    status, _ctype, raw = web("GET", "/install.sh", headers={"Host": "8.8.8.8:8787"})
     assert status == 200 and b"BLOOM_LEDGER_LAN_URL" in raw and b"BASE=" not in raw
-    assert json.loads(web("GET", "/v1/settings", headers={"Host": "ledger.example.com"})[2])["lan_url"] is None
+    assert json.loads(web("GET", "/v1/settings", headers={"Host": "8.8.8.8:8787"})[2])["lan_url"] is None
 
 
 def _page(tmp_path, lan_url, origin):

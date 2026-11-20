@@ -25,7 +25,7 @@ def test_day_and_period_share(tmp_path):
     rows = [(0, 1, "serving", 0, 50, 0, 0.9),   # Darkbloom work
             (1, 1, "idle", 0, 0, 0, None),      # online, waiting for work
             (2, 1, "off", 0, 0, 0, None),       # Darkbloom off
-            (3, 1, "serving", 1, 0, 0, 0.5),    # Penn's own work while half the minute served inference
+            (3, 1, "serving", 1, 0, 0, 0.5),    # the owner's own work while half the minute served inference
             (4, 0, "serving", 0, 0, 0, None)]   # no power reading
     for i, ok, state, other, tok, sbx, frac in rows:
         db.execute("INSERT INTO power_minutes (machine_id, ts, wh, interval_s, power_ok, dbk_state, other_work, tokens_delta,"

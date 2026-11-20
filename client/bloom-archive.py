@@ -5,7 +5,7 @@
                               of provider.log / power CSVs / earnings jsonl, changed lifecycle files, and an
                               archive-run heartbeat -> ~/.darkbloom/ledger-spool/<kind>/<sha256>.obj
 
-Env: BLOOM_POWER_HOME (default ~/.darkbloom), BLOOM_MACHINE_ID (else ledger.json, else m4max). Reads no secrets;
+Env: BLOOM_POWER_HOME (default ~/.darkbloom), BLOOM_MACHINE_ID (else ledger.json, else the host name). Reads no secrets;
 never touches auth_token, provider.toml or the darkbloom CLI. Exit 0 also when another run holds the lock.
 See the bloom-ledger README."""
 import argparse

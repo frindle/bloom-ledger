@@ -15,11 +15,11 @@ TODAY = I.utc_day(NOW)
 def seed(tmp_path):
     db = I.open_db(tmp_path / "i.sqlite")
     day = lambda n: I.utc_day(NOW - n * 86400)
-    I.index_object(db, "m4max", "log", "a" * 64, 10, NOW - 3 * 86400)
-    I.index_object(db, "m4max", "usage", "b" * 64, 5, NOW - 3 * 86400)
-    I.index_object(db, "m4max", "log", "c" * 64, 7, NOW - 60)
-    ldir = tmp_path / "ledger" / "m4max"
-    man = L.make_manifest(day(3), "m4max", [], None)
+    I.index_object(db, "mac-a", "log", "a" * 64, 10, NOW - 3 * 86400)
+    I.index_object(db, "mac-a", "usage", "b" * 64, 5, NOW - 3 * 86400)
+    I.index_object(db, "mac-a", "log", "c" * 64, 7, NOW - 60)
+    ldir = tmp_path / "ledger" / "mac-a"
+    man = L.make_manifest(day(3), "mac-a", [], None)
     L.write_manifest(ldir, man)
     return db, man
 
@@ -29,7 +29,7 @@ def test_shape(tmp_path):
     got = S.summary(db, tmp_path, NOW)
     assert got["generated_at"] == int(NOW)
     (m,) = got["machines"]
-    assert m["id"] == "m4max" and m["first_day"] == I.utc_day(NOW - 3 * 86400)
+    assert m["id"] == "mac-a" and m["first_day"] == I.utc_day(NOW - 3 * 86400)
     assert m["last_seen"] == int(NOW - 60) and m["objects"] == {"log": 2, "usage": 1}
     assert [d["day"] for d in m["days"]][-1] == TODAY and len(m["days"]) == 4
     assert {"day", "files", "bytes", "state", "chain_hash"} <= set(m["days"][0])
@@ -46,7 +46,7 @@ def test_states(tmp_path):
 
 def test_window_capped_at_90(tmp_path):
     db = I.open_db(tmp_path / "i.sqlite")
-    I.index_object(db, "m4max", "log", "a" * 64, 1, NOW - 200 * 86400)
+    I.index_object(db, "mac-a", "log", "a" * 64, 1, NOW - 200 * 86400)
     days = S.summary(db, tmp_path, NOW)["machines"][0]["days"]
     assert len(days) == 90 and days[-1]["day"] == TODAY
 
@@ -63,6 +63,6 @@ def test_log_serves_dashboard(tmp_path, monkeypatch):
         assert r.status == 200 and r.headers["Content-Type"].startswith("text/html")
         assert b"/v1/summary" in r.read()
         r = urllib.request.urlopen(f"http://127.0.0.1:{srv.server_port}/v1/summary")
-        assert json.loads(r.read())["machines"][0]["id"] == "m4max"
+        assert json.loads(r.read())["machines"][0]["id"] == "mac-a"
     finally:
         srv.shutdown()

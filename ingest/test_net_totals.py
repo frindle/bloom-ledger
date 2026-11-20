@@ -54,7 +54,7 @@ def test_day_rows_and_totals(tmp_path):
 
 
 def test_only_internet_minutes_add_bytes(tmp_path):
-    """Data moved is internet only (Penn, 2026-11-19). An older all-traffic minute (scope 'all' or none) adds no bytes:
+    """Data moved is internet only. An older all-traffic minute (scope 'all' or none) adds no bytes:
     it counts in net_legacy_minutes so the page can say how much was left out."""
     row = {c: 0 for c in NET}
     row["net_minutes"] = row["net_legacy_minutes"] = 0
