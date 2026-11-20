@@ -48,6 +48,7 @@ RESP=$(curl -fsS -X POST $H -H "Origin: $BASE" --data '{"id":"mac-old"}' "$BASE/
 CODE=$(echo "$RESP" | jget pair_code 2>/dev/null)
 TOKEN=$(curl -fsS -X POST $H --data "{\"code\":\"$CODE\"}" "$BASE/v1/pair" | jget token) || { bad "old pairing"; exit 1; }
 python3 "$HERE/sample.py" post "$BASE" "$TOKEN" && ok "sample data shipped to the old version" || bad "sample data shipped to the old version"
+python3 "$HERE/sample.py" wait "$BASE" mac-old 90 || true
 before=$(curl -fsS "$BASE/v1/earnings/series" | jget total_micro)
 objs_before=$(find data/objects -type f | wc -l)
 [ "$before" -gt 0 ] && ok "old version serves earnings ($before micro-USD)" || bad "old version serves earnings"
