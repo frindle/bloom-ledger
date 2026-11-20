@@ -100,6 +100,7 @@ def setup_page(needs_code=False):
 <div id="cmdbox" hidden>
 <p><strong>Paste this on the Mac:</strong></p>
 <pre class="cmd" id="cmd"></pre>
+<p id="selfonly" class="bl-err" hidden>This address only works on the machine running the ledger. For a different Mac, open this page using the ledger's network address (for example http://192.168.1.20:8787/setup) or its name, then get the command again.</p>
 <button type="button" id="copy">Copy</button>
 <p id="wait" class="bl-hint" role="status" aria-live="polite" style="margin-top:1rem">Waiting for first data from this Mac.</p>
 <p class="bl-hint">The code works once and expires in 30 minutes. It usually takes one to three minutes after install for data to arrive.</p>
@@ -137,6 +138,8 @@ $("f2").addEventListener("submit", function(e){
       if (!base) { $("err2").textContent = "The server does not know its own address. Open this page by its IP address or hostname, or set BLOOM_LEDGER_LAN_URL."; return; }
       mac = $("mid").value;
       $("cmd").textContent = "curl -fsSL " + base + "/install.sh | sh -s -- --pair " + r.body.pair_code;
+      var h = (base.split("//")[1] || "").split(":")[0];
+      $("selfonly").hidden = !(h === "localhost" || /^127[.]/.test(h));
       $("cmdbox").hidden = false; $("wait").textContent = "Waiting for first data from " + mac + "."; $("wait").className = "bl-hint";
       clearInterval(timer); timer = setInterval(poll, 3000);
     });

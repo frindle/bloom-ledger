@@ -206,7 +206,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/v1/auth/login":
             with DB_LOCK:
                 if AU.locked(ip):
-                    self.reply(429, {"error": "Too many tries. Wait a minute and try again."})
+                    self.reply(429, {"error": "Too many wrong passwords. Wait a minute, then try again."})
                 elif AU.has_admin(db) and AU.check_login(db, ip, body.get("username"), body.get("password")):
                     tok = AU.new_session(db)
                     self.reply(200, {"ok": True}, {"Set-Cookie": AU.cookie_header(tok, self.secure())})

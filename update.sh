@@ -44,6 +44,13 @@ for kv in "BLOOM_DATA_DIR=$DEF_DATA" "BLOOM_SECRETS_DIR=$DEF_SECRETS" "BLOOM_KEY
     echo "added to .env: $kv"
   fi
 done
+# Remember the host-folder layout in .env too, so a plain `docker compose up -d --build` keeps using the same folders
+# instead of starting on an empty named volume.
+if ! grep -q "^COMPOSE_FILE=" .env; then
+  [ -z "$(tail -c1 .env)" ] || echo >> .env
+  echo "COMPOSE_FILE=compose.yaml:compose.paths.yaml" >> .env
+  echo "added to .env: COMPOSE_FILE=compose.yaml:compose.paths.yaml"
+fi
 set -a; . ./.env; set +a
 mkdir -p "${BLOOM_DATA_DIR:-./data}" "${BLOOM_SECRETS_DIR:-./secrets}" "${BLOOM_KEYS_DIR:-./data/secrets}"
 # Keep data in the host folders named in .env: compose.yaml alone would use Docker named volumes instead.

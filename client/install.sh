@@ -9,7 +9,9 @@
 #   --earnings      also archive this Mac's Darkbloom earnings (one Mac per Darkbloom account is enough)
 #   --replace-old   stop the older LaunchAgents this client replaces (com.*.bloom-{power-log,archive,ship,earnings-archive})
 #                   and move their plists aside (kept, not deleted); other com.*.bloom-* jobs are left running
-#   --uninstall     stop and remove the bloom-ledger LaunchAgents (logged data in ~/.darkbloom is kept)
+#   --uninstall     remove everything this installer put on the Mac: the LaunchAgents, the client folder, the Keychain token
+#                   and ~/.darkbloom/ledger.json. Darkbloom's own files are never touched; the not-yet-sent copy in
+#                   ~/.darkbloom/ledger-spool is kept unless you add --delete-data
 # Installs to ~/Library/Application Support/bloom-ledger, stores the machine token in the login Keychain
 # (service bloom-ledger-ingest), and writes ~/.darkbloom/ledger.json. Nothing runs as root.
 set -eu
@@ -20,7 +22,7 @@ AGENTS="$HOME/Library/LaunchAgents"
 DBK="$HOME/.darkbloom"
 PREFIX="dev.bloom-ledger"
 JOBS="power archive ship manifest earnings find"
-CODE="" SERVER="" BG="" EARNINGS=0 REPLACE_OLD=0 UNINSTALL=0
+CODE="" SERVER="" BG="" EARNINGS=0 REPLACE_OLD=0 UNINSTALL=0 DELETE_DATA=0
 
 say() { printf '%s\n' "bloom-ledger: $*"; }
 die() { printf '%s\n' "bloom-ledger: $*" >&2; exit 1; }
@@ -34,6 +36,7 @@ while [ $# -gt 0 ]; do
     --earnings) EARNINGS=1; shift ;;
     --replace-old) REPLACE_OLD=1; shift ;;
     --uninstall) UNINSTALL=1; shift ;;
+    --delete-data) DELETE_DATA=1; shift ;;
     *) die "unknown option $1" ;;
   esac
 done
@@ -65,7 +68,18 @@ unload() { launchctl bootout "gui/$UID_NUM/$1" >/dev/null 2>&1 || true; }
 
 if [ "$UNINSTALL" = 1 ]; then
   for j in $JOBS; do unload "$PREFIX.$j"; rm -f "$AGENTS/$PREFIX.$j.plist"; done
-  say "removed the LaunchAgents. Logged data in $DBK and the Keychain token were kept."
+  OLD_MID=$(sed -n 's/.*"machine_id": *"\([A-Za-z0-9._-]*\)".*/\1/p' "$DBK/ledger.json" 2>/dev/null | head -n 1)
+  if [ -n "$OLD_MID" ]; then /usr/bin/security delete-generic-password -s bloom-ledger-ingest -a "$OLD_MID" >/dev/null 2>&1 || true; fi
+  rm -rf "$APP"
+  rm -f "$DBK/ledger.json"
+  if [ "$DELETE_DATA" = 1 ]; then
+    rm -rf "$DBK/ledger-spool"
+    say "removed the LaunchAgents, the client, the Keychain token and the spool. Darkbloom's own files were not touched."
+  else
+    say "removed the LaunchAgents, the client and the Keychain token. Darkbloom's own files were not touched."
+    [ ! -d "$DBK/ledger-spool" ] || say "kept $DBK/ledger-spool (records not yet sent). Add --delete-data to remove it too."
+  fi
+  say "To remove this Mac from the ledger's list, use Machines > Remove on the ledger."
   exit 0
 fi
 

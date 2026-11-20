@@ -37,6 +37,7 @@
     nav.appendChild(inner);
     document.body.insertBefore(nav, document.body.firstChild);
     fetch("/v1/auth/me", {credentials: "same-origin"}).then(function (r) { return r.json(); }).then(function (me) {
+      if (me.mode === "setup" && here === "/") { location.replace("/setup"); return; }
       if (me.mode === "setup" && here !== "/setup") {
         var n = el("div", {"class": "bl-notice", role: "status"});
         n.appendChild(document.createTextNode("Setup is not finished. "));
