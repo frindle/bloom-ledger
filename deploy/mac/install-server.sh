@@ -1,14 +1,16 @@
 #!/bin/sh
 # Run the bloom-ledger SERVER on this Mac (no Docker). Starts at login, restarts if it stops, runs as you (never root).
 #   sh deploy/mac/install-server.sh [--port 8787] [--data DIR]
+# Running it again without flags keeps the port and data folder the installed service already uses.
 # Data goes to ~/Library/Application Support/bloom-ledger-server (back it up). Remove with deploy/mac/uninstall-server.sh.
 set -eu
-PORT=8787
+PORT="" DATA=""
 HERE=$(cd "$(dirname "$0")/../.." && pwd)
-DATA="$HOME/Library/Application Support/bloom-ledger-server"
 LABEL="dev.bloom-ledger.server"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 die() { printf '%s\n' "bloom-ledger: $*" >&2; exit 1; }
+# plist_get KEY: the value the installed service was started with (empty when there is none yet).
+plist_get() { /usr/libexec/PlistBuddy -c "Print :EnvironmentVariables:$1" "$PLIST" 2>/dev/null || true; }
 while [ $# -gt 0 ]; do
   case "$1" in
     --port) [ $# -ge 2 ] || die "--port needs a number"; PORT="$2"; shift 2 ;;
@@ -16,6 +18,12 @@ while [ $# -gt 0 ]; do
     *) die "unknown option $1" ;;
   esac
 done
+if [ -f "$PLIST" ]; then
+  [ -n "$PORT" ] || PORT=$(plist_get BLOOM_PORT)
+  [ -n "$DATA" ] || DATA=$(plist_get BLOOM_DATA)
+fi
+[ -n "$PORT" ] || PORT=8787
+[ -n "$DATA" ] || DATA="$HOME/Library/Application Support/bloom-ledger-server"
 [ "$(uname -s)" = "Darwin" ] || die "this script is for macOS. On Linux or Windows use Docker (see the README)."
 [ "$(id -u)" -ne 0 ] || die "run it as your normal user, not with sudo"
 case "$PORT" in ''|*[!0-9]*) die "the port must be a number" ;; esac

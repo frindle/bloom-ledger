@@ -38,8 +38,8 @@ step "1 install the server like the README says"
 must "install-server.sh --port succeeds" sh "$REPO/deploy/mac/install-server.sh" --port "$PORT"
 must "/healthz answers" curl -fsS "$BASE/healthz"
 launchctl print "gui/$UIDN/dev.bloom-ledger.server" >/dev/null 2>&1 && ok "server launchd job is loaded" || bad "server launchd job is loaded"
-must "install-server.sh a second time is harmless" sh "$REPO/deploy/mac/install-server.sh" --port "$PORT"
-must "/healthz still answers" curl -fsS "$BASE/healthz"
+must "install-server.sh a second time, no flags (the README update command), is harmless" sh "$REPO/deploy/mac/install-server.sh"
+must "/healthz still answers on the same port (flags were kept)" curl -fsS "$BASE/healthz"
 
 step "2 /setup and the admin"
 curl -fsS "$BASE/setup" | grep -qi "setup" && ok "/setup page loads" || bad "/setup page loads"
@@ -104,6 +104,24 @@ must "uninstall-server.sh --delete-data" sh "$REPO/deploy/mac/uninstall-server.s
 [ -e "$SDATA" ] && bad "server data removed" || ok "server data removed"
 launchctl list 2>/dev/null | grep -qi bloom && bad "no bloom job in launchctl list" || ok "no bloom job in launchctl list"
 if find "$HOME/Library/LaunchAgents" -iname '*bloom*' 2>/dev/null | grep -q .; then bad "no bloom file in LaunchAgents"; else ok "no bloom file in LaunchAgents"; fi
+
+step "9 a custom data folder survives a no-flag update and is the one --delete-data erases"
+CDATA="$WORK/custom-data"
+must "install with --data" sh "$REPO/deploy/mac/install-server.sh" --port "$PORT" --data "$CDATA"
+must "update with no flags" sh "$REPO/deploy/mac/install-server.sh"
+[ "$(/usr/libexec/PlistBuddy -c 'Print :EnvironmentVariables:BLOOM_DATA' "$HOME/Library/LaunchAgents/dev.bloom-ledger.server.plist")" = "$CDATA" ] && ok "plist still points at the custom folder" || bad "plist still points at the custom folder"
+[ -f "$CDATA/index.sqlite" ] && ok "the custom folder holds the database" || bad "the custom folder holds the database"
+[ -e "$SDATA" ] && bad "the default folder was not recreated" || ok "the default folder was not recreated"
+must "uninstall-server.sh --delete-data" sh "$REPO/deploy/mac/uninstall-server.sh" --delete-data
+[ -e "$CDATA" ] && bad "the configured folder was erased" || ok "the configured folder was erased"
+FH="$WORK/fakehome"; mkdir -p "$FH/Library/LaunchAgents"
+for bad_data in "$FH" "/"; do
+  rm -f "$FH/Library/LaunchAgents/dev.bloom-ledger.server.plist"
+  /usr/libexec/PlistBuddy -c "Add :EnvironmentVariables dict" -c "Add :EnvironmentVariables:BLOOM_DATA string $bad_data" "$FH/Library/LaunchAgents/dev.bloom-ledger.server.plist" >/dev/null 2>&1
+  touch "$FH/keep-me"
+  HOME="$FH" sh "$REPO/deploy/mac/uninstall-server.sh" --delete-data >/dev/null 2>&1 && bad "uninstall --delete-data refuses data folder '$bad_data'" || ok "uninstall --delete-data refuses data folder '$bad_data'"
+  [ -e "$FH/keep-me" ] && ok "nothing was deleted for '$bad_data'" || bad "nothing was deleted for '$bad_data'"
+done
 
 echo; echo "failures: $FAILS"
 [ "$FAILS" = 0 ]
