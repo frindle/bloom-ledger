@@ -221,9 +221,9 @@ def build_tax(db, year, view="business"):
     Keys: year, view, months (month_rows), totals (tax_totals), disclaimer."""
     settings = CF.effective_settings(db, "%d-12-31" % year)["values"]
     start, end = "%d-01-01" % year, "%d-12-31" % year
-    shares = month_shares(year, RP.day_rows(db, settings["local_timezone"], start, end, None, settings), settings)
+    shares = month_shares(year, RP.day_rows(db, CF.ACCOUNTING_TZ, start, end, None, settings), settings)
     entries = AE.current_entries(db)
-    fixed = fixed_by_month(settings, entries, year, shares, dt.date.today().isoformat())
+    fixed = fixed_by_month(settings, entries, year, shares, CF.utc_today())
     extras = {}
     for key, s in shares.items():
         a, b = key + "-01", key + "-31"
@@ -265,7 +265,7 @@ def tax_response(db, path):
     if parts.path not in ("/tax", "/tax/packet", "/v1/accounting/tax"):
         return (404, "application/json", b'{"error": "not found"}')
     try:
-        year = int(q["year"]) if "year" in q else dt.date.today().year
+        year = int(q["year"]) if "year" in q else int(CF.utc_today()[:4])
     except ValueError:
         return bad
     if not 2000 <= year <= 2100 or q.get("view", "business") not in ("business", "hobby") or q.get("format", "json") not in ("json", "csv"):

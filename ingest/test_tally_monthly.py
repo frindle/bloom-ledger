@@ -14,13 +14,13 @@ import bloom_accounting_tax as TX
 
 @pytest.fixture(autouse=True)
 def _la_zone(monkeypatch):
-    monkeypatch.setenv("BLOOM_TIMEZONE", "America/Los_Angeles")
+    monkeypatch.setenv("BLOOM_TIMEZONE", "America/Los_Angeles")   # electricity-rate zone only; months must still be UTC
 
 SCHED = [{"months": list(range(1, 13)), "periods": [{"start": "00:00", "end": "24:00", "rate": "0.1234"}]}]
 OWNED = {"id": "m4", "ownership": "owned", "in_service": "2026-09-28", "depreciation_method": "straight_line", "purchase_cents": 182600,
          "display_name": "Studio"}
 LEASED = {"id": "m5", "ownership": "leased", "lease_start": "2026-10-01", "lease_monthly_cents": 36501, "display_name": "M5"}
-TZ = "America/Los_Angeles"
+TZ = "UTC"
 
 
 def utc(*a):
@@ -124,7 +124,7 @@ def snap(db, ts):
 
 def test_final_flag():
     db = make()
-    end_oct = utc(2026, 11, 1, 7, 0)                                       # local midnight, Nov 1 (PDT)
+    end_oct = utc(2026, 11, 1, 0, 0)                                       # midnight UTC, Nov 1
     assert TL.build_month(db, "2026-10", NOW)["final"] is True             # make() holds a 2026-11-03 snapshot
     assert TL.build_month(db, "2026-10", end_oct - 1)["final"] is False    # month not over yet
     clean = sqlite3.connect(":memory:")

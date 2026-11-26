@@ -16,10 +16,10 @@ RATE_KEYS = ("rate_schedule", "rate_adder_usd_per_kwh", "universal_charge_usd_pe
 
 
 def build(db, today, period, machine=None):
-    """Summary dict for report period `period` (day, week, month, quarter, ytd, last_year) ending at local date `today`."""
+    """Summary dict for report period `period` (day, week, month, quarter, ytd, last_year) ending at UTC date `today`."""
     settings = CF.effective_settings(db, today)["values"]
     start, end = PR.report_range(period, today)
-    rows = RP.day_rows(db, settings["local_timezone"], start, end, machine, settings)
+    rows = RP.day_rows(db, CF.ACCOUNTING_TZ, start, end, machine, settings)
     t = RP.totals(rows)
     entries = [e for e in AE.all_entries(db, start, end) if machine is None or e["machine_id"] in (None, machine)]
     not_set = []
@@ -43,7 +43,7 @@ def build(db, today, period, machine=None):
     machines = machine_breakdown(settings, AE.current_entries(db), start, end)
     reconcile = None
     if machine is None:
-        lo, hi = RP.ts_bounds(settings["local_timezone"], start, end)
+        lo, hi = RP.ts_bounds(CF.ACCOUNTING_TZ, start, end)
         contrib = sum(e["amount_cents"] for e in live if e["kind"] == "contribution" and start <= e["date"] <= end)
         reconcile = SP.reconcile(db, lo, hi, contrib * 10000)
     return {"darkbloom_reconcile": reconcile, "machines": machines, "lease_cents": lease, "depreciation_cents": depr, "depreciation_business_cents": depr_biz, "net_micro": net,

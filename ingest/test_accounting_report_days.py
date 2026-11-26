@@ -1,4 +1,4 @@
-"""Frozen test: bloom_accounting_report.day_rows groups earnings by local day."""
+"""Frozen test: bloom_accounting_report.day_rows groups earnings by day in the zone it is given (the call sites pass UTC)."""
 import datetime as dt
 import sqlite3
 

@@ -38,7 +38,24 @@ def test_day_detail_lists_every_entry_and_minute():
     assert (h0["gpu_micro"], h0["sandbox_micro"]) == (300, 1000) and d["hours"][1]["gpu_micro"] == 200
 
 
-def test_day_detail_respects_local_timezone():
+def test_day_detail_is_a_utc_day_near_midnight():
+    # T0 is exactly 00:00:00Z: it belongs to Nov 3 in UTC and nothing belongs to Nov 2.
+    assert RP.day_detail(_db(), "UTC", "2026-11-02")["earnings"] == []
+    d = RP.day_detail(_db(), "UTC", "2026-11-03")
+    assert d["earnings"][0]["time"] == "00:00:05" and len(d["minutes"]) == 5
+
+
+def test_day_detail_route_ignores_the_electricity_zone(web):  # noqa: F811
+    import bloom_accounting_config as CF
+    AX.create_schema(web.db)
+    CF.set_setting(web.db, "local_timezone", "America/Los_Angeles", "1970-01-01", 1)
+    web.db.execute("INSERT INTO earnings VALUES ('z', ?, 5, 'job', 'm', 'j', 1, 'm')", (T0 + 5,))
+    web.db.commit()
+    body = json.loads(web("GET", "/v1/accounting/day?date=2026-11-03")[2])
+    assert [e["time"] for e in body["earnings"]] == ["00:00:05"]
+
+
+def test_day_detail_other_zone_still_supported_by_the_function():
     d = RP.day_detail(_db(), "America/Los_Angeles", "2026-11-02")
     assert d["earnings"][0]["time"] == "16:00:05" and len(d["minutes"]) == 5
 

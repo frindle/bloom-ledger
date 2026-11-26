@@ -1,6 +1,6 @@
-"""Accounting report rows: per local day earnings and tokens from the indexed earnings table.
+"""Accounting report rows: per UTC day earnings and tokens from the indexed earnings table.
 
-Days are local dates (settings local_timezone); money is integer micro-USD. Bookkeeping estimates, not tax advice."""
+Days are UTC dates (Darkbloom's accounting day; callers pass tz="UTC"); money is integer micro-USD. Bookkeeping estimates, not tax advice."""
 import datetime as dt
 from zoneinfo import ZoneInfo
 
@@ -9,9 +9,16 @@ import bloom_accounting_writeoff as WO
 from bloom_accounting_index import NET_COLUMNS, USAGE_COLUMNS
 
 
-def ts_bounds(tz, start, end):
-    """(first_ts, end_ts) UTC epoch seconds covering local dates start..end inclusive (end_ts is exclusive)."""
-    zone = ZoneInfo(tz)
+def rate_zone(settings):
+    """The zone electricity prices are read in: the settings' local_timezone (the meter's wall clock), else UTC."""
+    return (settings or {}).get("local_timezone") or "UTC"
+
+
+def ts_bounds(day_tz, start, end):
+    """(first_ts, end_ts) UTC epoch seconds covering dates start..end inclusive in `day_tz` (end_ts is exclusive).
+
+    Callers pass CF.ACCOUNTING_TZ (UTC), the accounting day. It is never the electricity-rate zone."""
+    zone = ZoneInfo(day_tz)
     s = dt.datetime.combine(dt.date.fromisoformat(start), dt.time(), zone)
     e = dt.datetime.combine(dt.date.fromisoformat(end) + dt.timedelta(days=1), dt.time(), zone)
     return int(s.timestamp()), int(e.timestamp())
@@ -70,19 +77,22 @@ def _blank_row(d, settings):
             **{c: 0 for c in NET_COLUMNS}, "net_minutes": 0, "net_legacy_minutes": 0, "usage_minutes": 0, "dbk_mj": 0, "sbx_mj": 0, "own_mj": 0}
 
 
-def day_rows(db, tz, start, end, machine=None, settings=None):
-    """Per local day totals, split into the Darkbloom GPU and Sandbox streams, newest first.
+def day_rows(db, day_tz, start, end, machine=None, settings=None):
+    """Per day totals, split into the Darkbloom GPU and Sandbox streams, newest first.
+
+    Days are cut in `day_tz` (normally UTC); each minute's price is read in rate_zone(settings), the local clock.
 
     `machine` (optional) limits to earnings whose source_machine matches. A stream's power cost is the cost of the
     minutes that stream was working; idle and other-work minutes stay in the day's total cost only."""
-    lo, hi = ts_bounds(tz, start, end)
+    lo, hi = ts_bounds(day_tz, start, end)
+    rate_tz = rate_zone(settings)
     sql = "SELECT ts, micro_usd, completion_tokens, kind FROM earnings WHERE ts >= ? AND ts < ?"
     args = [lo, hi]
     if machine:
         sql += " AND source_machine = ?"
         args.append(machine)
     days = {}
-    zone = ZoneInfo(tz)
+    zone = ZoneInfo(day_tz)
     rules = WO.rules(settings)
 
     def row_for(d):
@@ -108,7 +118,7 @@ def day_rows(db, tz, start, end, machine=None, settings=None):
         row["minutes"] += 1
         c = None
         if settings and row["cost_micro"] is not None:
-            c = RT.interval_cost(settings, ts, wh or 0.0)
+            c = RT.interval_cost(settings, ts, wh or 0.0, rate_tz)
             row["cost_micro"] = None if c is None else row["cost_micro"] + c["total_micro"]
         st = minute_stream(ok, tok, other, sbx)
         e = WO.usage_energy(usage)
@@ -130,12 +140,14 @@ def day_rows(db, tz, start, end, machine=None, settings=None):
     return [days[d] for d in sorted(days, reverse=True)]
 
 
-def day_detail(db, tz, date, machine=None, settings=None):
-    """One local day's individual logs: every earnings entry, every power minute, and hourly roll-ups.
+def day_detail(db, day_tz, date, machine=None, settings=None):
+    """One day's individual logs: every earnings entry, every power minute, and hourly roll-ups.
 
-    Times are given as local "HH:MM" strings so the page needs no time-zone code."""
-    lo, hi = ts_bounds(tz, date, date)
-    zone = ZoneInfo(tz)
+    Times and hour buckets are in `day_tz` (UTC), so the page needs no time-zone code; each minute's cost still uses the
+    local-clock price (rate_zone(settings))."""
+    lo, hi = ts_bounds(day_tz, date, date)
+    zone = ZoneInfo(day_tz)
+    rate_tz = rate_zone(settings)
     sql = "SELECT ts, micro_usd, completion_tokens, kind, model, job_id FROM earnings WHERE ts >= ? AND ts < ?"
     args = [lo, hi]
     if machine:
@@ -162,7 +174,7 @@ def day_detail(db, tz, date, machine=None, settings=None):
     for ts, wh, ok, tok, other, sbx, state in db.execute(psql + " ORDER BY ts", pargs):
         local = dt.datetime.fromtimestamp(ts, zone)
         st = minute_stream(ok, tok, other, sbx)
-        c = RT.interval_cost(settings, ts, wh or 0.0) if settings and ok else None
+        c = RT.interval_cost(settings, ts, wh or 0.0, rate_tz) if settings and ok else None
         cost = None if c is None else c["total_micro"]
         minutes.append({"ts": ts, "time": local.strftime("%H:%M"), "slot": local.hour * 60 + local.minute,
                         "stream": st, "wh": round(wh or 0.0, 3) if ok else 0.0, "cost_micro": cost,
@@ -175,7 +187,7 @@ def day_detail(db, tz, date, machine=None, settings=None):
                 h["cost_micro"] = None if cost is None else h["cost_micro"] + cost
     for h in hours:
         h["wh"] = round(h["wh"], 3)
-    return {"date": date, "tz": tz, "earnings": earnings, "minutes": minutes,
+    return {"date": date, "tz": day_tz, "earnings": earnings, "minutes": minutes,
             "hours": [h for h in hours if h["earned_micro"] or any(h[k] for k in ("gpu", "sandbox", "other", "idle", "gap"))]}
 
 

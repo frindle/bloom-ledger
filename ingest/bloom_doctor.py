@@ -52,7 +52,7 @@ def checks(root, tokens_path, machines_path, port, now):
             add("PASS" if mode in ("login", "off") else "WARN", "Admin login", {"login": "admin created", "off": "BLOOM_AUTH=off", "lan": "no admin yet (local network only)", "setup": "not created yet"}[mode],
                 "Open http://<this server>:%s/setup and create the admin account." % port)
             tz = ACF.effective_settings(db, "9999-12-31")["values"]
-            add("PASS" if tz["local_timezone"] else "FAIL", "Time zone", tz["local_timezone"], "Set it in /setup or Accounting settings.")
+            add("PASS" if tz["local_timezone"] else "FAIL", "Electricity-rate time zone", tz["local_timezone"], "Only used for time-of-use power prices; days and months are always UTC.")
             add("PASS" if tz.get("rate_schedule") else "INFO", "Electricity price", "set" if tz.get("rate_schedule") else "not set (power cost is not computed)",
                 "Optional: enter it under Accounting settings.")
             add("INFO", "Export API (resell tracker)", "on" if MIG.export_api_enabled(db) else "off", "Set BLOOM_ENABLE_EXPORT_API=1 to turn it on.")

@@ -1,6 +1,7 @@
 """First run, setup, login, write protection and status, through a real server with the default (login on) mode. Fake data."""
 import json
 
+import bloom_accounting_config as CF
 import bloom_auth as AU
 from server_fixture import web  # noqa: F401
 
@@ -158,7 +159,7 @@ def test_upgraded_setup_changes_apply_from_today_only(web):
     assert 'id="retro" style="min-height:auto" checked' not in page          # off by default
     s, _o = post(web, "/v1/auth/setup", {"username": "me", "password": "longenough1", "timezone": "Asia/Tokyo", "rate": "0.30"})
     assert s == 200 and AU.has_admin(web.db)
-    today = dt.date.today().isoformat()
+    today = CF.utc_today()          # settings rows are dated by the UTC day
     assert _tz(web, "2026-01-01") == "America/Los_Angeles" and _tz(web, "1999-01-01") == "America/Los_Angeles"
     assert _tz(web, today) == "Asia/Tokyo"
     rows = _rows(web)
@@ -187,7 +188,7 @@ def test_setup_with_a_time_zone_already_on_record_applies_forward_only(web):
     CF.set_setting(web.db, "local_timezone", "Europe/Berlin", "2026-01-01", 1)
     s, _o = post(web, "/v1/auth/setup", {"username": "me", "password": "longenough1", "timezone": "Asia/Tokyo"})
     assert s == 200
-    assert _tz(web, "2026-06-01") == "Europe/Berlin" and _tz(web, dt.date.today().isoformat()) == "Asia/Tokyo"
+    assert _tz(web, "2026-06-01") == "Europe/Berlin" and _tz(web, CF.utc_today()) == "Asia/Tokyo"
 
 
 def test_fresh_install_setup_still_writes_its_choices(web):

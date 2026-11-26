@@ -4,7 +4,6 @@ The page edits the depreciation fields of the "machines" accounting setting (met
 life, salvage, disposal, business use by year, a manual schedule and a separate state book) and saves the whole list as one
 new effective-dated row through POST /v1/accounting/settings. Elections are recorded, never chosen here. Bookkeeping, not
 tax advice: confirm methods and elections with a CPA."""
-import datetime as dt
 
 import bloom_accounting_config as CF
 import bloom_accounting_entries as AE
@@ -46,7 +45,7 @@ def depreciation_data(db, profiles=None, today=None):
     True). assets: per owned machine with a basis {"id", "name", "basis_cents", "bonus_in_force_bp", "federal", "state",
     "disposal", "flags"}; machines without a basis appear with basis_cents None and no schedule. mid_quarter: the 40% test
     for each in-service year."""
-    today = today or dt.date.today().isoformat()
+    today = today or CF.utc_today()
     settings = CF.effective_settings(db, "9999-12-31")["values"]
     machines = settings.get("machines") or []
     seeded = not machines

@@ -84,7 +84,7 @@ Run `doctor` on the server (above) and `python3 "$HOME/Library/Application Suppo
 
 ## Settings you can change (environment)
 
-See `.env.example`. Notable: `BLOOM_PORT`, `BLOOM_LEDGER_LAN_URL`, `BLOOM_TIMEZONE`, `BLOOM_AUTH` (`off` only on a trusted network), `BLOOM_ENABLE_EXPORT_API`, `ALERT_WEBHOOK_URL`, Pushover keys. Older variable names still work.
+See `.env.example`. Notable: `BLOOM_PORT`, `BLOOM_LEDGER_LAN_URL`, `BLOOM_TIMEZONE` (electricity time-of-use prices only; days and months are always UTC), `BLOOM_AUTH` (`off` only on a trusted network), `BLOOM_ENABLE_EXPORT_API`, `ALERT_WEBHOOK_URL`, Pushover keys, `DAILY_PUSH_HOUR` (an hour of the UTC day, default 9). Older variable names still work.
 
 ## Backup and update
 

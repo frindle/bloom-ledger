@@ -30,15 +30,18 @@ def _micro(x):
     return int((x * 1000000).quantize(Decimal(1), rounding=ROUND_HALF_UP))
 
 
-def interval_cost(settings, ts, wh):
-    """Turn a metered interval into a cost from the entered rate schedule."""
+def interval_cost(settings, ts, wh, rate_tz=None):
+    """Turn a metered interval into a cost from the entered rate schedule.
+
+    The season and time-of-day period are read from the wall clock at the meter, in `rate_tz` (default the settings'
+    local_timezone), never from the UTC accounting day the interval is filed under."""
     schedule = settings.get("rate_schedule")
     adder = settings.get("rate_adder_usd_per_kwh")
     universal = settings.get("universal_charge_usd_per_kwh")
     county = settings.get("county_fee_pct")
     if any(v is None for v in [schedule, adder, universal, county]):
         return None
-    tz = ZoneInfo(settings.get("local_timezone") or "UTC")
+    tz = ZoneInfo(rate_tz or settings.get("local_timezone") or "UTC")
     local = dt.datetime.fromtimestamp(ts, tz)
     rate = rate_for(schedule, local.month, local.hour * 60 + local.minute)
     if rate is None:

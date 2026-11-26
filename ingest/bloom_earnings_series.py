@@ -1,6 +1,6 @@
 """Earnings over time for the home page graph: GET /v1/earnings/series.
 
-Daily earnings (local days in the settings timezone, zero-filled between the first and the last day so the chart has no
+Daily earnings (UTC days, the same day Darkbloom accounts by, zero-filled between the first and the last day so the chart has no
 holes), each day's running total, and a month roll-up with its own running total. Money is integer micro-USD. The shaping is
 pure (shape) so it is tested without a database. Bookkeeping view, not tax advice."""
 import datetime as dt
@@ -51,8 +51,8 @@ def shape(rows, tz, today=None):
 
 def build(db, today=None):
     """The series for every earnings row in the ledger."""
-    tz = CF.effective_settings(db, "9999-12-31")["values"]["local_timezone"]
-    today = today or dt.datetime.now(ZoneInfo(tz)).date().isoformat()
+    tz = CF.ACCOUNTING_TZ
+    today = today or CF.utc_today()
     rows = db.execute("SELECT ts, micro_usd, kind FROM earnings ORDER BY ts").fetchall()
     return shape(rows, tz, today)
 

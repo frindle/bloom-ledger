@@ -581,7 +581,7 @@
   const woStatus = document.getElementById("wo-status");
   const woError = document.getElementById("wo-error");
   let woDirty = false;
-  wo.from.value = new Date().getFullYear() + "-01-01";
+  wo.from.value = new Date().getUTCFullYear() + "-01-01";
 
   function syncShare() { wo.fixed.disabled = wo.share.value !== "fixed"; }
 

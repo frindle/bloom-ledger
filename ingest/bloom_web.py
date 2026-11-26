@@ -72,8 +72,8 @@ def setup_page(needs_code=False, keep_settings=False):
                 'Docker: <code>docker compose logs bloom-ledger</code>. Mac install: <code>~/Library/Application Support/bloom-ledger-server/logs/server.log</code>. '
                 'Or read the file <code>setup-code</code> in the data folder.</span></div>') if needs_code else ""
     money = """<h2 style="margin-top:1.5rem">Where and what you pay</h2>
-%(keepnote)s<div class="bl-field"><label for="tz">Time zone</label><input id="tz" list="tzs" autocomplete="off" %(req)s><datalist id="tzs">%(tz)s</datalist>
-<span class="bl-hint">Days and months are cut at midnight in this zone.%(keeptz)s</span></div>
+%(keepnote)s<div class="bl-field"><label for="tz">Electricity-rate time zone</label><input id="tz" list="tzs" autocomplete="off" %(req)s><datalist id="tzs">%(tz)s</datalist>
+<span class="bl-hint">Only used to apply time-of-use electricity prices. Days and months always follow UTC, like Darkbloom.%(keeptz)s</span></div>
 <div class="bl-field"><label for="rate">Electricity price per kWh (US dollars)</label><input id="rate" inputmode="decimal" placeholder="0.15">
 <span class="bl-hint">Optional. Leave it empty and power cost stays "not computed" until you enter it in Accounting settings. Darkbloom pays in US dollars, so every figure here is in USD.</span></div>
 %(retro)s"""
@@ -189,7 +189,7 @@ function render(s){
   s.alerts.forEach(function(a){ var li = document.createElement("li"); li.textContent = (a.alert === "machine-silent" ? "Silent: " : "Usage snapshot is stale: ") + a.machine_id + (a.age_s != null ? " (" + Math.round(a.age_s / 60) + " min)" : " (never received)"); al.appendChild(li); });
   $("noalerts").hidden = s.alerts.length > 0;
   var d = $("srv"); d.textContent = "";
-  [["Version", s.version], ["Time zone", s.timezone], ["Login", {login: "on (admin account)", setup: "setup not finished", lan: "local network only (no admin yet)", off: "off (BLOOM_AUTH=off)"}[s.auth_mode] || s.auth_mode],
+  [["Version", s.version], ["Accounting day", s.timezone], ["Login", {login: "on (admin account)", setup: "setup not finished", lan: "local network only (no admin yet)", off: "off (BLOOM_AUTH=off)"}[s.auth_mode] || s.auth_mode],
    ["Free disk space", bytes(s.disk_free_bytes)], ["Export API", s.export_api ? "on" : "off"]].forEach(function(kv){
     var a = document.createElement("dt"), b = document.createElement("dd"); a.textContent = kv[0]; a.className = "meta"; b.textContent = kv[1]; b.style.margin = "0"; d.appendChild(a); d.appendChild(b);
   });
