@@ -139,3 +139,38 @@ def test_retry_after_refund_is_a_new_request():
     got = WD.detect(db)
     assert [(g["amount_cents"], g["status"]) for g in got] == [(7000, "refunded"), (7500, "requested")]
     assert got[0]["key"] != got[1]["key"] and got[1]["refunded_at"] is None
+
+
+def test_window_sums_match_sql_including_the_edges():
+    import random
+    db = make()
+    rnd = random.Random(7)
+    base = utc(2030, 3, 1, 0)
+    for n in range(400):
+        db.execute("INSERT INTO earnings (ledger_id, ts, micro_usd, kind) VALUES (?,?,?,?)",
+                   ("e%d" % n, base + rnd.randrange(0, 5000), rnd.randrange(1, 10_000), "job"))
+    run = WD._running(db, "earnings", "micro_usd")
+    edges = [base - 1, base, base + 1, base + 2500, base + 4999, base + 5000, base + 6000]
+    edges += [base + rnd.randrange(0, 5000) for _ in range(60)]
+    for lo in edges:
+        for hi in edges:
+            want = db.execute("SELECT COALESCE(SUM(micro_usd), 0) FROM earnings WHERE ts > ? AND ts <= ?", (lo, hi)).fetchone()[0]
+            if lo <= hi:
+                assert WD._sum(run, lo, hi) == want, (lo, hi)
+    assert WD._sum(WD._running(db, "api_spend", "cost_micro_usd"), base, base + 10) == 0, "an empty table sums to 0"
+
+
+def test_a_large_ledger_answers_in_well_under_the_trackers_timeout():
+    import time
+    db = make()
+    t0 = utc(2030, 3, 1, 0)
+    db.executemany("INSERT INTO earnings (ledger_id, ts, micro_usd, kind) VALUES (?,?,?,?)",
+                   (("e%d" % n, t0 + n * 7, 1000, "job") for n in range(200_000)))
+    db.executemany("INSERT INTO account_totals (at, count, total_micro_usd, available_micro_usd, withdrawable_micro_usd)"
+                   " VALUES (?,?,?,?,?)",
+                   ((dt.datetime.fromtimestamp(t0 + k * 300, dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), 1, 0,
+                     k * 300 // 7 * 1000, k * 300 // 7 * 1000) for k in range(4000)))
+    start = time.monotonic()
+    code, _ctype, data = WD.withdrawals_response(db, "/v1/withdrawals", t0 + 1_400_000)
+    assert code == 200 and json.loads(data)["withdrawals"] == []
+    assert time.monotonic() - start < 3, "one pass over the rows, not a scan per snapshot"

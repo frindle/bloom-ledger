@@ -22,6 +22,7 @@ Limit: a refund and a retry between the same two snapshots net to one smaller dr
 GET /v1/withdrawals -> {"generated_at", "withdrawals": [{"key", "requested_at", "since", "amount_cents", "status", "refunded_at"}]},
 oldest first. `requested_at` is the snapshot that first showed the drop (the request was made between `since` and it). `status` is
 "requested" or "refunded"; `refunded_at` is the snapshot time that showed the rise, or null. No query is allowed."""
+import bisect
 import hashlib
 import json
 import urllib.parse
@@ -33,8 +34,21 @@ TOL_MICRO = SP.TOL_MICRO
 TOL_PCT = SP.TOL_PCT
 
 
-def _sum(db, table, col, lo, hi):
-    return db.execute("SELECT COALESCE(SUM(%s), 0) FROM %s WHERE ts > ? AND ts <= ?" % (col, table), (lo, hi)).fetchone()[0]
+def _running(db, table, col):
+    """(sorted ts, running totals) for `table`, read in one pass. One SUM query per snapshot pair scanned the whole earnings
+    table each time (no ts index there), so a call took minutes while holding the server's DB lock."""
+    ts, acc, run = [], [0], 0
+    for t, v in db.execute("SELECT ts, %s FROM %s ORDER BY ts" % (col, table)):
+        ts.append(t)
+        run += v or 0
+        acc.append(run)
+    return ts, acc
+
+
+def _sum(running, lo, hi):
+    """Sum of the rows with lo < ts <= hi."""
+    ts, acc = running
+    return acc[bisect.bisect_right(ts, hi)] - acc[bisect.bisect_right(ts, lo)]
 
 
 def detect(db):
@@ -43,11 +57,12 @@ def detect(db):
     snaps = [r for r in db.execute("SELECT at, available_micro_usd, withdrawable_micro_usd FROM account_totals"
                                    " WHERE available_micro_usd IS NOT NULL AND withdrawable_micro_usd IS NOT NULL")]
     snaps.sort(key=lambda r: P.parse_iso(r[0]))
+    earnings, spend = _running(db, "earnings", "micro_usd"), _running(db, "api_spend", "cost_micro_usd")
     out = []
     for a, b in zip(snaps, snaps[1:]):
         lo, hi = int(P.parse_iso(a[0]).timestamp()), int(P.parse_iso(b[0]).timestamp())
-        earn = _sum(db, "earnings", "micro_usd", lo, hi)
-        draw = _sum(db, "api_spend", "cost_micro_usd", lo, hi)
+        earn = _sum(earnings, lo, hi)
+        draw = _sum(spend, lo, hi)
         dw = b[2] - a[2]
         dc = (b[1] - b[2]) - (a[1] - a[2])
         expected = earn if draw and dc <= -draw + max(TOL_MICRO, draw * TOL_PCT // 100) else earn - draw
