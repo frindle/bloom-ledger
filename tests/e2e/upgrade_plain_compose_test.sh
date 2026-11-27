@@ -1,7 +1,7 @@
 #!/bin/bash
 # Upgrade test (CI, needs Docker) for an install made with plain `docker compose up` BEFORE named volumes: no .env, data in ./data.
 # After updating to this branch, compose would start on an empty named volume. It must refuse with a message that says how to keep
-# the data, and with the .env lines from that message the old data must be served again. OLD = origin/main, NEW = HEAD.
+# the data, and with the .env lines from that message the old data must be served again. OLD = d667341 (the last commit before the admin login and named volumes), NEW = HEAD.
 set -u
 [ "${CI:-}" = "true" ] || { echo "refusing to run outside CI (it starts containers on port 8787)" >&2; exit 2; }
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -24,7 +24,7 @@ onexit() {
 trap onexit EXIT
 wait_up() { for _ in $(seq 1 40); do curl -fsS "$BASE/healthz" >/dev/null 2>&1 && return 0; sleep 2; done; return 1; }
 
-OLD=$(git -C "$REPO" rev-parse origin/main) || exit 2
+OLD=$(git -C "$REPO" rev-parse "${OLD_REF:-d667341}") || exit 2
 NEW=$(git -C "$REPO" rev-parse HEAD)
 git init -q --bare -b main "$WORK/origin.git"
 git -C "$REPO" push -q "$WORK/origin.git" "$OLD:refs/heads/main"

@@ -75,6 +75,8 @@ jobs:
           fetch-depth: 0
       - run: git fetch origin main:refs/remotes/origin/main || true
       - run: bash tests/e2e/upgrade_test.sh
+      - name: legacy install from before the admin login (open to the local network)
+        run: OLD_REF=d667341 bash tests/e2e/upgrade_test.sh
       - run: bash tests/e2e/upgrade_plain_compose_test.sh
 
   mac:
