@@ -22,6 +22,8 @@ onexit() {
   exit "$code"
 }
 trap onexit EXIT
+COOKIE="$WORK/cookie"
+cget() { curl -fsS -H "Cookie: $(cat "$COOKIE")" "$@"; }
 wait_up() { for _ in $(seq 1 40); do curl -fsS "$BASE/healthz" >/dev/null 2>&1 && return 0; sleep 2; done; return 1; }
 
 OLD=$(git -C "$REPO" rev-parse origin/main) || exit 2
@@ -36,12 +38,14 @@ mkdir data && chmod 777 data      # the old default ran as uid 99; the user made
 [ ! -e .env ] && ok "there is no .env" || bad "there is no .env"
 docker compose up -d --build > up.out 2>&1 && wait_up && ok "old stack is up" || { bad "old stack is up"; tail -20 up.out; exit 1; }
 H='-H Content-Type:application/json'
-CODE=$(curl -fsS -X POST $H -H "Origin: $BASE" --data '{"id":"mac-old"}' "$BASE/v1/settings/machines" | jget pair_code) || { bad "old version adds a machine"; exit 1; }
+# a fresh install starts in first-run setup: create the admin first (from the local network no setup code is needed)
+python3 "$HERE/sample.py" setup "$BASE" owner correct-horse-1 "$COOKIE" && ok "admin created on the old install" || { bad "admin created on the old install"; exit 1; }
+CODE=$(python3 "$HERE/sample.py" paircode "$BASE" mac-old "$COOKIE") || { bad "old version adds a machine"; exit 1; }
 TOKEN=$(curl -fsS -X POST $H --data "{\"code\":\"$CODE\"}" "$BASE/v1/pair" | jget token) || { bad "old pairing"; exit 1; }
 SAMPLE_NOW=2026-11-15T12:00:00 python3 "$HERE/sample.py" post "$BASE" "$TOKEN" && ok "sample data shipped" || bad "sample data shipped"
 docker compose restart bloom-ledger >/dev/null 2>&1; wait_up
-for _ in $(seq 1 30); do [ "$(curl -fsS "$BASE/v1/earnings/series" | jget total_micro)" -gt 0 ] && break; sleep 2; done
-before=$(curl -fsS "$BASE/v1/earnings/series" | jget total_micro)
+for _ in $(seq 1 30); do [ "$(cget "$BASE/v1/earnings/series" | jget total_micro)" -gt 0 ] && break; sleep 2; done
+before=$(cget "$BASE/v1/earnings/series" | jget total_micro)
 [ "$before" -gt 0 ] && ok "old version serves earnings ($before)" || bad "old version serves earnings"
 
 echo "== update to this branch and run plain compose again (no .env)"
@@ -59,8 +63,9 @@ echo "== apply the message's fix"
 printf 'BLOOM_DATA_DIR=./data\nBLOOM_KEYS_DIR=./data/secrets\nBLOOM_SECRETS_DIR=./secrets\nBLOOM_EARNINGS_DIR=./data/earnings\n' > .env
 docker compose up -d >/dev/null 2>&1
 wait_up && ok "server is up with the .env lines" || bad "server is up with the .env lines"
-[ "$(curl -fsS "$BASE/v1/earnings/series" | jget total_micro)" = "$before" ] && ok "earnings unchanged ($before)" || bad "earnings unchanged"
+[ "$(cget "$BASE/v1/earnings/series" | jget total_micro)" = "$before" ] && ok "earnings unchanged ($before)" || bad "earnings unchanged"
 [ "$(curl -fsS -H "Authorization: Bearer $TOKEN" "$BASE/v1/whoami" | jget machine_id)" = mac-old ] && ok "the old Mac's token still works" || bad "the old Mac's token still works"
+[ "$(cget "$BASE/v1/auth/me" | jget logged_in)" = True ] && ok "the admin session still works" || bad "the admin session still works"
 
 echo; echo "failures: $FAILS"
 [ "$FAILS" = 0 ]
