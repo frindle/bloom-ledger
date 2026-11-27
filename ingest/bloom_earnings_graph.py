@@ -72,13 +72,12 @@ def script_js():
     return data.days.map(d => ({ label: d.date, earned: d.earned_micro, cum: d.cumulative_micro,
       parts: { inference_micro: d.inference_micro, sandbox_micro: d.sandbox_micro, base_micro: d.base_micro } }));
   }
-  // Today in the ledger's timezone, so the open day or month reads "so far".
-  function todayLocal() {
-    try { return new Intl.DateTimeFormat("en-CA", { timeZone: data.timezone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date()); }
-    catch (e) { return ""; }
+  // Today in UTC (Darkbloom's accounting day), so the open day or month reads "so far".
+  function todayUtc() {
+    return new Date().toISOString().slice(0, 10);
   }
   function when(p, view) {
-    const today = todayLocal();
+    const today = todayUtc();
     if (view === "month") {
       const s = new Date(p.label + "-01T12:00:00Z").toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
       return s + (today.slice(0, 7) === p.label ? " (so far)" : "");

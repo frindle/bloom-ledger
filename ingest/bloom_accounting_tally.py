@@ -1,12 +1,12 @@
-"""Read-only monthly tally: one row per machine (plus a shared row) per local calendar month, for the resell-tracker's books.
+"""Read-only monthly tally: one row per machine (plus a shared row) per UTC calendar month, for the resell-tracker's books.
 
 GET /v1/tally/monthly?month=YYYY-MM and GET /v1/tally/months (see tally_response). Every figure comes from the same
 functions the tax report and packet use (bloom_accounting_tax, _report, _fixed, _writeoff, _entries); this module only splits
 a month by machine, rounds to cents and adds the final/hash bookkeeping. Bookkeeping, not tax advice.
 
 Conventions:
-- Day boundary: a month is the local calendar month in the settings `local_timezone` effective on the month's last day
-  (default America/Los_Angeles), i.e. [first day 00:00, next month 00:00) local time, exactly RP.ts_bounds. Entries use their
+- Day boundary: a month is the UTC calendar month (the same day Darkbloom accounts by), i.e. [first day 00:00, next month
+  00:00) UTC, exactly RP.ts_bounds. Entries use their
   own YYYY-MM-DD date. The write-off rules and every other setting are those effective on the month's last day.
 - Rounding: money is integer micro-USD until the end. Each column's month total is converted to cents ONCE, rounded down
   (toward zero, like the packet's money()). The per-machine cents are that total split by largest remainder, so the machine
@@ -27,8 +27,8 @@ import bloom_accounting_tax as TX
 import bloom_power_lib as P
 
 MONTH_RE = re.compile(r"^(\d{4})-(0[1-9]|1[0-2])\Z")
-CONVENTION = ("local calendar month in settings local_timezone effective on the month's last day: "
-              "[first day 00:00, next month 00:00) local time, the same day boundary as the tax report and packet")
+CONVENTION = ("UTC calendar month, matching Darkbloom's accounting day: "
+              "[first day 00:00, next month 00:00) UTC, the same day boundary as the tax report and packet")
 ROUNDING = ("micro-USD to cents once per column per month, rounded down; machine rows split the month total by largest remainder")
 COLUMNS = ("earnings_cents", "fees_cents", "other_income_cents", "power_cost_cents", "depreciation_cents", "lease_cents", "entries_deductible_cents")
 SHARED = "shared"
@@ -118,12 +118,12 @@ def build_month(db, month, now, today=None):
     YYYY-MM-DD the tax report truncates fixed costs at (default the real date)."""
     if not MONTH_RE.match(month):
         raise ValueError("bad month")
-    today = today or dt.date.today().isoformat()
+    today = today or CF.utc_today()
     y = int(month[:4])
     start, end = month_bounds(month)
     settings = CF.effective_settings(db, end)["values"]
-    tz = settings["local_timezone"]
-    lo, hi = RP.ts_bounds(tz, start, end)
+    day_tz = CF.ACCOUNTING_TZ   # day boundary only; prices use settings["local_timezone"] inside RP.day_rows
+    lo, hi = RP.ts_bounds(day_tz, start, end)
     everything = AE.current_entries(db)
     in_month = [e for e in everything if start <= e["date"] <= end]
     contribs = [e for e in in_month if e["kind"] == "contribution"]
@@ -135,7 +135,7 @@ def build_month(db, month, now, today=None):
 
     ids = _machine_ids(db, lo, hi, settings, [mkey(e) for e in entries])
     # Month totals exactly as the tax report computes them (all machines).
-    agg = TX.month_shares(y, RP.day_rows(db, tz, start, end, None, settings), settings)[month]
+    agg = TX.month_shares(y, RP.day_rows(db, day_tz, start, end, None, settings), settings)[month]
     pre = TX.pre_tracking_micro(db, start, month + "-31", settings.get("m4_in_service_date"))
     agg["income_micro"] += pre
     fixed = TX.fixed_by_month(settings, everything, y, {month: agg}, today)[month]
@@ -150,7 +150,7 @@ def build_month(db, month, now, today=None):
         if mid == SHARED:
             earn_w[mid], power_w[mid] = pre, 0
         else:
-            s = TX.month_shares(y, RP.day_rows(db, tz, start, end, mid, settings), settings)[month]
+            s = TX.month_shares(y, RP.day_rows(db, day_tz, start, end, mid, settings), settings)[month]
             earn_w[mid], power_w[mid] = s["income_micro"], s["job_power_micro"]
         if records:
             one = TX.fixed_by_month({**settings, "machines": [records[mid]]}, everything, y, {month: agg}, today)[month] if mid in records else {}
@@ -193,7 +193,7 @@ def build_month(db, month, now, today=None):
     body = {"machines": machines, "balances": bal, "account": account}
     digest = hashlib.sha256(json.dumps(body, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     totals = {c: (None if None in cols[c].values() else sum(cols[c].values())) for c in COLUMNS}
-    return {"schema_version": SCHEMA_VERSION, "month": month, "timezone": tz, "day_boundary": CONVENTION, "rounding": ROUNDING,
+    return {"schema_version": SCHEMA_VERSION, "month": month, "timezone": day_tz, "day_boundary": CONVENTION, "rounding": ROUNDING,
             "generated_at": P.utc_iso(now), "final": final, "hash": digest, "totals": totals, **body}
 
 
@@ -215,9 +215,8 @@ def account_block(db, lo, hi, contribs):
 
 def months_with_data(db):
     """Sorted YYYY-MM months from the first to the last month holding earnings, power minutes, entries or totals snapshots
-    that have any of those rows (local months of the newest settings' timezone)."""
-    from zoneinfo import ZoneInfo
-    tz = ZoneInfo(CF.effective_settings(db, "9999-12-31")["values"]["local_timezone"])
+    that have any of those rows (UTC months)."""
+    tz = dt.timezone.utc   # same zone as CF.ACCOUNTING_TZ
     seen = set()
     for sql in ("SELECT MIN(ts), MAX(ts) FROM earnings", "SELECT MIN(ts), MAX(ts) FROM power_minutes"):
         a, b = db.execute(sql).fetchone()
@@ -240,7 +239,7 @@ def months_with_data(db):
     while "%04d-%02d" % (y, m) <= last:
         key = "%04d-%02d" % (y, m)
         start, end = month_bounds(key)
-        lo, hi = RP.ts_bounds(tz.key, start, end)
+        lo, hi = RP.ts_bounds(CF.ACCOUNTING_TZ, start, end)
         # A month can hold pay with no day rows at all: the pay from before tracking began is booked to the month of the
         # machine's in-service date (pre_tracking_micro), so that month counts as a month with data too.
         has = (TX.pre_tracking_micro(db, start, end, CF.effective_settings(db, end)["values"].get("m4_in_service_date")) > 0

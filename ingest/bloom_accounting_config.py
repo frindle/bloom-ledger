@@ -3,8 +3,23 @@ set falls back to DEFAULTS, and every default that is an assumption is listed in
 Bookkeeping estimates, not tax advice."""
 import json
 import os
+import datetime as dt
 import re
 from zoneinfo import ZoneInfo
+
+# Darkbloom accounts by UTC day, so every day, month, period and "today" in the ledger is a UTC one. This is a constant, not
+# a setting. The `local_timezone` setting is kept ONLY for the electricity time-of-use schedule (the utility bills in local
+# time); see bloom_accounting_rates.interval_cost.
+ACCOUNTING_TZ = "UTC"
+
+
+def utc_now():
+    return dt.datetime.now(dt.timezone.utc)
+
+
+def utc_today():
+    """Today's UTC date as YYYY-MM-DD."""
+    return utc_now().date().isoformat()
 
 
 def _env_first(*names):
@@ -22,7 +37,7 @@ def _env_date(*names):
 
 
 def default_timezone():
-    """BLOOM_TIMEZONE, else TZ when it names a real zone, else UTC. Never raises."""
+    """The electricity-rate time zone only (never a day boundary): BLOOM_TIMEZONE, else TZ when it names a real zone, else UTC. Never raises."""
     for name in (_env_first("BLOOM_TIMEZONE", "LOCAL_TIMEZONE"), _env_first("TZ")):
         if name:
             try:

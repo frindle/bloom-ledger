@@ -38,8 +38,8 @@ def build_invoice(db, month, now, today=None):
     tally = TL.build_month(db, month, now, today)
     start, end = TL.month_bounds(month)
     settings = CF.effective_settings(db, end)["values"]
-    tz = settings["local_timezone"]
-    lo, hi = RP.ts_bounds(tz, start, end)
+    day_tz = CF.ACCOUNTING_TZ
+    lo, hi = RP.ts_bounds(day_tz, start, end)
     kinds = {k: {"micro": 0, "count": 0, "tokens": 0} for k, _, _ in LINE_KINDS}
     for kind, n, micro, tok in db.execute("SELECT kind, COUNT(*), COALESCE(SUM(micro_usd), 0), COALESCE(SUM(completion_tokens), 0)"
                                           " FROM earnings WHERE ts >= ? AND ts < ? GROUP BY kind", (lo, hi)):
@@ -60,7 +60,7 @@ def build_invoice(db, month, now, today=None):
              for k, key, label in LINE_KINDS]
     if "other" in cents:
         lines.append({"key": "other", "label": "Other earlier pay", "amount_cents": cents["other"], "count": 0, "tokens": 0})
-    t = RP.totals(RP.day_rows(db, tz, start, end, None, None))
+    t = RP.totals(RP.day_rows(db, day_tz, start, end, None, None))
     usage = {"tokens": sum(v["tokens"] for v in kinds.values()), "jobs": sum(v["count"] for v in kinds.values()),
              "inference_minutes": t["gpu_minutes"], "sandbox_minutes": t["sandbox_minutes"], "vcpu_seconds": None}
     totals = tally["totals"]
@@ -71,7 +71,7 @@ def build_invoice(db, month, now, today=None):
     body = {"month": month, "invoice_id": "BL-" + month, "issue_date": TL.month_bounds(_next(month))[0], "currency": "USD",
             "gross_cents": gross, "fees_cents": fees, "fees_note": FEES_NOTE, "other_income_cents": other_income,
             "lines": lines, "costs": costs, "costs_unknown": [c["key"] for c in costs if c["amount_cents"] is None],
-            "net_cents": net, "usage": usage, "timezone": tz, "machine_count": sum(1 for m in tally["machines"] if not m["shared"])}
+            "net_cents": net, "usage": usage, "timezone": day_tz, "machine_count": sum(1 for m in tally["machines"] if not m["shared"])}
     digest = hashlib.sha256(json.dumps(body, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     return {"schema_version": SCHEMA_VERSION, "final": tally["final"], "hash": digest, "generated_at": P.utc_iso(now), **body}
 

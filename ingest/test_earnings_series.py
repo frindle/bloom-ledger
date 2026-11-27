@@ -1,4 +1,4 @@
-"""Earnings series for the graph: daily buckets in local time, zero-fill, running totals and the month roll-up. Fake numbers."""
+"""Earnings series for the graph: daily buckets in UTC, zero-fill, running totals and the month roll-up. Fake numbers."""
 import datetime as dt
 import json
 
@@ -37,6 +37,29 @@ def test_local_midnight_decides_the_day():
     # 2026-11-01 07:30 UTC is 23:30 on Oct 31 in Los Angeles (PDT ended 11-01 at 02:00 local; still PDT then)
     s = ES.shape([(utc(2026, 11, 1, 6, 30), 7, "job")], TZ)
     assert s["days"][0]["date"] == "2026-10-31"
+
+
+def test_utc_midnight_decides_the_day():
+    # The ledger buckets in UTC (Darkbloom's day): 23:59:59Z and 00:00:00Z fall on different days,
+    # and a time just before local (Los Angeles) midnight stays on its UTC day.
+    rows = [(utc(2026, 11, 1, 23, 59, 59), 1, "job"), (utc(2026, 11, 2, 0, 0, 0), 2, "job"), (utc(2026, 11, 2, 6, 30), 4, "job")]
+    s = ES.shape(rows, "UTC")
+    assert [(d["date"], d["earned_micro"]) for d in s["days"]] == [("2026-11-01", 1), ("2026-11-02", 6)]
+    assert s["timezone"] == "UTC"
+    assert [d["date"] for d in ES.shape([rows[2]], TZ)["days"]] == ["2026-11-01"]   # the same instant is Nov 1 locally
+
+
+def test_build_uses_utc_whatever_the_electricity_zone(monkeypatch):
+    import sqlite3
+    import bloom_accounting_config as CF
+    import bloom_accounting_index as AX
+    monkeypatch.setenv("BLOOM_TIMEZONE", TZ)
+    db = sqlite3.connect(":memory:")
+    AX.create_schema(db)
+    db.execute("INSERT INTO earnings VALUES ('a', ?, 9, 'job', 'm', 'j', 1, 'm')", (utc(2026, 11, 2, 3, 0),))
+    CF.set_setting(db, "local_timezone", TZ, "1970-01-01", 1)
+    s = ES.build(db, today="2026-11-02")
+    assert s["timezone"] == "UTC" and [d["date"] for d in s["days"]] == ["2026-11-02"]
 
 
 def test_today_extends_the_chart_and_empty_is_empty():

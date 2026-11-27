@@ -73,6 +73,7 @@ LISTEN = os.environ.get("BLOOM_LISTEN", "0.0.0.0")
 WEBHOOK = os.environ.get("ALERT_WEBHOOK_URL", "")
 PUSHOVER_TOKEN = os.environ.get("PUSHOVER_TOKEN", "")
 PUSHOVER_USER = os.environ.get("PUSHOVER_USER", "")
+# An hour of the UTC day (0-23), not local time: the push reports the previous UTC day.
 DAILY_PUSH_HOUR = int(os.environ.get("DAILY_PUSH_HOUR", "9") or 9)
 DASHBOARD = Path(__file__).resolve().parent / "dashboard.html"
 MACHINES_PATH = os.environ.get("BLOOM_MACHINES", str(ROOT / "machines.json"))
@@ -163,9 +164,9 @@ class Handler(BaseHTTPRequestHandler):
             with DB_LOCK:
                 AX.create_schema(self.server.db)
                 ids = sorted(set(I.load_tokens(TOKENS_PATH, MACHINES_PATH).values()))
-                tz = ACF.effective_settings(self.server.db, "9999-12-31")["values"]["local_timezone"]
-                data = ST.build(self.server.db, ROOT, now, ids, self.server_version, AU.auth_mode(self.server.db), tz,
-                                MIG.export_api_enabled(self.server.db))
+                rate_tz = ACF.effective_settings(self.server.db, "9999-12-31")["values"]["local_timezone"]
+                data = ST.build(self.server.db, ROOT, now, ids, self.server_version, AU.auth_mode(self.server.db), ACF.ACCOUNTING_TZ,
+                                MIG.export_api_enabled(self.server.db), rate_timezone=rate_tz)
             self.reply(200, data)
             return True
         if path == "/v1/whoami":
@@ -239,7 +240,7 @@ class Handler(BaseHTTPRequestHandler):
             # applies from today, and only rewrites the past when the user ticks "apply to past days too".
             keep = AU.auth_mode(db) == "lan" or AU.has_settings(db)
             retro = bool(body.get("retroactive")) and keep
-            since = "1970-01-01" if (retro or not keep) else dt.date.today().isoformat()
+            since = "1970-01-01" if (retro or not keep) else ACF.utc_today()
             tz = str(body.get("timezone") or ("" if keep else "UTC")).strip() or None
             if tz is not None:
                 try:
@@ -309,8 +310,7 @@ class Handler(BaseHTTPRequestHandler):
             period = (q.get("period") or ["month"])[0]
             machine = (q.get("machine") or [None])[0] or None
             with DB_LOCK:
-                tz = ACF.effective_settings(self.server.db, "9999-12-31")["values"]["local_timezone"]
-                today = (q.get("today") or [dt.datetime.now(ZoneInfo(tz)).date().isoformat()])[0]
+                today = (q.get("today") or [ACF.utc_today()])[0]
                 AX.create_schema(self.server.db)
                 try:
                     self.reply(200, AS.build(self.server.db, today, period, machine))
@@ -328,7 +328,7 @@ class Handler(BaseHTTPRequestHandler):
             with DB_LOCK:
                 AX.create_schema(self.server.db)
                 settings = ACF.effective_settings(self.server.db, date)["values"]
-                self.reply(200, RP.day_detail(self.server.db, settings["local_timezone"], date, machine, settings))
+                self.reply(200, RP.day_detail(self.server.db, ACF.ACCOUNTING_TZ, date, machine, settings))
         elif self.path == "/v1/summary":
             with DB_LOCK:
                 self.reply(200, SM.summary(self.server.db, ROOT, time.time()))
@@ -425,7 +425,7 @@ class Handler(BaseHTTPRequestHandler):
                     "health": BS.ledger_health(self.server.db, ROOT, now, self.server_version),
                     "darkbloom_key": LV.key_status(ROOT),
                     "lan_url": PA.ledger_base(self.headers.get("Host"), LAN_URL),
-                    "write_off": WO.rules(ACF.effective_settings(self.server.db, dt.date.today().isoformat())["values"]),
+                    "write_off": WO.rules(ACF.effective_settings(self.server.db, ACF.utc_today())["values"]),
                 }
                 self.reply(200, data)
         elif RC.entry_id_from_path(self.path):
@@ -550,6 +550,13 @@ def days_to_close(root, db, today):
     return L.days_after(min(starts), yesterday)
 
 
+def daily_push_tick(db):
+    """Send yesterday's push if due. DAILY_PUSH_HOUR is an hour of the UTC day, and "yesterday" is the UTC day before."""
+    with DB_LOCK:
+        return DP.run(ROOT / "daily-push.json", ACF.utc_now(), DAILY_PUSH_HOUR,
+                      lambda day, period: AS.build(db, day, period), PUSHOVER_TOKEN, PUSHOVER_USER)
+
+
 def scheduler(db, stop):
     last_alerts = None
     last_spend = 0.0
@@ -581,10 +588,7 @@ def scheduler(db, stop):
                                                  headers={"Content-Type": "application/json"}, method="POST")
                     urllib.request.urlopen(req, timeout=15).close()
                 last_alerts = keys
-            with DB_LOCK:
-                tz = ACF.effective_settings(db, "9999-12-31")["values"]["local_timezone"]
-                sent = DP.run(ROOT / "daily-push.json", dt.datetime.now(ZoneInfo(tz)), DAILY_PUSH_HOUR,
-                              lambda day, period: AS.build(db, day, period), PUSHOVER_TOKEN, PUSHOVER_USER)
+            sent = daily_push_tick(db)
             if sent:
                 log(f"daily push sent for {sent}")
         except Exception as e:  # noqa: BLE001 - the scheduler must survive; the next tick retries

@@ -536,7 +536,7 @@ def script_js():
     }
     box.appendChild(strip(d.minutes));
     if (d.earnings.length) {
-      box.appendChild(table(d.earnings.length + (d.earnings.length === 1 ? " payment" : " payments") + ", local time", [["Time"], ["Stream"], ["Model"], ["Job"], ["Tokens", 1], ["Amount", 1]],
+      box.appendChild(table(d.earnings.length + (d.earnings.length === 1 ? " payment" : " payments") + ", UTC", [["Time (UTC)"], ["Stream"], ["Model"], ["Job"], ["Tokens", 1], ["Amount", 1]],
         d.earnings.map(e => [e.time, NAMES[e.stream], e.model, e.job_id, fmtTokensFull(e.tokens), usdFine(e.micro_usd)])));
     } else {
       box.appendChild(el("p", "No payments on " + date + ".", "meta"));
@@ -554,7 +554,7 @@ def script_js():
     });
     box.appendChild(more);
     if (showAll.has(date)) {
-      box.appendChild(table("Every power minute", [["Time"], ["Stream"], ["Darkbloom state"], ["Wh", 1], ["Tokens", 1], ["Sandbox jobs", 1], ["Cost", 1]],
+      box.appendChild(table("Every power minute (UTC)", [["Time (UTC)"], ["Stream"], ["Darkbloom state"], ["Wh", 1], ["Tokens", 1], ["Sandbox jobs", 1], ["Cost", 1]],
         d.minutes.map(m => [m.time, NAMES[m.stream], m.state, m.wh.toFixed(2), fmtTokensFull(m.tokens), String(m.sandbox_jobs),
           m.cost_micro === null ? "\\u2013" : usdFine(m.cost_micro)])));
     }
@@ -567,9 +567,8 @@ def script_js():
     const cents = Number(m[1]) * 100 + Number((m[2] || "").padEnd(2, "0"));
     return cents > 0 ? cents : null;
   }
-  function localToday() {
-    const d = new Date();
-    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  function todayUtc() {   // Darkbloom's accounting day
+    return new Date().toISOString().slice(0, 10);
   }
   async function addEntry(ev) {
     ev.preventDefault();
@@ -607,7 +606,7 @@ def script_js():
     await load();
   }
   const entryForm = $("entry-form");
-  if (entryForm) { if (!$("e-date").value) $("e-date").value = localToday(); entryForm.addEventListener("submit", addEntry); }
+  if (entryForm) { if (!$("e-date").value) $("e-date").value = todayUtc(); entryForm.addEventListener("submit", addEntry); }
   async function postJson(path, body) {
     return fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   }

@@ -2,7 +2,6 @@
 
 Figures come from the tax-year report (bloom_accounting_tax.build_tax) so the packet always agrees with /tax.
 Bookkeeping, not tax advice: the line numbers are suggested Schedule C lines for the preparer to confirm."""
-import datetime as dt
 import html
 
 import bloom_accounting_config as CF
@@ -187,15 +186,15 @@ def packet_data(db, year, today=None):
     lines (packet_lines of report totals and the entries), expenses_micro and net_micro (report totals), entries (entry_row of
     each AE.current_entries(db, Jan 1, Dec 31), bp = that month's report["months"] bp or None), assets (asset_rows over
     AE.current_entries(db), through today), use ({"business_bp", "minutes", "kwh"} of RP.totals(RP.day_rows(db,
-    settings["local_timezone"], Jan 1, Dec 31, None, settings))), flags (eff["flags"]), disclaimer (DISCLAIMER)."""
-    today = today or dt.date.today().isoformat()
+    CF.ACCOUNTING_TZ (UTC), Jan 1, Dec 31, None, settings))), flags (eff["flags"]), disclaimer (DISCLAIMER)."""
+    today = today or CF.utc_today()
     report = TX.build_tax(db, year)
     eff = CF.effective_settings(db, "%d-12-31" % year)
     settings = eff["values"]
     bp = {m["month"]: m["bp"] for m in report["months"]}
     start, end = "%d-01-01" % year, "%d-12-31" % year
     rows = [entry_row(e, bp.get(e["date"][:7])) for e in AE.current_entries(db, start, end)]
-    use = RP.totals(RP.day_rows(db, settings["local_timezone"], start, end, None, settings))
+    use = RP.totals(RP.day_rows(db, CF.ACCOUNTING_TZ, start, end, None, settings))
     everything = AE.current_entries(db)
     pairs = machine_assets(settings, everything)
     share = WO.share_bp(WO.rules(settings), use["business_bp"])
