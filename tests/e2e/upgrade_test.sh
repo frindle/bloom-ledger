@@ -84,12 +84,13 @@ check_data() {
   [ "$(curl -fsS -H "Authorization: Bearer $TOKEN" "$BASE/v1/whoami" | jget machine_id)" = mac-old ] && ok "$label: the old Mac's token still works" || bad "$label: the old Mac's token still works"
   cget "$BASE/v1/status" | jget machines.0.objects | grep -q '^[1-9]' && ok "$label: /status lists the Mac with its files" || bad "$label: /status lists the Mac with its files"
   if [ "$LEGACY" = 1 ]; then
-    [ "$(cget "$BASE/v1/accounting/day?date=2020-01-15" | jget tz)" = America/Los_Angeles ] && ok "$label: old time zone kept for past days" || bad "$label: old time zone kept for past days"
+    [ "$(cget "$BASE/v1/accounting/day?date=2020-01-15" | jget tz)" = UTC ] && ok "$label: days are UTC, also past days" || bad "$label: days are UTC, also past days"
     [ "$(cget "$BASE/v1/auth/me" | jget mode)" = lan ] && ok "$label: still open to the local network until an admin is made" || bad "$label: auth mode stays lan"
   else
     [ "$(cget "$BASE/v1/auth/me" | jget mode)" = login ] && ok "$label: login mode kept" || bad "$label: login mode kept"
     [ "$(cget "$BASE/v1/auth/me" | jget logged_in)" = True ] && ok "$label: the admin session still works" || bad "$label: the admin session still works"
-    [ "$(cget "$BASE/v1/status" | jget timezone)" = America/Chicago ] && ok "$label: time zone chosen at setup kept" || bad "$label: time zone chosen at setup kept"
+    [ "$(cget "$BASE/v1/status" | jget timezone)" = UTC ] && ok "$label: status reports UTC days" || bad "$label: status reports UTC days"
+    [ "$(cget "$BASE/v1/status" | jget rate_timezone)" = America/Chicago ] && ok "$label: time zone chosen at setup kept (electricity rates)" || bad "$label: time zone chosen at setup kept (electricity rates)"
   fi
 }
 check_data "after first update"
@@ -104,8 +105,9 @@ docker compose up -d --build >/dev/null 2>&1 && wait_up && check_data "after pla
 if [ "$LEGACY" = 1 ]; then
 echo "== create the admin on the upgraded server, update again, login must survive"
 python3 "$HERE/sample.py" setup "$BASE" owner correct-horse-1 "$COOKIE" && ok "admin created after upgrade (from the local network, no code needed)" || bad "admin created after upgrade"
-[ "$(cget "$BASE/v1/status" | jget timezone)" = America/Chicago ] && ok "time zone chosen at setup applies from today" || bad "time zone chosen at setup applies from today"
-[ "$(cget "$BASE/v1/accounting/day?date=2020-01-15" | jget tz)" = America/Los_Angeles ] && ok "past days keep the old time zone (setup did not rewrite history)" || bad "past days keep the old time zone"
+[ "$(cget "$BASE/v1/status" | jget timezone)" = UTC ] && ok "days stay UTC after setup" || bad "days stay UTC after setup"
+[ "$(cget "$BASE/v1/status" | jget rate_timezone)" = America/Chicago ] && ok "time zone chosen at setup applies to electricity rates" || bad "time zone chosen at setup applies to electricity rates"
+[ "$(cget "$BASE/v1/accounting/day?date=2020-01-15" | jget tz)" = UTC ] && ok "past days stay UTC (setup did not rewrite history)" || bad "past days stay UTC"
 [ "$(cget "$BASE/v1/earnings/series" | jget total_micro)" = "$before" ] && ok "earnings unchanged after setup" || bad "earnings unchanged after setup"
 fi
 echo "== one more update: the admin login must survive"

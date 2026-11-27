@@ -52,6 +52,9 @@ def test_setup_login_logout_and_protected_write(web):
     import bloom_accounting_config as CF
     v = CF.effective_settings(web.db, "2026-11-01")["values"]
     assert v["local_timezone"] == "America/Chicago" and v["rate_schedule"][0]["periods"][0]["rate"] == "0.15"
+    # status: days are UTC, the chosen zone is only for electricity rates
+    st = json.loads(web("GET", "/v1/status")[2])
+    assert st["timezone"] == "UTC" and st["rate_timezone"] == "America/Chicago"
     # a write without the cookie is refused, with it it works
     s, o = post(web, "/v1/settings/machines", {"id": "mac1"})
     assert s == 401 and o.get("login") is True

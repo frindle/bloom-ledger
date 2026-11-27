@@ -164,9 +164,9 @@ class Handler(BaseHTTPRequestHandler):
             with DB_LOCK:
                 AX.create_schema(self.server.db)
                 ids = sorted(set(I.load_tokens(TOKENS_PATH, MACHINES_PATH).values()))
-                tz = ACF.ACCOUNTING_TZ
-                data = ST.build(self.server.db, ROOT, now, ids, self.server_version, AU.auth_mode(self.server.db), tz,
-                                MIG.export_api_enabled(self.server.db))
+                rate_tz = ACF.effective_settings(self.server.db, "9999-12-31")["values"]["local_timezone"]
+                data = ST.build(self.server.db, ROOT, now, ids, self.server_version, AU.auth_mode(self.server.db), ACF.ACCOUNTING_TZ,
+                                MIG.export_api_enabled(self.server.db), rate_timezone=rate_tz)
             self.reply(200, data)
             return True
         if path == "/v1/whoami":

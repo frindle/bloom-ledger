@@ -189,7 +189,7 @@ function render(s){
   s.alerts.forEach(function(a){ var li = document.createElement("li"); li.textContent = (a.alert === "machine-silent" ? "Silent: " : "Usage snapshot is stale: ") + a.machine_id + (a.age_s != null ? " (" + Math.round(a.age_s / 60) + " min)" : " (never received)"); al.appendChild(li); });
   $("noalerts").hidden = s.alerts.length > 0;
   var d = $("srv"); d.textContent = "";
-  [["Version", s.version], ["Accounting day", s.timezone], ["Login", {login: "on (admin account)", setup: "setup not finished", lan: "local network only (no admin yet)", off: "off (BLOOM_AUTH=off)"}[s.auth_mode] || s.auth_mode],
+  [["Version", s.version], ["Accounting day", s.timezone], ["Electricity-rate time zone", s.rate_timezone || s.timezone], ["Login", {login: "on (admin account)", setup: "setup not finished", lan: "local network only (no admin yet)", off: "off (BLOOM_AUTH=off)"}[s.auth_mode] || s.auth_mode],
    ["Free disk space", bytes(s.disk_free_bytes)], ["Export API", s.export_api ? "on" : "off"]].forEach(function(kv){
     var a = document.createElement("dt"), b = document.createElement("dd"); a.textContent = kv[0]; a.className = "meta"; b.textContent = kv[1]; b.style.margin = "0"; d.appendChild(a); d.appendChild(b);
   });

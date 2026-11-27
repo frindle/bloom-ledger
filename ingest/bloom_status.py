@@ -27,7 +27,8 @@ def age_text(age_s):
     return "%d days ago" % round(age_s / 86400)
 
 
-def build(db, root, now, machine_ids, version, auth_mode, timezone, export_api):
+def build(db, root, now, machine_ids, version, auth_mode, timezone, export_api, rate_timezone=None):
+    """`timezone` is the accounting-day zone (always UTC); `rate_timezone` is the zone chosen at setup, used only for time-of-use prices."""
     rows = BS.machine_rows(db, root, now, machine_ids)
     macs = []
     for r in rows:
@@ -40,7 +41,7 @@ def build(db, root, now, machine_ids, version, auth_mode, timezone, export_api):
         free = shutil.disk_usage(str(root)).free
     except OSError:
         free = None
-    return {"generated_at": int(now), "version": version, "auth_mode": auth_mode, "timezone": timezone, "export_api": bool(export_api),
+    return {"generated_at": int(now), "version": version, "auth_mode": auth_mode, "timezone": timezone, "rate_timezone": rate_timezone or timezone, "export_api": bool(export_api),
             "machines": macs, "alerts": AL.evaluate_alerts(db, now), "disk_free_bytes": free,
             "integrations": IG.describe(db), "overall": overall(macs)}
 
