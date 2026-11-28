@@ -66,6 +66,8 @@ To remove the client from a Mac: `curl -fsSL http://<server>:8787/install.sh | s
 
 Flags: `--server URL`, `--earnings`, `--replace-old`, `--bloomgauge` / `--no-bloomgauge`. The client only **reads** Darkbloom's folder.
 
+Adding a brand-new Mac from a fresh box (power settings, Darkbloom install, machine, hardware cost, first checks)? Follow [docs/SETUP-NEW-MAC.md](docs/SETUP-NEW-MAC.md).
+
 ## Pages
 
 Home (earnings, power, cost per day) - Status (is every Mac reporting, with a fix for each problem) - Day log - Tax - Machines (add or revoke a Mac) - Accounting and Depreciation settings. Light and dark follow your system; the Theme button overrides it.
