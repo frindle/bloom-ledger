@@ -76,7 +76,7 @@ command -v macmon
 ```
 
 Success: the last command prints a path.
-If it fails: close and reopen Terminal so the PATH change applies, then run the two lines again. You can skip this step; the ledger installer in step 21 installs macmon itself if Homebrew is present.
+If it fails: close and reopen Terminal so the PATH change applies, then run the two lines again. You can skip this step; the ledger installer in step 18 installs macmon itself if Homebrew is present.
 
 ## Part 3. Darkbloom
 
@@ -149,7 +149,7 @@ curl -fsSL <LEDGER_URL>/install.sh | sh -s -- --pair <PAIR_CODE>
 It works once and expires after 30 minutes. If you close the box before using it, click New token on that machine's row for a fresh command. Do not click "Done" until you have pasted it on the Mac.
 Add `--earnings` at the end of the command only if this Mac should also archive Darkbloom earnings, and only on one Mac per Darkbloom account. If an existing Mac already does, leave it off.
 
-**18. Run the command on the new Mac.** Paste it into Terminal on the Mac (not over `sudo`).
+**18. Run the command on the new Mac.** Paste it into Terminal on the Mac. Do not put `sudo` in front of it.
 Success: it prints `pairing`, then `installed as machine '<MACHINE_ID>', shipping to <LEDGER_URL>`, then runs the doctor and ends with `done`. macOS may ask once to let `security` use the Keychain: allow it.
 If it fails: "can't reach the ledger" means this Mac cannot see the server (check the address, the network or VPN). "pairing failed" means the code was used or older than 30 minutes: get a new one (New token) and rerun. "needs Python 3.9+" means step 8. "is not a private address or a hostname" means the address in the command is a public IP: open Settings through the ledger's private address and copy the command again. The installer is safe to run again.
 
