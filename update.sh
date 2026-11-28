@@ -62,7 +62,7 @@ is_build_input() {
   case "$1" in
     Dockerfile|compose.yaml|.dockerignore|earnings-loop.sh) return 0 ;;
     lib/*|client/*) return 0 ;;
-    ingest/server.py|ingest/bloom_*.py|ingest/dashboard.html|ingest/settings.html|ingest/static/*) return 0 ;;
+    ingest/server.py|ingest/bloom_*.py|ingest/dashboard.html|ingest/settings.html|ingest/api-keys.html|ingest/static/*) return 0 ;;
   esac
   return 1
 }

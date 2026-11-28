@@ -7,7 +7,9 @@ import datetime as dt
 KINDS = ("cost", "receipt", "contribution")  # contribution: a card top-up of the Darkbloom balance (owner money in; not income, not an expense)
 CATEGORIES = ("hardware", "software", "internet", "electricity", "supplies", "interest", "other")
 
-RECORD_COLUMNS = (("vendor", "TEXT"), ("purpose", "TEXT"), ("business_pct", "INTEGER NOT NULL DEFAULT 100"), ("receipt", "TEXT"))
+RECORD_COLUMNS = (("vendor", "TEXT"), ("purpose", "TEXT"), ("business_pct", "INTEGER NOT NULL DEFAULT 100"), ("receipt", "TEXT"),
+                  ("ref", "TEXT"))
+MAX_REF = 100
 ENTRY_KEYS = ("id", "kind", "date", "amount_cents", "category", "machine_id", "note", "vendor", "purpose", "business_pct", "receipt")
 
 
@@ -42,6 +44,9 @@ def validate_entry(e):
         if val is not None:
             if not isinstance(val, str) or len(val.strip()) == 0 or len(val) > 200:
                 return "bad " + key
+    ref = e.get("ref")
+    if ref is not None and (not isinstance(ref, str) or not ref.strip() or len(ref) > MAX_REF):
+        return "bad ref"
     bpct = e.get("business_pct")
     if bpct is not None:
         if isinstance(bpct, bool) or not isinstance(bpct, int) or bpct < 1 or bpct > 100:
@@ -59,6 +64,8 @@ def create_entries_table(db):
     for name, decl in RECORD_COLUMNS:
         if name not in existing:
             db.execute(f"ALTER TABLE acct_entries ADD COLUMN {name} {decl}")
+    # ref: an optional caller-chosen id so a retried POST cannot add the same entry twice. Void renames it (see void_entry).
+    db.execute("CREATE UNIQUE INDEX IF NOT EXISTS acct_entries_ref ON acct_entries (ref) WHERE ref IS NOT NULL")
     db.commit()
 
 
@@ -72,18 +79,27 @@ def add_entry(db, entry, created_at):
     if bpct is None:
         bpct = 100
     cur = db.execute("INSERT INTO acct_entries (kind, date, amount_cents, category, machine_id, note, created_at,"
-                     " vendor, purpose, business_pct, receipt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                     " vendor, purpose, business_pct, receipt, ref) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                      (entry["kind"], entry["date"], entry["amount_cents"], entry["category"],
                       entry.get("machine_id"), entry.get("note"), created_at,
-                      entry.get("vendor"), entry.get("purpose"), bpct, None))
+                      entry.get("vendor"), entry.get("purpose"), bpct, None, entry.get("ref")))
     db.commit()
     return cur.lastrowid
 
 
-def void_entry(db, entry_id, voided_at):
-    """Mark a live entry voided (kept for audit). True when a live row was voided, False when missing or already void."""
+def live_id_for_ref(db, ref):
+    """The id of the live (not voided) entry that carries `ref`, else None."""
     create_entries_table(db)
-    cur = db.execute("UPDATE acct_entries SET voided_at = ? WHERE id = ? AND voided_at IS NULL", (voided_at, entry_id))
+    r = db.execute("SELECT id FROM acct_entries WHERE ref = ? AND voided_at IS NULL", (ref,)).fetchone()
+    return r[0] if r else None
+
+
+def void_entry(db, entry_id, voided_at):
+    """Mark a live entry voided (kept for audit). True when a live row was voided, False when missing or already void.
+    A voided row keeps its ref, renamed to "<ref>#void<id>", so the index stays unique and the ref can be posted again."""
+    create_entries_table(db)
+    cur = db.execute("UPDATE acct_entries SET voided_at = ?, ref = CASE WHEN ref IS NULL THEN NULL ELSE ref || '#void' || id END"
+                     " WHERE id = ? AND voided_at IS NULL", (voided_at, entry_id))
     db.commit()
     return cur.rowcount == 1
 

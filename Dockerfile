@@ -8,7 +8,7 @@ RUN useradd --uid 99 --gid 100 --no-create-home --home-dir /state bloom 2>/dev/n
 
 WORKDIR /app
 COPY lib/ /app/
-COPY ingest/server.py ingest/bloom_*.py ingest/dashboard.html ingest/settings.html /app/
+COPY ingest/server.py ingest/bloom_*.py ingest/dashboard.html ingest/settings.html ingest/api-keys.html /app/
 COPY ingest/static/ /app/static/
 COPY client/ /app/client/
 COPY earnings-loop.sh /app/earnings-loop.sh

@@ -96,6 +96,24 @@ Back up the Docker volumes `bloom-data` and `bloom-keys` (or the data folder on 
 
 **Update, server on a Mac:** `git pull && sh deploy/mac/install-server.sh` (it restarts the service, data is kept). Macs running the client update themselves by rerunning their install command with a fresh code.
 
+## Connect another app
+
+Another app on your network can add cost entries without a browser login by using an API key.
+
+1. Open **Settings**, then **API keys** (`/settings/api-keys`), type a label and press **Create key**. The full key (it starts with `blk_`) is shown once; copy it then. The server stores only a hash. **Revoke** removes a key at any time.
+2. The app sends it as a header: `Authorization: Bearer blk_...`.
+
+Or skip the browser: on the Docker host, from this checkout, run `scripts/connect-app.sh <label> <env-file> [VAR_NAME]`. It creates a key (replacing any older key with the same label), writes `VAR_NAME=<key>` into that app's env file (default name `BLOOM_LEDGER_TOKEN`; a backup is saved next to it) and never prints the key. `python3 /app/bloom_keys.py list` and `revoke --label <label>` run inside the container.
+
+A key can only call these routes, and every other route refuses it with 403:
+
+- `POST /v1/accounting/entries` adds an entry; `POST /v1/accounting/entries/void` voids one; `POST /v1/accounting/entries/<id>/receipt` attaches a receipt.
+- `GET /v1/settings` returns the machine list, to pick a `machine_id`.
+
+An unknown or revoked key gets 401. Add an optional `"ref"` (up to 100 characters) to an entry so a retry cannot create it twice: posting a `ref` that is already live returns 200 with `{"id": <existing id>, "existing": true}` and adds nothing. After an entry is voided, its `ref` can be used again.
+
+Keep keys off the public internet like the rest of this service, and use one key per app.
+
 ## Optional: BloomGauge
 
 Nothing here needs BloomGauge. If you use it, tick the box in `/setup`, answer yes in the Mac installer, or set `BLOOM_BLOOMGAUGE=1`. Status shows "optional: not set up" until then, and that is never counted as a problem.
