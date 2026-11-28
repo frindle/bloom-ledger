@@ -15,3 +15,4 @@
 - Refreshed light and dark UI that works on phones.
 - BloomGauge is an optional integration, off by default.
 - End-to-end smoke test and CI.
+- Scoped API keys (Settings, API keys page, or `scripts/connect-app.sh`) let another app add, void and attach receipts to entries; entries take an optional `ref` so retries are safe.

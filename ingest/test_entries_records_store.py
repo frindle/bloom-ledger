@@ -10,7 +10,7 @@ OLD = ("CREATE TABLE acct_entries (id INTEGER PRIMARY KEY AUTOINCREMENT, kind TE
        " amount_cents INTEGER NOT NULL, category TEXT NOT NULL, machine_id TEXT, note TEXT,"
        " created_at INTEGER NOT NULL, voided_at INTEGER)")
 COLS = ["id", "kind", "date", "amount_cents", "category", "machine_id", "note", "created_at", "voided_at",
-        "vendor", "purpose", "business_pct", "receipt"]
+        "vendor", "purpose", "business_pct", "receipt", "ref"]
 
 
 def cols(db):

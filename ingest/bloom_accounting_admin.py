@@ -1,6 +1,6 @@
 """Accounting admin API: authenticated writes for entries and settings, open reads.
 
-Writes need the admin token (same check as the settings page). Not tax advice."""
+Writes follow the same login rule as the settings page (or carry a scoped API key; see bloom_api_keys). Not tax advice."""
 import json
 
 import bloom_accounting_entries as AE
@@ -20,6 +20,11 @@ def accounting_post(path, headers, body, db, now):
         err = AE.validate_entry(data)
         if err:
             return (400, {"error": err})
+        ref = data.get("ref")
+        if ref is not None:
+            have = AE.live_id_for_ref(db, ref)
+            if have is not None:
+                return (200, {"id": have, "existing": True})
         return (201, {"id": AE.add_entry(db, data, int(now))})
     if path == "/v1/accounting/entries/void":
         eid = data.get("id")

@@ -52,6 +52,7 @@ from zoneinfo import ZoneInfo  # noqa: E402
 import bloom_lan as LAN  # noqa: E402
 import bloom_migrate as MIG  # noqa: E402
 import bloom_auth as AU  # noqa: E402
+import bloom_api_keys as AK  # noqa: E402
 import bloom_web as WEB  # noqa: E402
 import bloom_status as ST  # noqa: E402
 import bloom_integrations as IG  # noqa: E402
@@ -78,6 +79,7 @@ DAILY_PUSH_HOUR = int(os.environ.get("DAILY_PUSH_HOUR", "9") or 9)
 DASHBOARD = Path(__file__).resolve().parent / "dashboard.html"
 MACHINES_PATH = os.environ.get("BLOOM_MACHINES", str(ROOT / "machines.json"))
 SETTINGS = Path(__file__).resolve().parent / "settings.html"
+API_KEYS_PAGE = Path(__file__).resolve().parent / "api-keys.html"
 EXPORT_PATHS = ("/v1/tally/monthly", "/v1/tally/months", "/v1/invoice/monthly", "/v1/invoice/months", "/v1/withdrawals")
 DB_LOCK = threading.Lock()
 
@@ -110,11 +112,52 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    key_id = None
+
+    def key_gate(self):
+        """Scoped API keys (`Authorization: Bearer blk_...`). True when this request was already answered.
+        A key outside its few routes is refused; an unknown or revoked one is a 401. Machine tokens never start with blk_."""
+        self.key_id = None
+        key = AK.bearer_key(self.headers)
+        if key is None:
+            return False
+        if not AK.in_scope(self.command, self.path):
+            self.reply(403, {"error": "this API key cannot be used here"})
+            return True
+        with DB_LOCK:
+            self.key_id = AK.verify(self.server.db, key, time.time())
+        if self.key_id is None:
+            self.reply(401, {"error": "invalid API key"})
+            return True
+        return False
+
     def write_denied(self):
         """None when this request may write; else (status, body). Login when an admin exists (see bloom_auth)."""
+        if self.key_id is not None:   # a scoped API key already passed key_gate: no cookies, so no same-origin rule
+            return None
         with DB_LOCK:
             return AU.write_denied(self.server.db, self.client_address[0], self.headers,
                                    lambda: LAN.write_guard(self.client_address[0], self.headers))
+
+    def api_keys_post(self, raw):
+        """POST /v1/settings/api-keys {label} creates a key (shown once); /revoke {id} revokes one."""
+        try:
+            body = json.loads(raw or b"{}")
+        except ValueError:
+            body = None
+        if not isinstance(body, dict):
+            return (400, {"error": "bad request"})
+        with DB_LOCK:
+            if self.path.endswith("/revoke"):
+                kid = body.get("id")
+                if isinstance(kid, bool) or not isinstance(kid, int) or not AK.revoke(self.server.db, kid):
+                    return (404, {"error": "not found"})
+                return (200, {"ok": True})
+            try:
+                kid, key = AK.create(self.server.db, body.get("label"))
+            except ValueError as e:
+                return (400, {"error": str(e)})
+        return (201, {"id": kid, "key": key})
 
     def send_html(self, html, code=200):
         data = WEB.themed(html if isinstance(html, str) else html.decode("utf-8")).encode()
@@ -291,6 +334,8 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def do_GET(self):
+        if self.key_gate():
+            return
         if self.path.split("?", 1)[0] in EXPORT_PATHS:
             with DB_LOCK:
                 on = MIG.export_api_enabled(self.server.db)
@@ -416,6 +461,11 @@ class Handler(BaseHTTPRequestHandler):
             self.send_bytes("application/gzip", PA.client_bundle())
         elif self.path == "/settings":
             self.send_html(SETTINGS.read_bytes())
+        elif self.path == "/settings/api-keys":
+            self.send_html(API_KEYS_PAGE.read_bytes())
+        elif self.path == "/v1/settings/api-keys":
+            with DB_LOCK:
+                self.reply(200, {"keys": AK.list_keys(self.server.db)})
         elif self.path == "/v1/settings":
             with DB_LOCK:
                 now = time.time()
@@ -440,6 +490,8 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(404, {"error": "not found"})
 
     def do_POST(self):
+        if self.key_gate():
+            return
         if self.post_new():
             return
         if self.path == "/v1/pair":
@@ -493,6 +545,9 @@ class Handler(BaseHTTPRequestHandler):
             body = self.rfile.read(n)
             if self.path == "/v1/settings/darkbloom-key":
                 self.reply(*LV.key_post(ROOT, body, time.time()))
+                return
+            if self.path in ("/v1/settings/api-keys", "/v1/settings/api-keys/revoke"):
+                self.reply(*self.api_keys_post(body))
                 return
             import bloom_machine_profiles as MP
             dbkey = PA.requested_key(self.path, body)

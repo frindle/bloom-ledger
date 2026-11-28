@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>API keys - Bloom ledger</title>
+<style>
+  :root {
+    --paper: #e9efec; --card: #f6f9f7; --ink: #12211d; --muted: #4d625b; --rule: #a9bbb4;
+    --sealed: #0e6b5b; --waiting: #b7791f; --missing: #9b2c2c; --open: #12211d;
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Charter, Georgia, serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 16px/1.5 var(--serif); }
+  main { max-width: 72rem; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; }
+  h1 { font-size: 2.1rem; line-height: 1.15; margin: 0 0 .35rem; font-weight: 600; letter-spacing: -.01em; }
+  h2 { font-size: 1.25rem; margin: 0 0 .6rem; font-weight: 600; }
+  p { margin: 0; }
+  a { color: var(--sealed); }
+  section { background: var(--card); border: 1px solid var(--rule); border-radius: 6px; padding: 1.25rem; margin-top: 1.5rem; }
+  .nav { display: flex; gap: 1.25rem; flex-wrap: wrap; margin-bottom: .75rem; }
+  .note { color: var(--muted); }
+  .error { color: var(--missing); font-weight: 600; }
+  a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
+  button:disabled, input:disabled { opacity: .5; cursor: not-allowed; }
+  button { font: inherit; padding: .3rem .8rem; border: 1px solid var(--ink); background: var(--card); color: var(--ink); border-radius: 4px; cursor: pointer; }
+  button.primary { background: var(--ink); color: var(--paper); }
+  button.danger { border-color: var(--missing); color: var(--missing); }
+  input { font: inherit; padding: .3rem .5rem; border: 1px solid var(--rule); border-radius: 4px; background: #fff; color: var(--ink); max-width: 100%; }
+  label { display: block; color: var(--muted); font-size: .9rem; margin-bottom: .15rem; }
+  .table-wrap { overflow: visible; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: .5rem .6rem; border-bottom: 1px solid var(--rule); vertical-align: bottom; }
+  th { color: var(--muted); font-weight: 600; font-size: .9rem; }
+  caption { text-align: left; caption-side: top; padding-bottom: .5rem; }
+  input, select { box-sizing: border-box; height: 2.15rem; }
+  td select { font: inherit; padding: .3rem .4rem; border: 1px solid var(--rule); border-radius: 4px; background: #fff; color: var(--ink); }
+  /* Machines: each row is a card. The column headers stay for screen readers; each cell labels itself. */
+  #machines, #machines tbody { display: block; }
+  #machines thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  #machines caption { display: block; }
+  #machines tbody tr {
+    display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: .9rem 1.1rem; align-items: end;
+    grid-template-areas: "id status seen sealed ." "name model acq start amt" "actions actions actions actions actions";
+    background: #fff; border: 1px solid var(--rule); border-radius: 8px; padding: 1rem 1.1rem; margin-bottom: .9rem;
+  }
+  #machines td { display: block; padding: 0; border: 0; min-width: 0; }
+  #machines td[colspan] { grid-column: 1 / -1; }
+  #machines td input, #machines td select { width: 100%; min-width: 0; }
+  #machines td > span.note { display: block; font-size: .85rem; margin-bottom: .2rem; }
+  #machines td > br { display: none; }
+  #machines td:nth-child(1) { grid-area: id; font-family: var(--mono); font-size: 1.15rem; font-weight: 600; align-self: center; }
+  #machines td:nth-child(2) { grid-area: name; } #machines td:nth-child(3) { grid-area: model; }
+  #machines td:nth-child(4) { grid-area: acq; } #machines td:nth-child(5) { grid-area: start; }
+  #machines td:nth-child(6) { grid-area: amt; } #machines td:nth-child(7) { grid-area: seen; }
+  #machines td:nth-child(8) { grid-area: sealed; } #machines td:nth-child(9) { grid-area: status; }
+  #machines td:nth-child(10) { grid-area: actions; display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: .5rem;
+                               border-top: 1px solid var(--rule); padding-top: .8rem; }
+  #machines td:nth-child(10) .note, #machines td:nth-child(10) .error { margin-right: auto; order: -1; }
+  #machines td:nth-child(n+2):nth-child(-n+4)::before, #machines td:nth-child(n+7):nth-child(-n+9)::before {
+    display: block; color: var(--muted); font-size: .85rem; font-weight: 400; margin-bottom: .2rem;
+  }
+  #machines td:nth-child(2)::before { content: "Display name"; } #machines td:nth-child(3)::before { content: "Model"; }
+  #machines td:nth-child(4)::before { content: "Acquired"; } #machines td:nth-child(7)::before { content: "Last seen"; }
+  #machines td:nth-child(8)::before { content: "Days sealed"; } #machines td:nth-child(9)::before { content: "Status"; }
+  #machines td[colspan]::before { content: none; }
+  @media (max-width: 760px) {
+    #machines tbody tr { grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-areas: "id status" "seen sealed" "name model" "acq start" "amt amt" "actions actions"; }
+  }
+  .status-ok { color: var(--sealed); font-weight: 600; }
+  .status-wait { color: var(--waiting); font-weight: 600; }
+  .row-form { display: flex; gap: .75rem; align-items: flex-end; flex-wrap: wrap; }
+  .token-box { margin-top: .9rem; padding: .75rem; border: 2px solid var(--waiting); border-radius: 6px; background: #fff; }
+  .token-box code { display: block; font-family: var(--mono); overflow-wrap: anywhere; margin: .4rem 0; user-select: all; }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: .15rem 1rem; margin: 0; }
+  dt { color: var(--muted); }
+  dd { margin: 0; overflow-wrap: anywhere; }
+  select { font: inherit; padding: .3rem .4rem; border: 1px solid var(--rule); border-radius: 4px; background: #fff; color: var(--ink); }
+  .wo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr)); gap: .9rem 1.25rem; margin: .75rem 0; align-items: end; }
+  .wo-grid select, .wo-grid input { width: 100%; }
+  fieldset { border: 1px solid var(--rule); border-radius: 6px; margin: .75rem 0 0; padding: .75rem 1rem 1rem; }
+  legend { font-weight: 600; padding: 0 .3rem; }
+  ul.wo-summary { margin: .6rem 0 0; padding-left: 1.2rem; color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+<div class="nav"><a href="/">Back to the ledger</a><a href="/settings">Settings</a></div>
+<h1>API keys</h1>
+<p class="error" id="page-error" role="alert" hidden></p>
+<section aria-labelledby="keys-heading">
+<h2 id="keys-heading">Keys</h2>
+<p class="note">Lets another app on your network add cost entries without a login. A key can add, void and attach receipts to entries and read the machine list, and nothing else. It is shown once; the server keeps only a hash. Revoke a key here at any time. Create keys only while logged in.</p>
+<form id="keys-form" class="row-form">
+<div>
+<label for="key-label">Label</label>
+<input id="key-label" autocomplete="off" maxlength="60" spellcheck="false" placeholder="for example: resell tracker">
+</div>
+<button type="submit" class="primary">Create key</button>
+</form>
+<p class="error" id="key-error" role="alert" hidden></p>
+<div class="token-box" id="key-box" hidden>
+<strong>New API key (shown once)</strong>
+<code id="key-value"></code>
+<p class="note">Send it as <code style="display:inline">Authorization: Bearer &lt;key&gt;</code>. Copy it now; it cannot be shown again.</p>
+<button type="button" id="key-copy">Copy key</button>
+<button type="button" id="key-dismiss">Done</button>
+</div>
+<div class="table-wrap">
+<table id="api-keys">
+<thead><tr><th scope="col">Label</th><th scope="col">Created</th><th scope="col">Last used</th><th scope="col">Actions</th></tr></thead>
+<tbody id="key-rows"></tbody>
+</table>
+</div>
+</section>
+</main>
+<script>
+(function () {
+  "use strict";
+  function showError(el, msg) { el.textContent = msg; el.hidden = !msg; }
+  function formatServerTime(epochSeconds) {
+    const d = new Date(epochSeconds * 1000);
+    const p = (n) => String(n).padStart(2, "0");
+    return d.getUTCFullYear() + "-" + p(d.getUTCMonth() + 1) + "-" + p(d.getUTCDate()) +
+      " " + p(d.getUTCHours()) + ":" + p(d.getUTCMinutes()) + " UTC";
+  }
+  async function post(path, body) {
+    const resp = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    let obj = null;
+    try { obj = await resp.json(); } catch (e) { obj = null; }
+    return { status: resp.status, ok: resp.ok, body: obj };
+  }
+  function explain(res) {
+    if (res.status === 403) return "Changes are only accepted from your local network.";
+    if (res.status === 401) return "Log in first.";
+    if (res.status === 404) return "That key is already gone.";
+    return "The server refused that change.";
+  }
+  const keyRows = document.getElementById("key-rows");
+  const keyError = document.getElementById("key-error");
+  const keyBox = document.getElementById("key-box");
+  const keyValue = document.getElementById("key-value");
+
+  function renderKeys(keys) {
+    keyRows.replaceChildren();
+    if (!keys.length) {
+      const tr = document.createElement("tr"), td = document.createElement("td");
+      td.textContent = "No API keys yet."; td.setAttribute("colspan", "4");
+      tr.appendChild(td); keyRows.appendChild(tr);
+      return;
+    }
+    for (const k of keys) {
+      const tr = document.createElement("tr");
+      const when = (t) => (t == null ? "never" : formatServerTime(t));
+      const cells = [k.label, formatServerTime(k.created_at), when(k.last_used_at)];
+      for (const text of cells) { const td = document.createElement("td"); td.textContent = text; tr.appendChild(td); }
+      const act = document.createElement("td");
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "danger"; b.textContent = "Revoke";
+      b.addEventListener("click", async () => {
+        showError(keyError, "");
+        try {
+          const res = await post("/v1/settings/api-keys/revoke", { id: k.id });
+          if (res.ok) fetchKeys(); else showError(keyError, explain(res));
+        } catch (err) { showError(keyError, "Can't reach the ledger."); }
+      });
+      act.appendChild(b); tr.appendChild(act); keyRows.appendChild(tr);
+    }
+  }
+
+  async function fetchKeys() {
+    try {
+      const resp = await fetch("/v1/settings/api-keys", { cache: "no-store" });
+      if (resp.ok) renderKeys((await resp.json()).keys || []);
+    } catch (e) { /* the list stays as it was; the main poll reports an unreachable ledger */ }
+  }
+
+  document.getElementById("keys-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    showError(keyError, "");
+    const label = (document.getElementById("key-label").value || "").trim();
+    if (!label) { showError(keyError, "Give the key a label first."); return; }
+    try {
+      const res = await post("/v1/settings/api-keys", { label: label });
+      if (res.ok) {
+        document.getElementById("key-label").value = "";
+        keyValue.textContent = res.body.key; keyBox.hidden = false;
+        fetchKeys();
+      } else showError(keyError, res.status === 400 && res.body && res.body.error ? res.body.error : explain(res));
+    } catch (err) { showError(keyError, "Can't reach the ledger."); }
+  });
+  document.getElementById("key-copy").addEventListener("click", () => {
+    if (navigator.clipboard) navigator.clipboard.writeText(keyValue.textContent);
+  });
+  document.getElementById("key-dismiss").addEventListener("click", () => {
+    keyBox.hidden = true; keyValue.textContent = "";
+  });
+
+  fetchKeys();
+})();
+</script>
+</body>
+</html>
